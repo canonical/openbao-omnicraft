@@ -1,0 +1,83 @@
+name: openbao
+title: Openbao
+summary: A ROCK container image for Openbao
+description: |
+  A ROCK container image for Openbao, a community-driven fork of Vault managed by the Linux Foundation.
+
+version: "2.5.2"
+base: bare
+build-base: ubuntu@24.04
+source-code: https://github.com/openbao/openbao
+issues: https://github.com/canonical/openbao-omnicraft/issues
+license: MPL-2.0
+platforms:
+  amd64:
+  arm64:
+
+services:
+  openbao:
+    command: bao server [ -config=/openbao/config/config.hcl ]
+    override: replace
+    startup: enabled
+
+package-repositories:
+ - type: apt
+   url: https://deb.nodesource.com/node_20.x
+   components: [main]
+   suites: [nodistro]
+   key-id: 6F71F525282841EEDAF851B42F59B5F99B1BE0B4
+ - type: apt
+   url: https://dl.yarnpkg.com/debian/
+   components: [main]
+   suites: [stable]
+   key-id: FF7CB5667B542092084BBDC562D54FD4003F6525
+
+parts:
+  openbao:
+    source: https://github.com/openbao/openbao.git
+    source-tag: v2.5.2
+    source-type: git
+    source-depth: 1
+
+    plugin: nil
+    override-build: |
+      VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+      GIT_COMMIT="$(git rev-parse HEAD)"
+      BUILD_DATE="$(git show --no-show-signature -s --format=%cd --date=format:'%Y-%m-%dT%H:%M:%SZ' HEAD)"
+      export LD_FLAGS="-X github.com/openbao/openbao/version.fullVersion=${VERSION} -X github.com/openbao/openbao/version.GitCommit=${GIT_COMMIT} -X github.com/openbao/openbao/version.BuildDate=${BUILD_DATE}"
+
+      make static-dist bin
+      cp bin/bao $CRAFT_PART_INSTALL/bao
+
+    build-snaps:
+      - go/1.25/stable
+    build-packages:
+      - nodejs
+      - yarn
+      - make
+
+    organize:
+      bao: /bin/bao
+
+  # Default configuration for the Openbao server
+  default-config:
+    plugin: dump
+    source: ./config
+    organize:
+      default.hcl: /openbao/config/config.hcl
+
+  # Required runtime packages
+  packages:
+    plugin: nil
+    stage-packages:
+      - ca-certificates_data
+      - libc6_libs
+      - base-files_lib
+
+  # Security manifest for OCI-factory
+  deb-security-manifest:
+    plugin: make
+    source: https://github.com/canonical/rocks-security-manifest
+    source-type: git
+    source-branch: main
+    override-prime: gen_manifest
