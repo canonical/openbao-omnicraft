@@ -1,0 +1,10 @@
+#!/bin/bash
+# Copyright (C) 2026 Canonical Ltd
+
+set -ex
+
+bao_pid=$(pgrep -x bao)
+
+if [ -n "$bao_pid" ]; then
+    kill -s HUP "$bao_pid"
+fi

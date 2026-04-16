@@ -28,7 +28,7 @@ apps:
       - network-bind
       - home
   baod:
-    command: bin/bao server -config $SNAP_COMMON/openbao-config.hcl
+    command: bin/baod-start
     plugs:
       - network
       - network-bind
@@ -37,7 +37,7 @@ apps:
     install-mode: disable
     refresh-mode: endure
 
-    reload-command: kill -HUP "$(pgrep -x openbao)"
+    reload-command: bin/baod-reload
     restart-condition: on-failure
     stop-mode: sigterm
 
@@ -68,12 +68,17 @@ parts:
     organize:
       bao: /bin/bao
 
+  service-files:
+    plugin: dump
+    source: service
+
   runtime-packages:
     plugin: nil
     stage-packages:
       - ca-certificates_data
       - libc6_libs
       - base-files_lib
+      - dash_bins
 
 package-repositories:
  - type: apt
