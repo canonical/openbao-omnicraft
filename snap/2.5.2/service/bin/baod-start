@@ -1,0 +1,7 @@
+#!/usr/bin/sh
+# Copyright (C) 2026 Canonical Ltd
+
+set -ex
+
+. "$SNAP_COMMON"/openbao.env
+"$SNAP"/bin/bao server -config "$SNAP_COMMON"/openbao-config.hcl

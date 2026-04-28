@@ -1,0 +1,10 @@
+#!/usr/bin/sh
+# Copyright (C) 2026 Canonical Ltd
+
+set -ex
+
+bao_pid=$(pgrep -x bao)
+
+if [ -n "$bao_pid" ]; then
+    kill -s TERM "$bao_pid"
+fi
