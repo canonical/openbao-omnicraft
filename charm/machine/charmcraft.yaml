@@ -1,0 +1,489 @@
+# Copyright 2024 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: vault
+
+summary: A tool for managing secrets
+description: |
+  Vault secures, stores, and tightly controls access to
+  tokens, passwords, certificates, API keys, and other
+  secrets in modern computing. Vault handles leasing, key
+  revocation, key rolling, and auditing. Through a unified
+  API, users can access an encrypted Key/Value store and
+  network encryption-as-a-service, or generate AWS IAM/STS
+  credentials, SQL/NoSQL databases, X.509 certificates,
+  SSH credentials, and more.
+links:
+  website:
+    - https://canonical-vault-charms.readthedocs-hosted.com
+  source:
+    - https://github.com/canonical/vault-k8s-operator
+  issues:
+    - https://github.com/canonical/vault-k8s-operator/issues
+  documentation: https://discourse.charmhub.io/t/vault-operator-machine/12983
+
+assumes:
+  - juju >= 3.1.8
+
+storage:
+  vault:
+    type: filesystem
+    location: /var/snap/vault/common
+  certs:
+    type: filesystem
+    minimum-size: 5M
+    location: /var/snap/vault/common/certs
+  config:
+    type: filesystem
+    location: /var/snap/vault/common/config
+    minimum-size: 5M
+
+peers:
+  vault-peers:
+    interface: vault-peer
+
+provides:
+  vault-autounseal-provides:
+    interface: vault-autounseal
+  vault-kv:
+    interface: vault-kv
+  vault-pki:
+    interface: tls-certificates
+  cos-agent:
+    interface: cos_agent
+  send-ca-cert:
+    interface: certificate_transfer
+    description: |
+      Send our CA certificate so clients can trust the CA by means of forming a relation.
+
+requires:
+  vault-autounseal-requires:
+    interface: vault-autounseal
+    optional: true
+  tls-certificates-access:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Communication between the vault units and from a client to Vault should
+      be done using the certificates provided by this integration.
+    optional: true
+  tls-certificates-pki:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Interface to be used to provide Vault with its CA certificate. Vault will
+      use this certificate to sign the certificates it issues on the `vault-pki` interface.
+    optional: true
+  tls-certificates-acme:
+    interface: tls-certificates
+    limit: 1
+    description: |
+      Interface to be used to provide Vault with an intermediate CA certificate for the ACME server.
+      Vault will use this certificate to sign the certificates it issues using the ACME protocol.
+    optional: true
+  s3-parameters:
+    interface: s3
+    optional: true
+  ingress:
+    interface: ingress
+    limit: 1
+    optional: true
+
+type: charm
+platforms:
+  ubuntu@24.04:amd64:
+  ubuntu@24.04:arm64:
+  ubuntu@24.04:s390x:
+
+parts:
+  charm:
+    source: .
+    plugin: uv
+    build-packages:
+      - libffi-dev
+      - libssl-dev
+      - pkg-config
+    build-snaps:
+      - astral-uv
+      - rustup
+    override-build: |
+      rustup default stable
+      craftctl default
+
+config:
+  options:
+    default_lease_ttl:
+      type: string
+      default: "168h"
+      description: Specifies the default lease duration for Vault's tokens and secrets.
+    max_lease_ttl:
+      type: string
+      default: "720h"
+      description: Specifies the maximum possible lease duration for Vault's tokens and secrets.
+    log_level:
+      type: string
+      default: "info"
+      description: >-
+        The log verbosity level. Supported values (in order of descending detail) are trace, debug, info, warn, and error.
+    logrotate_frequency:
+      type: string
+      default: "daily"
+      description: "How often to rotate syslog (daily, weekly, monthly)"
+    # Access interface options
+    access_sans_dns:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will automatically generate subject alternative names.
+    access_sans_ip:
+      type: string
+      description: >-
+        Comma-separated list of IP addresses to include as SANs for the access certificate.
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface. These are in addition to IPs
+        automatically detected by the charm.
+    access_country_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+    access_state_or_province_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+    access_locality_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+    access_organization:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+    access_organizational_unit:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+    access_email_address:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        using the `tls-certificates-access` charm relation interface.
+        If not set, the Vault charm will request a certificate without this attribute.
+
+    # PKI engine options
+    pki_ca_common_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        This option is required when using the `tls-certificates-pki` charm relation interface.
+    pki_ca_sans_dns:
+      type: string
+      description: >-
+        Comma-separated list of DNS names for the CA certificate.
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA. If not set,
+        the Vault charm will automatically generate subject alternative names.
+    pki_ca_country_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_ca_state_or_province_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_ca_locality_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_ca_organization:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_ca_organizational_unit:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_ca_email_address:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    pki_allowed_domains:
+      type: string
+      description: >-
+        A comma-separated list of domain names for which the Vault charm can sign certificates.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Certificate requests for charms integrating with Vault using the `vault-pki` integration will need to use a domain name from this list.
+    pki_allow_bare_domains:
+      type: boolean
+      default: true
+      description: >-
+        Specifies if clients can request certificates matching the exact value of the domains listed in `pki_allowed_domains` (or `pki_ca_common_name` if not set).
+        For example, if `pki_allowed_domains` is `example.com`, this option allows issuing a certificate for `example.com` itself.
+        When disabled, only subdomains (if `pki_allow_subdomains` is true) can be issued, not the base domain.
+    pki_allow_subdomains:
+      type: boolean
+      default: false
+      description: >-
+        Specifies if clients can request certificates with common names that are subdomains of the common name in the `allowed_domains` list.
+        This includes wildcard subdomains.
+        For example, an allowed_domains value of `example.com` with this option set to `true` will allow `foo.example.com` and `fou.bar.example.com` as well as `*.example.com`.
+    pki_allow_wildcard_certificates:
+      type: boolean
+      default: true
+      description: >-
+        Specifies if clients can request certificates certificates with RFC 6125 wildcards in the CN field.
+        When set to False, Vault will not issue wildcards, even if they would've been allowed by another option.
+        Vault supports the following four wildcard types:
+        - `*.example.com`: a single wildcard as the entire left-most label
+        - `foo*.example.com`: a single suffixed wildcard in the left-most label
+        - `*foo.example.com`: a single prefixed wildcard in the left-most label
+        - `f*o.example.com`: a single interior wildcard in the left-most label
+    pki_allow_any_name:
+      type: boolean
+      default: false
+      description: >-
+        Allow the Vault charm to sign certificates coming from the `vault-pki` integration for any domain name.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+    pki_allow_ip_sans:
+      type: boolean
+      default: false
+      description: >-
+        Allow the Vault charm to sign requests with IP Subject Alternative Names.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+    pki_organization:
+      type: string
+      description: >-
+        This value specifies the O (Organization) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have an O value in the Subject field.
+    pki_organizational_unit:
+      type: string
+      description: >-
+        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have an OU value in the Subject field.
+    pki_country:
+      type: string
+      description: >-
+        This value specifies the C (Country) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have a C value in the Subject field.
+    pki_province:
+      type: string
+      description: >-
+        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have a ST value in the Subject field.
+    pki_locality:
+      type: string
+      description: >-
+        This value specifies the L (Locality) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have an L value in the Subject field.
+    pki_self_signed_ca_validity:
+      type: int
+      default: 87600
+      description: >-
+        The validity period in hours for the self-signed CA certificate when using Vault's built-in PKI
+        without an external CA relation (tls-certificates-pki). Default is 87600 hours (10 years).
+        This option is only used when the `tls-certificates-pki` relation is not present and
+        `pki_ca_common_name` is configured.
+
+    # ACME engine options
+    acme_ca_common_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        This option is required when using the `tls-certificates-acme` charm relation interface.
+    acme_ca_sans_dns:
+      type: string
+      description: >-
+        Comma-separated list of DNS names for the CA certificate.
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA. If not set,
+        the Vault charm will automatically generate subject alternative names.
+    acme_ca_country_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_ca_state_or_province_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_ca_locality_name:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_ca_organization:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_ca_organizational_unit:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_ca_email_address:
+      type: string
+      description: >-
+        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        If not set, the Vault charm will request a CA certificate without this attribute.
+    acme_allowed_domains:
+      type: string
+      description: >-
+        A comma-separated list of domain names for which the Vault charm can sign certificates.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Certificate requests for clients using the ACME server of Vault will need to use a domain name from this list.
+    acme_allow_subdomains:
+      type: boolean
+      default: false
+      description: >-
+        Specifies if clients can request certificates with common names that are subdomains of the common name in the `allowed_domains` list.
+        This includes wildcard subdomains.
+        For example, an allowed_domains value of `example.com` with this option set to `true` will allow `foo.example.com` and `fou.bar.example.com` as well as `*.example.com`.
+    acme_allow_bare_domains:
+      type: boolean
+      default: true
+      description: >-
+        Specifies if clients can request certificates matching the value of the actual domains themselves.
+        For example, if `allowed_domains` contains `example.com`, setting this to `true` allows clients to actually request a certificate for `example.com`.
+    acme_allow_wildcard_certificates:
+      type: boolean
+      default: true
+      description: >-
+        Specifies if clients can request certificates certificates with RFC 6125 wildcards in the CN field.
+        When set to False, Vault will not issue wildcards, even if they would've been allowed by another option.
+        Vault supports the following four wildcard types:
+        - `*.example.com`: a single wildcard as the entire left-most label
+        - `foo*.example.com`: a single suffixed wildcard in the left-most label
+        - `*foo.example.com`: a single prefixed wildcard in the left-most label
+        - `f*o.example.com`: a single interior wildcard in the left-most label
+    acme_allow_any_name:
+      type: boolean
+      default: false
+      description: >-
+        Allow the ACME server of Vault to issue certificates for any domain name.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+    acme_allow_ip_sans:
+      type: boolean
+      default: false
+      description: >-
+        Allow the ACME server of Vault to issue certificates with IP Subject Alternative Names.
+        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+    acme_organization:
+      type: string
+      description: >-
+        This value specifies the O (Organization) value in the Subject field of the certificate issued by Vault ACME.
+        If not set the issued certificate will not have an O value in the Subject field.
+    acme_organizational_unit:
+      type: string
+      description: >-
+        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by Vault ACME.
+        If not set the issued certificate will not have an OU value in the Subject field.
+    acme_country:
+      type: string
+      description: >-
+        This value specifies the C (Country) value in the Subject field of the certificate issued by Vault ACME.
+        If not set the issued certificate will not have a C value in the Subject field.
+    acme_province:
+      type: string
+      description: >-
+        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by Vault ACME.
+        If not set the issued certificate will not have a ST value in the Subject field.
+    acme_locality:
+      type: string
+      description: >-
+        This value specifies the L (Locality) value in the Subject field of the certificate issued by Vault PKI.
+        If not set the issued certificate will not have an L value in the Subject field.
+
+actions:
+  authorize-charm:
+    description: >-
+      Authorizes the charm to be able to interact with Vault to manage its
+      operations. A token is required for Vault to use to create the app role and
+      the policy the charm will use to interact with Vault. This token must be
+      placed in juju secret, and this secret should be granted to the charm.
+    params:
+      secret-id:
+        type: string
+        description: >-
+          A secret id from juju that contains a token for Vault that can create
+          new policies, such as the root token that is provided upon initializing
+          Vault. Used to create the app role and policy for the charm. It is not
+          stored by the charm.
+    required: [secret-id]
+
+  bootstrap-raft:
+    description: >-
+      Bootstraps raft using a peers.json file. This action requires the
+      application to first be scaled to a single unit.  Bootstrapping can help
+      recover when quorum is lost, however, it may cause uncommitted Raft log
+      entries to be committed. See
+      https://developer.hashicorp.com/vault/docs/concepts/integrated-storage#manual-recovery-using-peers-json
+      for more details.
+
+  create-backup:
+    description: >-
+      Creates a snapshot of the Raft backend and saves it to the S3 storage.
+      Returns backup ID.
+    params:
+      skip-verify:
+        type: boolean
+        description: >-
+          Whether to skip the verification of the S3 connection TLS certificate.
+          If set to "true", the charm will not verify the S3 connection.
+
+  list-backups:
+    description: >-
+      Lists all available backups.
+    params:
+      skip-verify:
+        type: boolean
+        description: >-
+          Whether to skip the verification of the S3 connection TLS certificate.
+          If set to "true", the charm will not verify the S3 connection.
+
+  restore-backup:
+    description: >-
+      Restores a backup from the S3 storage to the Raft backend.
+      Returns backup ID.
+    params:
+      backup-id:
+        type: string
+        description: >-
+          Backup ID to restore.
+      skip-verify:
+        type: boolean
+        description: >-
+          Whether to skip the verification of the S3 connection TLS certificate.
+          If set to "true", the charm will not verify the S3 connection.
+    required: [backup-id]

@@ -1,0 +1,15 @@
+name: "Lint PR"
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+
+permissions:
+  pull-requests: read
+
+jobs:
+  main:
+    uses: canonical/identity-credentials-workflows/.github/workflows/lint-pr.yaml@v3.1.2

@@ -1,0 +1,364 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main", "release-*"]
+    # `labeled` lets a PR opt in to arm64/s390x tests by adding the
+    # `test-arm` / `test-s390x` labels (see the arch build jobs below).
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: ["main", "release-*"]
+
+concurrency:
+  group: ${{ (github.ref == 'refs/heads/main' && format('ignore-main-{0}', github.run_id)) || (contains(github.ref, 'refs/heads/release-') && format('ignore-release-{0}', github.run_id)) || format('{0}-{1}', github.workflow, github.ref_name) }}
+  cancel-in-progress: true
+
+jobs:
+  ensure-shared-code-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Vendor shared code into K8s charm
+        working-directory: k8s
+        run: make vendor-shared-code
+      - name: Vendor shared code into machine charm
+        working-directory: machine
+        run: make vendor-shared-code
+      - name: Ensure vendored code is checked in
+        run: |
+          STATUS=$(git status --porcelain)
+          echo "$STATUS"
+          test -z "$STATUS"
+
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      k8s: ${{ steps.filter.outputs.k8s }}
+      machine: ${{ steps.filter.outputs.machine }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            k8s:
+              - 'k8s/**'
+              - 'vault-package/**'
+              - '.github/workflows/k8s-integration-test*.yaml'
+            machine:
+              - 'machine/**'
+              - 'vault-package/**'
+              - '.github/workflows/machine-integration-test*.yaml'
+
+  k8s-quality:
+    name: K8s Quality
+    needs: [ensure-shared-code-in-sync]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.2
+      - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.2
+        with:
+          working-directory: k8s
+          python-enabled: "true"
+      - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.2
+        with:
+          working-directory: k8s
+          python-enabled: "true"
+
+  k8s-grafana-dashboard-lint-report:
+    # A pure label-add (`labeled`) re-triggers CI only to run the arch jobs; the
+    # AMD-path jobs below already ran, so skip them on that event to save runners.
+    if: github.event.action != 'labeled'
+    uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.2
+    with:
+      path: ./k8s/src/grafana_dashboards/*
+
+  k8s-build:
+    if: github.event.action != 'labeled'
+    needs: [k8s-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: k8s
+      artifact-suffix: k8s
+
+  k8s-build-arm:
+    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
+    needs: [k8s-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: k8s
+      arch: arm64
+      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
+      artifact-suffix: k8s
+
+  k8s-build-s390x:
+    # Runs on merge, or on a PR labelled `test-s390x` to verify s390x-specific fixes.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
+    needs: [k8s-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: k8s
+      arch: s390x
+      runner: '["self-hosted-linux-s390x-noble-medium"]'
+      artifact-suffix: k8s
+
+  k8s-build-kv-requirer:
+    needs: [k8s-quality]
+    uses: ./.github/workflows/build-kv-requirer.yaml
+    secrets: inherit
+    with:
+      path: k8s
+      artifact-name: kv-requirer-k8s-charm
+
+  k8s-integration-test:
+    if: github.event_name == 'push' || needs.changes.outputs.k8s == 'true'
+    needs:
+      - changes
+      - k8s-build
+      - k8s-build-kv-requirer
+    uses: ./.github/workflows/k8s-integration-test.yaml
+    with:
+      path: ./k8s/
+      vault-charm-artifact-name: ${{ needs.k8s-build.outputs.artifacts-key }}
+      kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
+
+  k8s-integration-test-arm:
+    needs:
+      - k8s-build-arm
+      - k8s-build-kv-requirer
+    uses: ./.github/workflows/k8s-integration-test-arm.yaml
+    with:
+      path: ./k8s/
+      vault-charm-artifact-name: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
+      kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
+
+  k8s-integration-test-s390x:
+    needs:
+      - k8s-build-s390x
+    uses: ./.github/workflows/k8s-integration-test-s390x.yaml
+    with:
+      path: ./k8s/
+      vault-charm-artifact-name: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
+
+  k8s-publish-charm:
+    name: Publish K8s Charm
+    needs:
+      - k8s-quality
+      - k8s-integration-test
+      - k8s-build
+      - k8s-build-kv-requirer
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: k8s
+      artifacts-key: ${{ needs.k8s-build.outputs.artifacts-key }}
+      charm-paths: ${{ needs.k8s-build.outputs.charm-paths }}
+      tag-prefix: k8s
+
+  k8s-publish-charm-arm:
+    name: Publish K8s Charm (ARM)
+    needs:
+      - k8s-quality
+      - k8s-integration-test-arm
+      - k8s-build-arm
+      - k8s-build-kv-requirer
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: k8s
+      artifacts-key: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
+      charm-paths: ${{ needs.k8s-build-arm.outputs.charm-paths }}
+      tag-prefix: k8s
+      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
+
+  k8s-publish-charm-s390x:
+    name: Publish K8s Charm (s390x)
+    needs:
+      - k8s-quality
+      - k8s-build-s390x
+      - k8s-integration-test-s390x
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: k8s
+      artifacts-key: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
+      charm-paths: ${{ needs.k8s-build-s390x.outputs.charm-paths }}
+      tag-prefix: k8s
+      runner: '["self-hosted-linux-s390x-noble-medium"]'
+
+  machine-quality:
+    name: Machine Quality
+    needs: [ensure-shared-code-in-sync]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.2
+      - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.2
+        with:
+          working-directory: machine
+          python-enabled: "true"
+      - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.2
+        with:
+          working-directory: machine
+          python-enabled: "true"
+
+  machine-grafana-dashboard-lint-report:
+    # A pure label-add (`labeled`) re-triggers CI only to run the arch jobs; the
+    # AMD-path jobs below already ran, so skip them on that event to save runners.
+    if: github.event.action != 'labeled'
+    uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.2
+    with:
+      path: ./machine/src/grafana_dashboards/*
+
+  machine-build:
+    if: github.event.action != 'labeled'
+    needs: [machine-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: machine
+      artifact-suffix: machine
+
+  machine-build-arm:
+    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
+    needs: [machine-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: machine
+      arch: arm64
+      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
+      artifact-suffix: machine
+
+  machine-build-s390x:
+    # Runs on merge, or on a PR labelled `test-s390x` to verify s390x-specific fixes.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
+    needs: [machine-quality]
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
+    secrets: inherit
+    with:
+      path: machine
+      arch: s390x
+      runner: '["self-hosted-linux-s390x-noble-medium"]'
+      artifact-suffix: machine
+
+  machine-build-kv-requirer:
+    needs: [machine-quality]
+    uses: ./.github/workflows/build-kv-requirer.yaml
+    secrets: inherit
+    with:
+      path: machine
+      artifact-name: kv-requirer-machine-charm
+
+  machine-integration-test:
+    if: github.event_name == 'push' || needs.changes.outputs.machine == 'true'
+    needs:
+      - changes
+      - machine-build
+      - machine-build-kv-requirer
+    uses: ./.github/workflows/machine-integration-test.yaml
+    with:
+      path: ./machine/
+      vault-charm-artifact-name: ${{ needs.machine-build.outputs.artifacts-key }}
+      kv-requirer-charm-artifact-name: kv-requirer-machine-charm
+
+  machine-integration-test-arm:
+    needs:
+      - machine-build-arm
+      - machine-build-kv-requirer
+    uses: ./.github/workflows/machine-integration-test-arm.yaml
+    with:
+      path: ./machine/
+      vault-charm-artifact-name: ${{ needs.machine-build-arm.outputs.artifacts-key }}
+      kv-requirer-charm-artifact-name: kv-requirer-machine-charm
+
+  machine-integration-test-s390x:
+    needs:
+      - machine-build-s390x
+    uses: ./.github/workflows/machine-integration-test-s390x.yaml
+    with:
+      path: ./machine/
+      vault-charm-artifact-name: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
+
+  machine-publish-charm:
+    name: Publish Machine Charm
+    needs:
+      - machine-quality
+      - machine-integration-test
+      - machine-build
+      - machine-build-kv-requirer
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: machine
+      artifacts-key: ${{ needs.machine-build.outputs.artifacts-key }}
+      charm-paths: ${{ needs.machine-build.outputs.charm-paths }}
+      tag-prefix: machine
+
+  machine-publish-charm-arm:
+    name: Publish Machine Charm (ARM)
+    needs:
+      - machine-quality
+      - machine-build-arm
+      - machine-integration-test-arm
+      - machine-build-kv-requirer
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: machine
+      artifacts-key: ${{ needs.machine-build-arm.outputs.artifacts-key }}
+      charm-paths: ${{ needs.machine-build-arm.outputs.charm-paths }}
+      tag-prefix: machine
+      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
+
+  machine-publish-charm-s390x:
+    name: Publish Machine Charm (s390x)
+    needs:
+      - machine-quality
+      - machine-build-s390x
+      - machine-integration-test-s390x
+    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+    permissions:
+      contents: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.2
+    secrets:
+      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+    with:
+      destination_channel: 2.0/edge
+      path: machine
+      artifacts-key: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
+      charm-paths: ${{ needs.machine-build-s390x.outputs.charm-paths }}
+      tag-prefix: machine
+      runner: '["self-hosted-linux-s390x-noble-medium"]'
