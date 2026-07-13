@@ -5,6 +5,7 @@ from pathlib import Path
 import jubilant
 import pytest
 
+import config
 from config import (
     APP_NAME,
     JUJU_FAST_INTERVAL,
@@ -74,6 +75,9 @@ def test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounsea
             "openbao-b",
             trust=True,
             num_units=1,
+            resources={"openbao-snap": config.OPENBAO_SNAP_PATH}
+            if config.OPENBAO_SNAP_PATH
+            else None,
         )
         juju.wait(
             lambda s: (

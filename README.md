@@ -11,3 +11,9 @@ This repo contains a monorepo for the Rock, Snap and the Charm for OpenBao.
   [juju/juju#22724](https://github.com/juju/juju/issues/22724) and
   [juju/juju#22485](https://github.com/juju/juju/issues/22485). juju 3.6 (and 4.0.5)
   are unaffected.
+
+- **Backup integration tests**: `test_backup.py` (LXD minio storage buckets) and
+  `test_backup_microceph.py` (microceph with RGW) require host-level services that
+  the CI workflows provision on the runner (see
+  `charm/.github/workflows/machine-integration-test.yaml`). They are not run as
+  part of local verification.

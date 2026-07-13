@@ -1,4 +1,10 @@
 ui      = true
+audit "file" "charm-stdout" {
+  description = "Audit device managed by the charm"
+  options {
+    file_path = "stdout"
+  }
+}
 storage "raft" {
   path= "/openbao/raft"
   node_id = "whatever-openbao-k8s/0"

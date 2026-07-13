@@ -26,7 +26,12 @@ from charms.openbao_k8s.v0.openbao_kv import OpenBaoKvClientDetachedEvent, OpenB
 from charms.operator_libs_linux.v2 import snap
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from jinja2 import Environment, FileSystemLoader
-from openbao.juju_facade import JujuFacade, NoSuchSecretError, SecretRemovedError
+from openbao.juju_facade import (
+    JujuFacade,
+    NoSuchSecretError,
+    SecretRemovedError,
+    TransientJujuError,
+)
 from openbao.openbao_autounseal import OpenBaoAutounsealProvides, OpenBaoAutounsealRequires
 from openbao.openbao_client import (
     AppRole,
@@ -647,10 +652,15 @@ class OpenBaoOperatorCharm(CharmBase):
                 return
         if not self._log_level_is_valid(self._get_log_level()):
             return
-        self._generate_openbao_config_file()
+        config_changed = self._generate_openbao_config_file()
         env_changed = self._sync_openbao_environment()
 
-        if env_changed and self._openbao_service_is_running():
+        # A raft node completes its join to the cluster using the retry_join
+        # targets read at startup, so restart an uninitialized node when the
+        # config changes to pick up the current active node. Restarting is
+        # harmless at that point since the node holds no data.
+        restart_needed = env_changed or (config_changed and self._openbao_is_uninitialized())
+        if restart_needed and self._openbao_service_is_running():
             self._restart_openbao_service()
         else:
             try:
@@ -1346,8 +1356,61 @@ class OpenBaoOperatorCharm(CharmBase):
 
         return True
 
-    def _generate_openbao_config_file(self) -> None:
-        """Create the OpenBao config file and push it to the Machine."""
+    def _filter_active_peer_addresses(self, addresses: List[str]) -> List[str]:
+        """Return only the active node's address when one can be identified.
+
+        OpenBao, unlike Vault, does not forward raft bootstrap answers received
+        by standby nodes to the active node, and it answers the challenge of
+        whichever retry_join target responds first. A new node can therefore
+        only join the cluster when retry_join points at the active node. When
+        no active node is reachable (e.g. before the cluster is initialized),
+        fall back to all peer addresses.
+        """
+        try:
+            ca_path = self.tls.get_tls_file_path_in_charm(File.CA)
+        except (OpenBaoCertsError, TransientJujuError):
+            logger.debug("CA certificate unavailable, not filtering retry_join addresses")
+            return addresses
+        active_addresses = []
+        for address in addresses:
+            try:
+                if OpenBaoClient(address, ca_cert_path=ca_path, timeout=5).is_active():
+                    active_addresses.append(address)
+            except Exception:
+                logger.debug("Failed to probe %s for active status", address, exc_info=True)
+        logger.info("Active peers for retry_join: %s (out of %s)", active_addresses, addresses)
+        return active_addresses or addresses
+
+    def _openbao_is_uninitialized(self) -> bool:
+        """Return whether the local OpenBao node is not yet part of a cluster.
+
+        A node that has not completed its raft join is reported as not
+        initialized. A node that is wedged answering a raft join (its API does
+        not respond) is also treated as uninitialized, since restarting it is
+        the only way to make it pick up new retry_join targets.
+        """
+        if not self._api_address:
+            return False
+        try:
+            ca_path = self.tls.get_tls_file_path_in_charm(File.CA)
+        except (OpenBaoCertsError, TransientJujuError):
+            return False
+        client = OpenBaoClient(url=self._api_address, ca_cert_path=ca_path, timeout=5)
+        try:
+            if not client.is_api_available():
+                # The service is running but its API does not respond: either
+                # it is still starting up or it is wedged mid raft-join.
+                return True
+            return not client.is_initialized()
+        except OpenBaoClientError:
+            return False
+
+    def _generate_openbao_config_file(self) -> bool:
+        """Create the OpenBao config file and push it to the Machine.
+
+        Returns:
+            True if the config file content changed, False otherwise.
+        """
         assert self._cluster_address
         assert self._api_address
         retry_joins = [
@@ -1355,7 +1418,9 @@ class OpenBaoOperatorCharm(CharmBase):
                 "leader_api_addr": node_api_address,
                 "leader_ca_cert_file": f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",  # noqa: E501
             }
-            for node_api_address in self._other_peer_node_api_addresses()
+            for node_api_address in self._filter_active_peer_addresses(
+                self._other_peer_node_api_addresses()
+            )
         ]
 
         autounseal_configuration_details = self._get_openbao_autounseal_configuration()
@@ -1389,6 +1454,8 @@ class OpenBaoOperatorCharm(CharmBase):
             )
             # If the seal type has changed, openbao will be restarted by _sync_openbao_environment()
             # in configure to pick up both config and environment changes together.
+            return True
+        return False
 
     def _restart_openbao_service(self) -> None:
         """Restart the OpenBao service."""

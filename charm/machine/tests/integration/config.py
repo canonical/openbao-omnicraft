@@ -1,3 +1,4 @@
+import platform
 from pathlib import Path
 
 import yaml
@@ -10,7 +11,8 @@ OPENBAO_SNAP_PATH: str | None = None
 APP_NAME: str = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 GRAFANA_AGENT_CHANNEL = "1/stable"
-GRAFANA_AGENT_REVISION = 606
+# Charm revisions are published per architecture.
+GRAFANA_AGENT_REVISION = {"x86_64": 605, "aarch64": 606}.get(platform.machine(), 605)
 HAPROXY_APPLICATION_NAME = "haproxy"
 HAPROXY_REVISION = 290
 INGRESS_RELATION_NAME = "ingress"

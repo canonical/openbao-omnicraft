@@ -89,7 +89,24 @@ class OpenBao:
         """
         if not self.client.sys.is_sealed():
             return
-        self.client.sys.submit_unseal_key(unseal_key)
+        # A raft follower cannot accept an unseal key until it has joined the
+        # cluster, which may take a few retry_join cycles after the leader is
+        # unsealed. Retry while the node reports it is not initialized.
+        timeout = 300
+        t0 = time.time()
+        while True:
+            try:
+                self.client.sys.submit_unseal_key(unseal_key)
+                break
+            except (hvac.exceptions.InvalidRequest, requests.exceptions.RequestException) as e:
+                if "not initialized" not in str(e).lower() and not isinstance(
+                    e, requests.exceptions.RequestException
+                ):
+                    raise
+                if time.time() > t0 + timeout:
+                    raise
+                logger.info("Node %s not ready to unseal yet, retrying...", self.url)
+                time.sleep(5)
         logger.info("Unsealed openbao unit: %s.", self.url)
 
     def enable_kv_engine(self, path: str = "kv/", description: str = "") -> None:

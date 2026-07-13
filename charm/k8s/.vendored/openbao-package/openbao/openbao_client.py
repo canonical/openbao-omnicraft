@@ -119,8 +119,10 @@ class PKICertificateError(OpenBaoClientError):
 class OpenBaoClient:
     """Class to interact with OpenBao through its API."""
 
-    def __init__(self, url: str, ca_cert_path: str | None):
-        self._client = hvac.Client(url=url, verify=ca_cert_path if ca_cert_path else False)
+    def __init__(self, url: str, ca_cert_path: str | None, timeout: int = 30):
+        self._client = hvac.Client(
+            url=url, verify=ca_cert_path if ca_cert_path else False, timeout=timeout
+        )
 
     def authenticate(self, auth_details: AuthMethod) -> bool:
         """Find and use the token related with the given auth method.

@@ -1,8 +1,10 @@
 import logging
+import time
 from pathlib import Path
 
 import jubilant
 import pytest
+import requests
 
 from config import (
     APP_NAME,
@@ -86,7 +88,21 @@ def test_given_certificates_provider_is_related_when_openbao_status_checked_then
     ca_file_location = get_ca_cert_file_location(juju)
     assert ca_file_location
     openbao = OpenBao(url=openbao_url, ca_file_location=ca_file_location)
-    assert not openbao.is_initialized()
+    # The unit may still be serving its self-signed certificate for a short
+    # while after the TLS provider is related, so retry until the certificate
+    # from the provider is in place.
+    timeout = 180
+    t0 = time.time()
+    while True:
+        try:
+            initialized = openbao.is_initialized()
+            break
+        except requests.exceptions.SSLError:
+            if time.time() > t0 + timeout:
+                raise
+            logger.info("TLS certificate not yet swapped, retrying...")
+            time.sleep(10)
+    assert not initialized
 
 
 @pytest.mark.abort_on_fail
@@ -152,12 +168,14 @@ def test_given_application_is_deployed_when_scale_down_then_status_is_active(
     unit_to_remove = sorted(status.apps[APP_NAME].units.keys())[-1]
     juju.remove_unit(unit_to_remove)
     with fast_forward(juju, JUJU_FAST_INTERVAL):
+        # Removing a unit includes leaving the raft cluster and tearing down
+        # the machine, which can take a while.
         juju.wait(
             lambda s: (
                 jubilant.all_active(s, APP_NAME)
                 and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
             ),
-            timeout=SHORT_TIMEOUT,
+            timeout=REFRESH_TIMEOUT,
         )
     # Note: We are not verifying the number of nodes in the raft cluster
     # because the OpenBao API address is often not available during the

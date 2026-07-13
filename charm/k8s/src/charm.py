@@ -1026,6 +1026,31 @@ class OpenBaoCharm(CharmBase):
             return None
         return f"https://{ingress_address}:{self.OPENBAO_PORT}"
 
+    def _filter_active_peer_addresses(self, addresses: list[str]) -> list[str]:
+        """Return only the active node's address when one can be identified.
+
+        OpenBao, unlike Vault, does not forward raft bootstrap answers received
+        by standby nodes to the active node, and it answers the challenge of
+        whichever retry_join target responds first. A new node can therefore
+        only join the cluster when retry_join points at the active node. When
+        no active node is reachable (e.g. before the cluster is initialized),
+        fall back to all peer addresses.
+        """
+        try:
+            ca_path = self.tls.get_tls_file_path_in_charm(File.CA)
+        except (OpenBaoCertsError, TransientJujuError):
+            logger.debug("CA certificate unavailable, not filtering retry_join addresses")
+            return addresses
+        active_addresses = []
+        for address in addresses:
+            try:
+                if OpenBaoClient(address, ca_cert_path=ca_path, timeout=5).is_active():
+                    active_addresses.append(address)
+            except Exception:
+                logger.debug("Failed to probe %s for active status", address, exc_info=True)
+        logger.info("Active peers for retry_join: %s (out of %s)", active_addresses, addresses)
+        return active_addresses or addresses
+
     def _generate_openbao_config_file(self) -> None:
         """Handle the creation of the OpenBao config file."""
         retry_joins = [
@@ -1033,7 +1058,9 @@ class OpenBaoCharm(CharmBase):
                 "leader_api_addr": node_api_address,
                 "leader_ca_cert_file": f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",
             }
-            for node_api_address in self._get_peer_relation_node_api_addresses()
+            for node_api_address in self._filter_active_peer_addresses(
+                list(self._get_peer_relation_node_api_addresses())
+            )
         ]
 
         content = render_openbao_config_file(
@@ -1062,11 +1089,40 @@ class OpenBaoCharm(CharmBase):
             # If the seal type has changed, we need to restart OpenBao to apply
             # the changes. SIGHUP is currently only supported as a beta feature
             # for the enterprise version in OpenBao 1.16+
-            if seal_type_has_changed(existing_content, content):
+            # An uninitialized raft node is also restarted, since it completes
+            # its join to the cluster using the retry_join targets read at
+            # startup. Restarting is harmless at that point since the node
+            # holds no data.
+            if (
+                seal_type_has_changed(existing_content, content)
+                or self._openbao_is_uninitialized()
+            ):
                 # Before restarting OpenBao, check if the pebble plan is applied
                 # If the plan was not applied, the service will restart anyway when applying the new plan
                 if self._openbao_service_is_running() and self._pebble_plan_is_applied():
                     self._container.restart(self._service_name)
+
+    def _openbao_is_uninitialized(self) -> bool:
+        """Return whether the local OpenBao node is not yet part of a cluster.
+
+        A node that has not completed its raft join is reported as not
+        initialized. A node that is wedged answering a raft join (its API does
+        not respond) is also treated as uninitialized, since restarting it is
+        the only way to make it pick up new retry_join targets.
+        """
+        try:
+            client = OpenBaoClient(
+                url=self._api_address,
+                ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
+                timeout=5,
+            )
+            if not client.is_api_available():
+                # The service is running but its API does not respond: either
+                # it is still starting up or it is wedged mid raft-join.
+                return True
+            return not client.is_initialized()
+        except (OpenBaoCertsError, TransientJujuError, OpenBaoClientError):
+            return False
 
     def _get_log_level(self) -> str:
         """Return the log level config."""

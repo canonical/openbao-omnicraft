@@ -88,6 +88,14 @@ class OpenBao:
             except requests.exceptions.RequestException:
                 logger.debug("OpenBao is not yet available. Waiting...")
                 time.sleep(5)
+            except hvac.exceptions.InvalidRequest as e:
+                # A raft follower cannot accept an unseal key until it has
+                # joined the cluster, which may take a few retry_join cycles
+                # after the leader is unsealed.
+                if "not initialized" not in str(e).lower():
+                    raise
+                logger.debug("Node not ready to unseal yet. Waiting...")
+                time.sleep(5)
         raise TimeoutError("Timed out unsealing openbao unit.")
 
     def wait_for_raft_nodes(self, expected_num_nodes: int) -> None:
