@@ -2,13 +2,13 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Container abstraction for the Vault charm."""
+"""Container abstraction for the OpenBao charm."""
 
 from typing import TextIO
 
+from openbao.openbao_managers import WorkloadBase
 from ops import Container as OpsContainer
 from ops.pebble import PathError
-from vault.vault_managers import WorkloadBase
 
 
 class Container(WorkloadBase):
@@ -52,7 +52,7 @@ class Container(WorkloadBase):
         self._container.send_signal(signal, process)
 
     def restart(self, process: str) -> None:
-        """Restart the vault service."""
+        """Restart the openbao service."""
         self._container.restart(process)
 
     def stop(self, process: str) -> None:

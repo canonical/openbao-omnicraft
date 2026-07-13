@@ -6,12 +6,12 @@
 import ops.testing as testing
 import pytest
 import requests
-from vault.vault_managers import ManagerError
+from openbao.openbao_managers import ManagerError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmRestoreBackupAction(VaultCharmFixtures):
+class TestCharmRestoreBackupAction(OpenBaoCharmFixtures):
     def test_given_manager_raises_error_when_list_backup_then_action_fails(self):
         self.mock_s3_requirer.configure_mock(
             **{
@@ -27,21 +27,21 @@ class TestCharmRestoreBackupAction(VaultCharmFixtures):
         self.mock_backup_manager.list_backups.side_effect = ManagerError("some error message")
         response = requests.Response()
         response.status_code = 200
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "restore_snapshot.return_value": response,
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         s3_relation = testing.Relation(
             endpoint="s3-parameters",

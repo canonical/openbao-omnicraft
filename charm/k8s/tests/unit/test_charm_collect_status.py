@@ -6,13 +6,13 @@
 from unittest.mock import MagicMock, patch
 
 import ops.testing as testing
+from openbao.openbao_client import OpenBaoClientError
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
-from vault.vault_client import VaultClientError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmCollectUnitStatus(VaultCharmFixtures):
+class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     @patch(
         "charms.observability_libs.v0.kubernetes_compute_resources_patch.KubernetesComputeResourcesPatch.is_ready",
         return_value=False,
@@ -27,16 +27,16 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         __: MagicMock,
     ):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
-            interface="vault-peer",
+            endpoint="openbao-peers",
+            interface="openbao-peer",
             local_unit_data={"node_api_address": "http://1.2.3.4"},
         )
         ca_certificate_secret = testing.Secret(
-            label="vault-ca-certificate",
+            label="openbao-ca-certificate",
             tracked_content={"privatekey": "some private key", "certificate": "some cert"},
             owner="app",
         )
@@ -67,16 +67,16 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         __: MagicMock,
     ):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
-            interface="vault-peer",
+            endpoint="openbao-peers",
+            interface="openbao-peer",
             local_unit_data={"node_api_address": "http://1.2.3.4"},
         )
         ca_certificate_secret = testing.Secret(
-            label="vault-ca-certificate",
+            label="openbao-ca-certificate",
             tracked_content={"privatekey": "some private key", "certificate": "some cert"},
             owner="app",
         )
@@ -107,7 +107,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         __: MagicMock,
     ):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         state_in = testing.State(
@@ -129,7 +129,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         assert state_out.unit_status == BlockedStatus("log_level config is not valid")
 
-    def test_given_vault_pki_relation_without_external_ca_when_common_name_configured_then_status_is_active(
+    def test_given_openbao_pki_relation_without_external_ca_when_common_name_configured_then_status_is_active(
         self,
     ):
         self.mock_tls.configure_mock(
@@ -139,7 +139,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -150,18 +150,18 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
-            endpoint="vault-pki",
+            endpoint="openbao-pki",
             interface="tls-certificates",
         )
         state_in = testing.State(
@@ -178,7 +178,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
     def test_given_cant_connect_when_collect_unit_status_then_status_is_waiting(self):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=False,
         )
         state_in = testing.State(
@@ -188,12 +188,12 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus(
-            "Waiting to be able to connect to vault unit"
+            "Waiting to be able to connect to openbao unit"
         )
 
     def test_given_peer_relation_not_created_when_collect_unit_status_then_status_is_waiting(self):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         state_in = testing.State(
@@ -213,11 +213,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
 
         state_in = testing.State(
@@ -242,11 +242,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -268,11 +268,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -283,7 +283,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         assert state_out.unit_status == WaitingStatus("Waiting for CA certificate to be shared")
 
-    def test_given_vault_api_not_available_when_then_status_is_waiting(self):
+    def test_given_openbao_api_not_available_when_then_status_is_waiting(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -291,17 +291,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": False,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -310,7 +310,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == WaitingStatus("Waiting for vault to be available")
+        assert state_out.unit_status == WaitingStatus("Waiting for openbao to be available")
 
     def test_given_tls_certificates_access_relation_and_access_sans_dns_is_invalid_when_collect_unit_status_then_status_is_blocked(  # noqa: E501
         self,
@@ -322,17 +322,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         access_relation = testing.Relation(
             endpoint="tls-certificates-access",
@@ -361,17 +361,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
@@ -397,17 +397,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
@@ -437,17 +437,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
@@ -477,17 +477,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         acme_relation = testing.Relation(
             endpoint="tls-certificates-acme",
@@ -513,17 +513,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         acme_relation = testing.Relation(
             endpoint="tls-certificates-acme",
@@ -553,17 +553,17 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         acme_relation = testing.Relation(
             endpoint="tls-certificates-acme",
@@ -583,7 +583,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             "Config value for acme_ca_sans_dns is not valid, it must be a comma separated list"
         )
 
-    def test_given_vault_uninitialized_when_collect_unit_status_then_status_is_blocked(self):
+    def test_given_openbao_uninitialized_when_collect_unit_status_then_status_is_blocked(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -591,7 +591,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": False,
@@ -599,11 +599,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -612,7 +612,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == BlockedStatus("Please initialize Vault")
+        assert state_out.unit_status == BlockedStatus("Please initialize OpenBao")
 
     def test_given_uninitialized_when_collect_unit_status_then_status_is_blocked(self):
         self.mock_tls.configure_mock(
@@ -622,7 +622,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": False,
@@ -630,11 +630,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -644,10 +644,10 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
-            "Please initialize Vault or integrate with an auto-unseal provider"
+            "Please initialize OpenBao or integrate with an auto-unseal provider"
         )
 
-    def test_given_vault_needs_migration_when_collect_unit_status_then_status_is_blocked(self):
+    def test_given_openbao_needs_migration_when_collect_unit_status_then_status_is_blocked(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -655,7 +655,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -664,11 +664,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -677,9 +677,9 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == BlockedStatus("Please migrate Vault")
+        assert state_out.unit_status == BlockedStatus("Please migrate OpenBao")
 
-    def test_given_vault_is_sealed_when_collect_unit_status_then_status_is_blocked(self):
+    def test_given_openbao_is_sealed_when_collect_unit_status_then_status_is_blocked(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -687,7 +687,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -697,11 +697,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -710,9 +710,9 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == BlockedStatus("Please unseal Vault")
+        assert state_out.unit_status == BlockedStatus("Please unseal OpenBao")
 
-    def test_given_vault_is_sealed_with_transit_seal_when_collect_unit_status_then_status_is_waiting(
+    def test_given_openbao_is_sealed_with_transit_seal_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
         self.mock_tls.configure_mock(
@@ -722,7 +722,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -732,11 +732,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -747,7 +747,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
 
         assert state_out.unit_status == WaitingStatus("Waiting for transit auto-unseal")
 
-    def test_given_vault_client_error_when_collect_unit_status_then_status_is_maintenance(self):
+    def test_given_openbao_client_error_when_collect_unit_status_then_status_is_maintenance(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -755,20 +755,20 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
-                "is_sealed.side_effect": VaultClientError(),
+                "is_sealed.side_effect": OpenBaoClientError(),
                 "needs_migration.return_value": False,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -778,7 +778,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == MaintenanceStatus(
-            "Seal check failed, waiting for Vault to recover"
+            "Seal check failed, waiting for OpenBao to recover"
         )
 
     def test_given_approle_secret_not_created_when_collect_unit_status_then_status_is_blocked(
@@ -791,7 +791,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -800,11 +800,11 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -817,7 +817,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             "Please authorize charm (see `authorize-charm` action)"
         )
 
-    def test_given_vault_not_active_when_collect_unit_status_then_status_is_waiting(self):
+    def test_given_openbao_not_active_when_collect_unit_status_then_status_is_waiting(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -825,7 +825,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -835,15 +835,15 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -854,10 +854,10 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == WaitingStatus(
-            "Waiting for vault to finish raft leader election"
+            "Waiting for openbao to finish raft leader election"
         )
 
-    def test_given_vault_active_when_collect_unit_status_then_status_is_active(self):
+    def test_given_openbao_active_when_collect_unit_status_then_status_is_active(self):
         self.mock_tls.configure_mock(
             **{
                 "tls_file_available_in_charm.return_value": True,
@@ -865,7 +865,7 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": True,
             },
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -875,15 +875,15 @@ class TestCharmCollectUnitStatus(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],

@@ -2,10 +2,10 @@
 
 ## Pre-requisites
 
-To create a Vault Backup, ensure you:
+To create a OpenBao Backup, ensure you:
 
-- Have a Vault cluster deployed.
-- Your Vault deployment is in _active idle_ state.
+- Have a OpenBao cluster deployed.
+- Your OpenBao deployment is in _active idle_ state.
 - Have access to S3 storage.
 - Have [configured the settings for S3 storage](../reference/s3_storage.md).
 - Have saved your unseal keys and root-token in a secure location of your choice.
@@ -14,11 +14,11 @@ To create a Vault Backup, ensure you:
 
 Once the prerequisites are in place you can run the `create-backup` action on the leader unit to create a backup:
 
-`juju run vault/leader create-backup`
+`juju run openbao/leader create-backup`
 
-The action will create a snapshot of the Vault cluster, save it to the configured S3 storage and return the identifier of the backup.
+The action will create a snapshot of the OpenBao cluster, save it to the configured S3 storage and return the identifier of the backup.
 
 ## List backups
 
 It is possible to list all backups that are saved in the configured S3 storage using the `list-backups` action:
-`juju run vault/leader list-backups`
+`juju run openbao/leader list-backups`

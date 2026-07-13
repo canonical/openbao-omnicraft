@@ -1,7 +1,7 @@
 ui      = true
 storage "raft" {
-  path= "/vault/raft"
-  node_id = "whatever-vault-k8s/0"
+  path= "/openbao/raft"
+  node_id = "whatever-openbao-k8s/0"
   # The order is different from in "config_with_raft_peers.hcl"
   retry_join {
     leader_api_addr = "https://127.0.0.2:8200"
@@ -18,8 +18,8 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "[::]:8200"
-  tls_cert_file = "/vault/certs/cert.pem"
-  tls_key_file  = "/vault/certs/key.pem"
+  tls_cert_file = "/openbao/certs/cert.pem"
+  tls_key_file  = "/openbao/certs/key.pem"
 }
 default_lease_ttl = "168h"
 max_lease_ttl     = "720h"

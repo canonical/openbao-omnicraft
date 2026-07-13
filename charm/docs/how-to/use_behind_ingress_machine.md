@@ -1,10 +1,10 @@
-# Use Vault behind an Ingress (Machine)
+# Use OpenBao behind an Ingress (Machine)
 
-It is recommended to run Vault behind an ingress. In this guide we will list the necessary steps to achieve this using the [haproxy operator](https://charmhub.io/haproxy?channel=2.8/stable).
+It is recommended to run OpenBao behind an ingress. In this guide we will list the necessary steps to achieve this using the [haproxy operator](https://charmhub.io/haproxy?channel=2.8/stable).
 
 ## Pre-requisites
 
-- Vault deployed on a Juju model on a machine controller (non-K8s)
+- OpenBao deployed on a Juju model on a machine controller (non-K8s)
 
 ## Steps
 
@@ -41,11 +41,11 @@ juju deploy self-signed-certificates --channel 1/stable
 Establish the required integrations
 
 ```bash
-juju integrate vault:tls-certificates-access self-signed-certificates
+juju integrate openbao:tls-certificates-access self-signed-certificates
 ```
 
 ```bash
- juju integrate vault:ingress ingress-configurator
+ juju integrate openbao:ingress ingress-configurator
 ```
 
 ```bash
@@ -60,12 +60,12 @@ juju integrate self-signed-certificates haproxy:receive-ca-certs
 juju integrate haproxy:certificates self-signed-certificates
 ```
 
-The `ingress` (between Vault and the ingress-configurator) and the `haproxy-route` (between ingress-configurator and HAProxy) integrations allow accessing Vault through the proxy.
+The `ingress` (between OpenBao and the ingress-configurator) and the `haproxy-route` (between ingress-configurator and HAProxy) integrations allow accessing OpenBao through the proxy.
 
-Now in the relation data of the ingress integration in Vault we will find the URL that we can use to access Vault
+Now in the relation data of the ingress integration in OpenBao we will find the URL that we can use to access OpenBao
 
 ```bash
-juju show-unit vault/0
+juju show-unit openbao/0
 
 # Sample Action Output
 Running operation 1 with 1 task
@@ -91,14 +91,14 @@ Retrieve the Juju secrets list:
 user@ubuntu:~$ juju secrets --format=yaml
 ck0i0h3q457c7bgte4kg:
   revision: 1
-  owner: vault
-  label: vault-ca-certificate
+  owner: openbao
+  label: openbao-ca-certificate
   created: 2023-09-13T02:36:57Z
   updated: 2023-09-13T02:36:57Z
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: vault
-  label: vault-initialization
+  owner: openbao
+  label: openbao-initialization
   created: 2023-09-13T02:37:10Z
   updated: 2023-09-13T02:37:10Z
 cks0s1c24l7c77v23p80:
@@ -110,13 +110,13 @@ cks0s1c24l7c77v23p80:
   updated: 2023-09-13T02:36:57Z
 ```
 
-Read the `vault-initialization` secret content:
+Read the `openbao-initialization` secret content:
 
 ```bash
 user@ubuntu:~$ juju show-secret ck0i0krq457c7bgte4l0 --reveal
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: vault
+  owner: openbao
   created: 2023-08-28T13:33:54Z
   updated: 2023-08-28T13:33:54Z
   content:
@@ -124,13 +124,13 @@ ck0i0krq457c7bgte4l0:
     unsealkeys: '["11bd448ccfec24db29ed5c14fdfe3d169589f5c5c6b57870e31d738aec623856"]'
 ```
 
-Set the vault token for use in the client:
+Set the openbao token for use in the client:
 
 ```bash
-export VAULT_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+export BAO_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
 ```
 
-Read the `active-ca-certificates` secret content of `self-signed-certificates` as we used it to sign the access certificates of Vault:
+Read the `active-ca-certificates` secret content of `self-signed-certificates` as we used it to sign the access certificates of OpenBao:
 
 ```bash
 user@ubuntu:~$ juju show-secret cks0s1c24l7c77v23p80 --reveal
@@ -166,21 +166,21 @@ cks0s1c24l7c77v23p80:
     [...]
 ```
 
-Copy the CA certificate content into a file and set the `VAULT_CAPATH` environment variable to reference this file:
+Copy the CA certificate content into a file and set the `OPENBAO_CAPATH` environment variable to reference this file:
 
 ```bash
-export VAULT_CAPATH=/path/to/vault_ca.pem
+export OPENBAO_CAPATH=/path/to/openbao_ca.pem
 ```
 
-Identify the vault address by setting the `VAULT_ADDR` environment variable using the Vault URL which is we fetched from the relation data earlier
+Identify the openbao address by setting the `OPENBAO_ADDR` environment variable using the OpenBao URL which is we fetched from the relation data earlier
 
 ```bash
-export VAULT_ADDR="https://<your hostname>"
+export OPENBAO_ADDR="https://<your hostname>"
 ```
 
-You can now run vault commands against the vault unit.
+You can now run openbao commands against the openbao unit.
 
 ```bash
-vault status
-vault operator raft list-peers
+openbao status
+bao operator raft list-peers
 ```

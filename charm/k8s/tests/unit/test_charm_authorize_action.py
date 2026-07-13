@@ -4,15 +4,15 @@
 
 import ops.testing as testing
 import pytest
-from vault.vault_client import AuditDeviceType, VaultClientError
+from openbao.openbao_client import OpenBaoClientError
 
-from fixtures import MockBinding, VaultCharmFixtures
+from fixtures import MockBinding, OpenBaoCharmFixtures
 
 
-class TestCharmAuthorizeAction(VaultCharmFixtures):
+class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
     def test_given_unit_not_leader_when_authorize_charm_then_action_fails(self):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         state_in = testing.State(
@@ -25,7 +25,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
 
     def test_given_secret_id_not_found_when_authorize_charm_then_action_fails(self):
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         state_in = testing.State(
@@ -44,13 +44,13 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         )
 
     def test_given_no_token_when_authorize_charm_then_action_fails(self):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "authenticate.return_value": False,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         user_provided_secret = testing.Secret(
@@ -74,13 +74,13 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         )
 
     def test_given_invalid_token_when_authorize_charm_then_action_fails(self):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "authenticate.return_value": False,
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         user_provided_secret = testing.Secret(
@@ -99,20 +99,20 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 state=state_in,
             )
         assert (
-            "The token provided is not valid. Please use a Vault token with the appropriate permissions."
+            "The token provided is not valid. Please use a OpenBao token with the appropriate permissions."
             == exc.value.message
         )
 
-    def test_given_vault_client_error_when_authorize_charm_then_action_fails(self):
+    def test_given_openbao_client_error_when_authorize_charm_then_action_fails(self):
         my_error_message = "my error message"
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "authenticate.return_value": True,
-                "enable_audit_device.side_effect": VaultClientError(my_error_message),
+                "enable_approle_auth_method.side_effect": OpenBaoClientError(my_error_message),
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         user_provided_secret = testing.Secret(
@@ -131,12 +131,12 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
                 state=state_in,
             )
         assert (
-            f"Vault returned an error while authorizing the charm: {my_error_message}"
+            f"OpenBao returned an error while authorizing the charm: {my_error_message}"
             == exc.value.message
         )
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "authenticate.return_value": True,
                 "create_or_update_approle.return_value": "my-role-id",
@@ -148,14 +148,14 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
             ingress_address="1.2.3.4",
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         user_provided_secret = testing.Secret(
             tracked_content={"token": "my token"},
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -168,15 +168,12 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
             state=state_in,
         )
 
-        self.mock_vault.enable_audit_device.assert_called_once_with(
-            device_type=AuditDeviceType.FILE, path="stdout"
-        )
-        self.mock_vault.enable_approle_auth_method.assert_called_once()
-        self.mock_vault.create_or_update_policy_from_file.assert_called_once_with(
+        self.mock_openbao.enable_approle_auth_method.assert_called_once()
+        self.mock_openbao.create_or_update_policy_from_file.assert_called_once_with(
             name="charm-access",
             path="src/templates/charm_policy.hcl",
         )
-        self.mock_vault.create_or_update_approle.assert_called_once_with(
+        self.mock_openbao.create_or_update_approle.assert_called_once_with(
             name="charm",
             policies=["charm-access", "default"],
             token_ttl="1h",
@@ -185,7 +182,7 @@ class TestCharmAuthorizeAction(VaultCharmFixtures):
         assert self.ctx.action_results == {
             "result": "Charm authorized successfully. You may now remove the secret."
         }
-        assert state_out.get_secret(label="vault-approle-auth-details").tracked_content == {
+        assert state_out.get_secret(label="openbao-approle-auth-details").tracked_content == {
             "role-id": "my-role-id",
             "secret-id": "my-secret-id",
         }

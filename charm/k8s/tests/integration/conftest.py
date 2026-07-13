@@ -58,11 +58,14 @@ def collect_juju_crashdump(juju: jubilant.Juju, request: pytest.FixtureRequest) 
     yield
     if module_file in _module_failures and model is not None:
         logger.info("Running juju-crashdump for model %s", model)
-        subprocess.run(
-            ["juju-crashdump", "-s", "-m", model, "-o", "."],
-            check=False,
-            timeout=120,
-        )
+        try:
+            subprocess.run(
+                ["juju-crashdump", "-s", "-m", model, "-o", "."],
+                check=False,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            logger.warning("juju-crashdump not found, skipping crash dump collection")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -76,13 +79,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--kv_requirer_charm_path",
         action="store",
         default=None,
-        help="Path to the vault-kv-requirer charm to deploy for testing",
+        help="Path to the openbao-kv-requirer charm to deploy for testing",
     )
     parser.addoption(
         "--pki_requirer_charm_path",
         action="store",
         default=None,
-        help="Path to the vault-pki-requirer charm to deploy for testing",
+        help="Path to the openbao-pki-requirer charm to deploy for testing",
     )
     parser.addoption(
         "--no-deploy",
@@ -115,7 +118,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(scope="session")
-def vault_charm_path(request: pytest.FixtureRequest) -> Path | None:
+def openbao_charm_path(request: pytest.FixtureRequest) -> Path | None:
     charm_path = request.config.getoption("--charm_path")
     if charm_path:
         return Path(charm_path)

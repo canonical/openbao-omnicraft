@@ -1,6 +1,6 @@
 # Integrate with COS (Machine)
 
-In this guide, we will cover how-to integrate Vault with Canonical Observability Stack (COS) for metrics and logs.
+In this guide, we will cover how-to integrate OpenBao with Canonical Observability Stack (COS) for metrics and logs.
 
 ## Pre-requisites
 
@@ -28,10 +28,10 @@ juju offer cos.loki:logging
 
 ## 2. Integrate with COS
 
-Switch to the machine model in which Vault is deployed:
+Switch to the machine model in which OpenBao is deployed:
 
 ```
-juju switch <vault model>
+juju switch <openbao model>
 ```
 
 Deploy Grafana Agent:
@@ -40,10 +40,10 @@ Deploy Grafana Agent:
 juju deploy grafana-agent
 ```
 
-Integrate Vault with Grafana Agent:
+Integrate OpenBao with Grafana Agent:
 
 ```
-juju integrate vault:cos-agent grafana-agent:cos-agent
+juju integrate openbao:cos-agent grafana-agent:cos-agent
 ```
 
 Consume the COS offers:
@@ -60,7 +60,7 @@ juju integrate prometheus:receive-remote-write grafana-agent:send-remote-write
 juju integrate loki:logging grafana-agent:logging-consumer
 ``` 
 
-## 3. Access Vault metrics and logs
+## 3. Access OpenBao metrics and logs
 
 Switch to the cos model:
 

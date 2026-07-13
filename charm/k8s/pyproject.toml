@@ -1,14 +1,14 @@
 [project]
-name = "vault-k8s-operator"
+name = "openbao-k8s-operator"
 version = "0.1.0"
 requires-python = ">=3.10"
 
 dependencies = [
     "ops>=3.7.0",
-    "vault-package",
+    "openbao-package",
     "charmlibs-interfaces-tls-certificates~=1.8",
     "charmlibs-interfaces-certificate_transfer",
-    # via certificate_transfer, ingress, tls_certificates, tracing and vault_kv
+    # via certificate_transfer, ingress, tls_certificates, tracing and openbao_kv
     "pydantic==2.13.0",
     # via charm_tracing
     "opentelemetry-exporter-otlp-proto-http",
@@ -20,7 +20,7 @@ dependencies = [
     "cosl>0.0.50",
     # via tls_certificates
     "cryptography",
-    # via vault_kv
+    # via openbao_kv
     "pytest-interface-tester",
     "lightkube",
     "lightkube-models",
@@ -94,4 +94,4 @@ environments = [
 ]
 
 [tool.uv.sources]
-vault-package = { path = ".vendored/vault-package", editable = true }
+openbao-package = { path = ".vendored/openbao-package", editable = true }

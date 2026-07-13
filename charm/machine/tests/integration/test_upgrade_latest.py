@@ -7,61 +7,67 @@ import pytest
 from config import (
     APP_NAME,
     JUJU_FAST_INTERVAL,
-    NUM_VAULT_UNITS,
+    NUM_OPENBAO_UNITS,
     REFRESH_TIMEOUT,
     SHORT_TIMEOUT,
 )
 from helpers import (
-    deploy_vault_and_wait,
+    deploy_openbao_and_wait,
     fast_forward,
-    initialize_unseal_authorize_vault,
+    initialize_unseal_authorize_openbao,
     refresh_application,
-    unseal_all_vault_units,
+    unseal_all_openbao_units,
 )
 
 logger = logging.getLogger(__name__)
+
+pytestmark = pytest.mark.skip(
+    reason="Upgrade tests refresh from the Charmhub `vault` charm, which is not applicable to the renamed `openbao` charm until a first openbao revision is published."
+)
 
 CURRENT_TRACK_LATEST_STABLE_CHANNEL = "1.18/stable"
 
 
 @pytest.mark.abort_on_fail
 def test_given_latest_stable_revision_in_track_when_refresh_then_status_is_active(
-    juju: jubilant.Juju, vault_charm_path: Path
+    juju: jubilant.Juju, openbao_charm_path: Path
 ):
-    logger.info("Deploying vault from Charmhub")
-    deploy_vault_and_wait(
+    logger.info("Deploying openbao from Charmhub")
+    deploy_openbao_and_wait(
         juju,
-        num_units=NUM_VAULT_UNITS,
+        num_units=NUM_OPENBAO_UNITS,
         status="blocked",
         channel=CURRENT_TRACK_LATEST_STABLE_CHANNEL,
     )
-    _, unseal_key = initialize_unseal_authorize_vault(juju, APP_NAME)
+    _, unseal_key = initialize_unseal_authorize_openbao(juju, APP_NAME)
 
     with fast_forward(juju, JUJU_FAST_INTERVAL):
         juju.wait(
             lambda s: (
-                jubilant.all_active(s, APP_NAME) and len(s.apps[APP_NAME].units) == NUM_VAULT_UNITS
+                jubilant.all_active(s, APP_NAME)
+                and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
             ),
             timeout=SHORT_TIMEOUT,
         )
-        logger.info("Refreshing vault from built charm")
-        refresh_application(juju, APP_NAME, vault_charm_path)
+        logger.info("Refreshing openbao from built charm")
+        refresh_application(juju, APP_NAME, openbao_charm_path)
 
-    logger.info("Waiting for vault to be blocked after refresh")
+    logger.info("Waiting for openbao to be blocked after refresh")
     juju.wait(
         lambda s: (
-            jubilant.all_blocked(s, APP_NAME) and len(s.apps[APP_NAME].units) == NUM_VAULT_UNITS
+            jubilant.all_blocked(s, APP_NAME) and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
         ),
         timeout=REFRESH_TIMEOUT,
     )
 
     with fast_forward(juju, JUJU_FAST_INTERVAL):
-        unseal_all_vault_units(juju, unseal_key)
+        unseal_all_openbao_units(juju, unseal_key)
 
-        logger.info("Waiting for vault to be active after refresh")
+        logger.info("Waiting for openbao to be active after refresh")
         juju.wait(
             lambda s: (
-                jubilant.all_active(s, APP_NAME) and len(s.apps[APP_NAME].units) == NUM_VAULT_UNITS
+                jubilant.all_active(s, APP_NAME)
+                and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
             ),
             timeout=SHORT_TIMEOUT,
         )

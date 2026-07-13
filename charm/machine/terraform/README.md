@@ -1,6 +1,6 @@
-# Vault Terraform module
+# OpenBao Terraform module
 
-This folder contains a base [Terraform][Terraform] module for the `vault` charm.
+This folder contains a base [Terraform][Terraform] module for the `openbao` charm.
 
 The module uses the [Terraform Juju provider][Terraform Juju provider] to model the charm deployment onto any Machine environment managed by [Juju][Juju].
 
@@ -15,7 +15,7 @@ The base module is not intended to be deployed in separation (it is possible tho
 - The Juju client
 - Terraform
 
-### Deploying Vault
+### Deploying OpenBao
 
 On the host machine create a new directory called terraform:
 
@@ -39,7 +39,7 @@ terraform {
 EOF
 ```
 
-Create a Terraform module containing Vault:
+Create a Terraform module containing OpenBao:
 
 ```shell
 cat << EOF > main.tf
@@ -47,8 +47,8 @@ resource "juju_model" "demo" {
   name = "demo"
 }
 
-module "vault" {
-  source = "git::https://github.com/canonical/vault-k8s-operator//machine/terraform"
+module "openbao" {
+  source = "git::https://github.com/canonical/openbao-omnicraft//machine/terraform"
   
   model      = juju_model.demo.name
 }
@@ -71,20 +71,20 @@ terraform apply
 
 ### Create integrations
 
-Add the following content to your module's `main.tf` file to create the integration between the `vault` charm and other charms.
+Add the following content to your module's `main.tf` file to create the integration between the `openbao` charm and other charms.
 
 ```text
-resource "juju_integration" "vault-kv-integration" {
+resource "juju_integration" "openbao-kv-integration" {
   model = var.model
 
   application {
     name     = module.some-app.app_name
-    endpoint = module.some-app.vault-kv
+    endpoint = module.some-app.openbao-kv
   }
 
   application {
-    name     = module.vault.app_name
-    endpoint = module.vault.provides.vault-kv
+    name     = module.openbao.app_name
+    endpoint = module.openbao.provides.openbao-kv
   }
 }
 ```
@@ -101,4 +101,4 @@ resource "juju_integration" "vault-kv-integration" {
 [Terraform]: https://www.terraform.io/
 [Terraform Juju provider]: https://registry.terraform.io/providers/juju/juju/latest
 [Juju]: https://juju.is
-[vault-integrations]: https://charmhub.io/vault/integrations
+[openbao-integrations]: https://charmhub.io/openbao/integrations

@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, call
 
 import ops.testing as testing
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmRemove(VaultCharmFixtures):
+class TestCharmRemove(OpenBaoCharmFixtures):
     def test_given_can_connect_when_remove_then_node_removed_from_raft_cluster_and_service_is_stopped(
         self,
     ):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -25,11 +25,11 @@ class TestCharmRemove(VaultCharmFixtures):
         )
         model_name = "model-name"
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             secrets=[approle_secret],
@@ -39,15 +39,15 @@ class TestCharmRemove(VaultCharmFixtures):
 
         self.ctx.run(self.ctx.on.remove(), state_in)
 
-        self.mock_vault.remove_raft_node.assert_called_with(id=f"{model_name}-vault/0")
+        self.mock_openbao.remove_raft_node.assert_called_with(id=f"{model_name}-openbao/0")
         self.mock_machine.remove_path.assert_has_calls(
             calls=[
-                call(path="/var/snap/vault/common/raft/vault.db"),
-                call(path="/var/snap/vault/common/raft/raft/raft.db"),
+                call(path="/var/snap/openbao/common/raft/vault.db"),
+                call(path="/var/snap/openbao/common/raft/raft/raft.db"),
             ]
         )
 
-    def test_given_vault_service_active_when_remove_then_service_is_stopped(
+    def test_given_openbao_service_active_when_remove_then_service_is_stopped(
         self,
     ):
         self.mock_machine.get_service.return_value = MagicMock(
@@ -55,7 +55,7 @@ class TestCharmRemove(VaultCharmFixtures):
                 return_value=True,
             ),
         )
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_initialized.return_value": True,
@@ -66,11 +66,11 @@ class TestCharmRemove(VaultCharmFixtures):
         )
         model_name = "model-name"
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             secrets=[approle_secret],
@@ -80,4 +80,4 @@ class TestCharmRemove(VaultCharmFixtures):
 
         self.ctx.run(self.ctx.on.remove(), state_in)
 
-        self.mock_machine.stop.assert_has_calls([call("vault")])
+        self.mock_machine.stop.assert_has_calls([call("openbao")])

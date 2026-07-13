@@ -6,10 +6,10 @@ import ops.testing as testing
 import pytest
 from scenario.errors import UncaughtCharmError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmLogrotate(VaultCharmFixtures):
+class TestCharmLogrotate(OpenBaoCharmFixtures):
     @pytest.mark.parametrize("frequency", ["daily", "weekly", "monthly"])
     def test_given_valid_logrotate_frequency_when_configure_then_logrotate_conf_is_written(
         self, frequency: str

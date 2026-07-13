@@ -1,6 +1,6 @@
 # Getting Started (Kubernetes)
 
-In this tutorial, we will deploy Vault on Kubernetes and use it to store a very important secret.
+In this tutorial, we will deploy OpenBao on Kubernetes and use it to store a very important secret.
 
 ## Pre-requisites
 
@@ -37,7 +37,7 @@ Bootstrap a Juju controller:
 juju bootstrap microk8s
 ```
 
-## 3. Deploy Vault
+## 3. Deploy OpenBao
 
 Create a Juju model named `demo`:
 
@@ -45,20 +45,20 @@ Create a Juju model named `demo`:
 juju add-model demo
 ```
 
-Deploy the Vault K8s operator:
+Deploy the OpenBao K8s operator:
 
 ```shell
-juju deploy vault-k8s vault --channel=2.0/edge --trust
+juju deploy openbao-k8s openbao --channel=2.0/edge --trust
 ```
 
 ```{tip}
 The charm declares minimum storage sizes (e.g. 10G for Raft data). You can provision
-larger volumes at deploy time using `--storage vault-raft=50G`. Storage sizes cannot
+larger volumes at deploy time using `--storage openbao-raft=50G`. Storage sizes cannot
 be changed after deployment on Kubernetes. See the
 [Production blueprint](../reference/production_blueprint_k8s.md) for details.
 ```
 
-Deploying Vault will take several minutes, wait for the unit to be in the `blocked/idle` state, awaiting initialisation.
+Deploying OpenBao will take several minutes, wait for the unit to be in the `blocked/idle` state, awaiting initialisation.
 
 ```shell
 $ juju status
@@ -66,56 +66,56 @@ Model  Controller          Cloud/Region        Version  SLA          Timestamp
 demo   microk8s-localhost  microk8s/localhost  3.6.8    unsupported  12:31:45-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-vault           blocked      1  vault-k8s  2.0/edge  380  10.152.183.183  no       Please initialize Vault or integrate with an auto-unseal provider
+openbao           blocked      1  openbao-k8s  2.0/edge  380  10.152.183.183  no       Please initialize OpenBao or integrate with an auto-unseal provider
 
 Unit      Workload  Agent  Address     Ports  Message
-vault/0*  blocked   idle   10.1.0.237         Please initialize Vault or integrate with an auto-unseal provider
+openbao/0*  blocked   idle   10.1.0.237         Please initialize OpenBao or integrate with an auto-unseal provider
 ```
 
-## 4. Set up the Vault CLI
+## 4. Set up the OpenBao CLI
 
-To communicate with Vault via CLI, we need to install the Vault CLI client and set the following environment variables:
+To communicate with OpenBao via CLI, we need to install the OpenBao CLI client and set the following environment variables:
 
-- `VAULT_ADDR`
-- `VAULT_TOKEN`
-- `VAULT_CAPATH`
+- `OPENBAO_ADDR`
+- `BAO_TOKEN`
+- `OPENBAO_CAPATH`
 
-Install the [Vault client](https://snapcraft.io/vault) and [yq](https://snapcraft.io/yq):
+Install the [OpenBao client](https://snapcraft.io/openbao) and [yq](https://snapcraft.io/yq):
 
 ```shell
-sudo snap install vault
+sudo snap install openbao
 sudo snap install yq
 ```
 
-Set the `VAULT_ADDR` environment variable:
+Set the `OPENBAO_ADDR` environment variable:
 
 ```shell
-export VAULT_ADDR=https://$(juju status vault/leader --format=yaml | yq -r '.applications.vault.address'):8200; echo $VAULT_ADDR
+export OPENBAO_ADDR=https://$(juju status openbao/leader --format=yaml | yq -r '.applications.openbao.address'):8200; echo $OPENBAO_ADDR
 ```
 
-Extract and store Vault's CA certificate to a `vault.pem` file:
+Extract and store OpenBao's CA certificate to a `openbao.pem` file:
 
 ```shell
-cert_juju_secret_id=$(juju secrets --format=yaml | yq -r 'to_entries | .[] | select(.value.label == "self-signed-vault-ca-certificate") | .key'); echo $cert_juju_secret_id
-juju show-secret ${cert_juju_secret_id} --reveal --format=yaml | yq -r '.[].content.certificate' > vault.pem
+cert_juju_secret_id=$(juju secrets --format=yaml | yq -r 'to_entries | .[] | select(.value.label == "self-signed-openbao-ca-certificate") | .key'); echo $cert_juju_secret_id
+juju show-secret ${cert_juju_secret_id} --reveal --format=yaml | yq -r '.[].content.certificate' > openbao.pem
 ```
 
-This will put the CA certificate in a file called `vault.pem`. Now, you can point the `vault` client to this file by setting the `VAULT_CAPATH` variable.
+This will put the CA certificate in a file called `openbao.pem`. Now, you can point the `openbao` client to this file by setting the `OPENBAO_CAPATH` variable.
 
 ```shell
-export VAULT_CAPATH=$(pwd)/vault.pem; echo $VAULT_CAPATH
+export OPENBAO_CAPATH=$(pwd)/openbao.pem; echo $OPENBAO_CAPATH
 ```
 
-Validate that Vault is accessible and up and running:
+Validate that OpenBao is accessible and up and running:
 
 ```shell
-vault status
+openbao status
 ```
 
 You should expect the following output.
 
 ```shell
-$ vault status
+$ openbao status
 Key                Value
 ---                -----
 Seal Type          shamir
@@ -131,46 +131,46 @@ Storage Type       raft
 HA Enabled         true
 ```
 
-## 5. Initialise and unseal Vault
+## 5. Initialise and unseal OpenBao
 
-Initialise Vault:
+Initialise OpenBao:
 
 ```shell
-$ vault operator init -key-shares=1 -key-threshold=1
+$ bao operator init -key-shares=1 -key-threshold=1
 Unseal Key 1: NXw7vSzWOnNuNF2v5aEkQcQy/TdTuryYS9Qz3hxDS38=
 
 Initial Root Token: hvs.0d26h3eSnlZzpUoVu49Sj64V
 
-Vault initialized with 1 key shares and a key threshold of 1. Please securely
-distribute the key shares printed above. When the Vault is re-sealed,
+OpenBao initialized with 1 key shares and a key threshold of 1. Please securely
+distribute the key shares printed above. When the OpenBao is re-sealed,
 restarted, or stopped, you must supply at least 1 of these keys to unseal it
 before it can start servicing requests.
 
-Vault does not store the generated root key. Without at least 1 keys to
-reconstruct the root key, Vault will remain permanently sealed!
+OpenBao does not store the generated root key. Without at least 1 keys to
+reconstruct the root key, OpenBao will remain permanently sealed!
 
 It is possible to generate new unseal keys, provided you have a quorum of
-existing unseal keys shares. See "vault operator rekey" for more information.
+existing unseal keys shares. See "bao operator rekey" for more information.
 ```
 
-Set the `VAULT_TOKEN` variable using the root token:
+Set the `BAO_TOKEN` variable using the root token:
 
 ```
-export VAULT_TOKEN=hvs.0d26h3eSnlZzpUoVu49Sj64V
+export BAO_TOKEN=hvs.0d26h3eSnlZzpUoVu49Sj64V
 ```
 
-Unseal Vault using the unseal key:
+Unseal OpenBao using the unseal key:
 
 ```shell
-vault operator unseal NXw7vSzWOnNuNF2v5aEkQcQy/TdTuryYS9Qz3hxDS38=
+bao operator unseal NXw7vSzWOnNuNF2v5aEkQcQy/TdTuryYS9Qz3hxDS38=
 ```
 
-## 6. Authorise the Vault charm
+## 6. Authorise the OpenBao charm
 
 Create a token:
 
 ```
-$vault token create -ttl=10m
+$openbao token create -ttl=10m
 Key                  Value
 ---                  -----
 token                hvs.M9vfjsKfv1zOgU6QTuFJblwP
@@ -191,13 +191,13 @@ juju add-secret one-time-token token=hvs.0d26h3eSnlZzpUoVu49Sj64V
 Grant this secret to the charm
 
 ```shell
-juju grant-secret one-time-token vault
+juju grant-secret one-time-token openbao
 ```
 
-Authorise the charm to interact with Vault using the token value from the secret:
+Authorise the charm to interact with OpenBao using the token value from the secret:
 
 ```shell
-juju run vault/leader authorize-charm secret-id="cq3rldnmp25c7bvnhim0"
+juju run openbao/leader authorize-charm secret-id="cq3rldnmp25c7bvnhim0"
 ```
 
 You may now remove the secret
@@ -211,7 +211,7 @@ juju remove-secret one-time-token
 Enable the `kv` secret engine:
 
 ```
-vault secrets enable -version=2 kv
+openbao secrets enable -version=2 kv
 ```
 
 Create a secret under the `kv/mypasswords` path with these attributes:
@@ -220,7 +220,7 @@ Create a secret under the `kv/mypasswords` path with these attributes:
 - value: `1jioaf123901jdeja`
 
 ```shell
-vault kv put kv/mypasswords bob=1jioaf123901jdeja
+openbao kv put kv/mypasswords bob=1jioaf123901jdeja
 ```
 
 Good job, you created your first secret!
@@ -228,13 +228,13 @@ Good job, you created your first secret!
 You can now retrieve it:
 
 ```shell
-vault kv get kv/mypasswords
+openbao kv get kv/mypasswords
 ```
 
 And delete it:
 
 ```shell
-vault kv delete kv/mypasswords
+openbao kv delete kv/mypasswords
 ```
 
 ## 8. Destroy the environment
@@ -250,5 +250,5 @@ Uninstall all the installed packages:
 ```shell
 sudo snap remove juju --purge
 sudo snap remove yq --purge
-sudo snap remove vault --purge
+sudo snap remove openbao --purge
 ```

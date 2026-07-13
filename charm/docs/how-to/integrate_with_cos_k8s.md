@@ -1,6 +1,6 @@
 # Integrate with COS (K8s)
 
-In this guide, we will cover how-to integrate Vault K8s with Canonical Observability Stack (COS) for metrics, logs, and dashboards.
+In this guide, we will cover how-to integrate OpenBao K8s with Canonical Observability Stack (COS) for metrics, logs, and dashboards.
 
 ## Pre-requisites
 
@@ -29,10 +29,10 @@ juju offer cos.grafana:grafana-dashboard
 
 ## 2. Integrate with COS
 
-Switch to the model in which Vault is deployed:
+Switch to the model in which OpenBao is deployed:
 
 ```
-juju switch <vault model>
+juju switch <openbao model>
 ```
 
 Deploy Grafana Agent:
@@ -41,12 +41,12 @@ Deploy Grafana Agent:
 juju deploy grafana-agent-k8s
 ```
 
-Integrate Vault K8s with Grafana Agent:
+Integrate OpenBao K8s with Grafana Agent:
 
 ```
-juju integrate vault-k8s:logging grafana-agent-k8s
-juju integrate vault-k8s:metrics-endpoint grafana-agent-k8s
-juju integrate vault-k8s:grafana-dashboard grafana-agent-k8s
+juju integrate openbao-k8s:logging grafana-agent-k8s
+juju integrate openbao-k8s:metrics-endpoint grafana-agent-k8s
+juju integrate openbao-k8s:grafana-dashboard grafana-agent-k8s
 ```
 
 Consume the COS offers:
@@ -65,7 +65,7 @@ juju integrate loki:logging grafana-agent-k8s:logging-consumer
 juju integrate grafana:grafana-dashboard grafana-agent-k8s:grafana-dashboards-provider
 ``` 
 
-## 3. Access the Vault dashboard
+## 3. Access the OpenBao dashboard
 
 Switch to the cos model:
 
@@ -78,7 +78,7 @@ Retrieve the Grafana admin password:
 juju run grafana/leader get-admin-password
 ```
 
-Log in Grafana, and select the Vault dashboard.
+Log in Grafana, and select the OpenBao dashboard.
 
 ```{image} ../images/cos.png
 :alt: Canonical Observability Stack

@@ -62,11 +62,14 @@ def collect_juju_crashdump(juju: jubilant.Juju, request: pytest.FixtureRequest) 
     yield
     if module_file in _module_failures and model is not None:
         logger.info("Running juju-crashdump for model %s", model)
-        subprocess.run(
-            ["juju-crashdump", "-s", "-m", model, "-o", "."],
-            check=False,
-            timeout=120,
-        )
+        try:
+            subprocess.run(
+                ["juju-crashdump", "-s", "-m", model, "-o", "."],
+                check=False,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            logger.warning("juju-crashdump not found, skipping crash dump collection")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -87,6 +90,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Path to the KV requirer charm",
     )
     parser.addoption(
+        "--snap_path",
+        action="store",
+        required=True,
+        help="Path to the openbao snap to attach as the charm's snap resource",
+    )
+    parser.addoption(
         "--no-deploy",
         action="store_true",
         default=False,
@@ -103,18 +112,26 @@ def pytest_configure(config: pytest.Config) -> None:
       config: The pytest configuration object.
     """
     charm_path = str(config.getoption("--charm_path"))
+    snap_path = str(config.getoption("--snap_path"))
     kv_requirer_charm_path = config.getoption("--kv_requirer_charm_path")
     if not charm_path:
         pytest.exit("The --charm_path option is required. Tests aborted.")
     if not os.path.exists(charm_path):
         pytest.exit(f"The path specified does not exist: {charm_path}")
+    if not snap_path:
+        pytest.exit("The --snap_path option is required. Tests aborted.")
+    if not os.path.exists(snap_path):
+        pytest.exit(f"The path specified does not exist: {snap_path}")
+    import config as test_config
+
+    test_config.OPENBAO_SNAP_PATH = str(Path(snap_path).resolve())
     if kv_requirer_charm_path and not os.path.exists(str(kv_requirer_charm_path)):
         pytest.exit(f"The path specified does not exist: {kv_requirer_charm_path}")
     config.addinivalue_line("markers", "abort_on_fail: abort remaining tests in module on failure")
 
 
 @pytest.fixture(scope="session")
-def vault_charm_path(request: pytest.FixtureRequest) -> Path:
+def openbao_charm_path(request: pytest.FixtureRequest) -> Path:
     return Path(str(request.config.getoption("--charm_path"))).resolve()
 
 

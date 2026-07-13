@@ -1,11 +1,11 @@
 # Copyright 2025 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-resource "juju_application" "vault" {
+resource "juju_application" "openbao" {
   name = var.app_name
 
   charm {
-    name     = "vault"
+    name     = "openbao"
     channel  = var.channel
     revision = var.revision
     base     = var.base

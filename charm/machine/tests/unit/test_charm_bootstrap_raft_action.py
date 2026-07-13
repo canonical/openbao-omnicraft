@@ -5,13 +5,13 @@
 
 import ops.testing as testing
 import pytest
+from openbao.openbao_managers import ManagerError
 from ops.testing import ActionFailed
-from vault.vault_managers import ManagerError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmBootstrapRaftAction(VaultCharmFixtures):
+class TestCharmBootstrapRaftAction(OpenBaoCharmFixtures):
     def test_given_no_network_when_bootstrap_raft_action_then_fails(self):
         state_in = testing.State(
             leader=True,
@@ -24,14 +24,14 @@ class TestCharmBootstrapRaftAction(VaultCharmFixtures):
     def test_when_bootstrap_raft_raises_manager_error_then_action_fails_with_error_message(self):
         self.mock_raft_manager.bootstrap.side_effect = ManagerError("some error message")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             leader=False,
             relations=[peer_relation],
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },

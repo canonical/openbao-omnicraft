@@ -7,20 +7,20 @@ import tempfile
 
 import ops.testing as testing
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmInstall(VaultCharmFixtures):
+class TestCharmInstall(OpenBaoCharmFixtures):
     def test_given_existing_data_exists_when_install_then_existing_data_is_removed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            vault_raft_mount = testing.Mount(
-                location="/vault/raft",
+            openbao_raft_mount = testing.Mount(
+                location="/openbao/raft",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
-                mounts={"vault-raft": vault_raft_mount},
+                mounts={"openbao-raft": openbao_raft_mount},
             )
             state_in = testing.State(containers=[container])
             with open(f"{temp_dir}/vault.db", "w") as f:

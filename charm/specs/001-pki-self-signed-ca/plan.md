@@ -5,19 +5,19 @@
 
 ## Summary
 
-Enable the Vault charm's PKI secrets engine without requiring an external CA charm by generating a self-signed CA certificate directly within Vault. When `pki_ca_common_name` is configured and no `tls-certificates-pki` relation exists, the charm generates a self-signed CA, stores the private key in a Juju secret, imports the CA into the existing PKI mount, and uses it to issue certificates for `vault-pki` requirers.
+Enable the OpenBao charm's PKI secrets engine without requiring an external CA charm by generating a self-signed CA certificate directly within OpenBao. When `pki_ca_common_name` is configured and no `tls-certificates-pki` relation exists, the charm generates a self-signed CA, stores the private key in a Juju secret, imports the CA into the existing PKI mount, and uses it to issue certificates for `openbao-pki` requirers.
 
 ## Technical Context
 
 **Language/Version**: Python 3.11  
-**Primary Dependencies**: `ops` (Juju charm framework), `hvac` (HashiCorp Vault client), `charmlibs.interfaces.tls_certificates` (TLS certificates interface library)  
-**Storage**: Vault PKI secrets engine (runtime), Juju secrets (CA private key persistence)  
+**Primary Dependencies**: `ops` (Juju charm framework), `hvac` (HashiCorp OpenBao client), `charmlibs.interfaces.tls_certificates` (TLS certificates interface library)  
+**Storage**: OpenBao PKI secrets engine (runtime), Juju secrets (CA private key persistence)  
 **Testing**: pytest with `ops.testing` (scenario testing), patched at module level  
 **Target Platform**: Juju (Kubernetes and machine charms)  
-**Project Type**: Juju charm (monorepo: `k8s/`, `machine/`, `vault-package/`)  
+**Project Type**: Juju charm (monorepo: `k8s/`, `machine/`, `openbao-package/`)  
 **Performance Goals**: No additional targets beyond existing charm behavior  
 **Constraints**: Must maintain backward compatibility with external CA mode; changes must be vendored to both `k8s/` and `machine/`  
-**Scale/Scope**: Single Vault deployment per charm; CA validity default 10 years
+**Scale/Scope**: Single OpenBao deployment per charm; CA validity default 10 years
 
 ## Constitution Check
 
@@ -26,7 +26,7 @@ Enable the Vault charm's PKI secrets engine without requiring an external CA cha
 | Principle | Status | Notes |
 |-----------|--------|-------|
 | Maintain specs as living documents | Pass | Spec created and updated |
-| Test-First | Pass | Unit tests in `vault-package/tests/` + charm-specific scenario tests |
+| Test-First | Pass | Unit tests in `openbao-package/tests/` + charm-specific scenario tests |
 | Integration Testing | Pass | New integration test in `tests/integration/test_pki.py` style |
 | Observability | Pass | Logging follows existing lazy `%s` style |
 | Simplicity | Pass | Single self-signed CA approach chosen; no root CA hierarchy |
@@ -45,11 +45,11 @@ specs/001-pki-self-signed-ca/
 ### Source Code (repository root)
 
 ```text
-vault-package/vault/
-├── vault_client.py      # Add generate_self_signed_ca() method
-├── vault_managers.py    # Modify PKIManager for self-signed mode
+openbao-package/openbao/
+├── openbao_client.py      # Add generate_self_signed_ca() method
+├── openbao_managers.py    # Modify PKIManager for self-signed mode
 ├── juju_facade.py       # No changes needed (secret methods exist)
-└── testing/mocks.py     # Add mock for new VaultClient method
+└── testing/mocks.py     # Add mock for new OpenBaoClient method
 
 k8s/src/charm.py         # Remove blocked status for missing tls-certificates-pki
                          # Pass self-signed mode flag to PKIManager
@@ -60,7 +60,7 @@ machine/src/charm.py     # Mirror changes from k8s/src/charm.py
 machine/tests/unit/      # Mirror test updates from k8s/
 ```
 
-**Structure Decision**: Changes are concentrated in `vault-package/` (shared library) and `charm.py` in each charm. The `vault-package/` changes are vendored to both charms.
+**Structure Decision**: Changes are concentrated in `openbao-package/` (shared library) and `charm.py` in each charm. The `openbao-package/` changes are vendored to both charms.
 
 ## Complexity Tracking
 
@@ -72,21 +72,21 @@ No constitution violations. The single self-signed CA approach was explicitly ch
 
 **Existing PKI Architecture**:
 
-1. `PKIManager` in `vault-package/vault/vault_managers.py` currently:
+1. `PKIManager` in `openbao-package/openbao/openbao_managers.py` currently:
    - Requires `TLSCertificatesRequiresV4` (`tls_certificates_pki`) and `CertificateRequestAttributes`
    - Gets intermediate CA from `tls_certificates_pki.get_assigned_certificate()`
-   - Imports CA via `VaultClient.import_ca_certificate_and_key()`
-   - Issues certs via `VaultClient.sign_pki_certificate_signing_request()`
+   - Imports CA via `OpenBaoClient.import_ca_certificate_and_key()`
+   - Issues certs via `OpenBaoClient.sign_pki_certificate_signing_request()`
 
-2. `VaultClient` in `vault-package/vault/vault_client.py` has:
+2. `OpenBaoClient` in `openbao-package/openbao/openbao_client.py` has:
    - `import_ca_certificate_and_key(mount, certificate, private_key)` — imports a PEM bundle
    - `list_pki_issuers(mount)` — returns issuer refs
-   - No method yet to generate a self-signed CA via Vault's `pki/root/generate/internal`
+   - No method yet to generate a self-signed CA via OpenBao's `pki/root/generate/internal`
 
 3. `charm.py` (both k8s and machine):
    - `_configure_pki_secrets_engine()` creates `PKIManager` and calls `configure()`
-   - `_sync_vault_pki()` creates `PKIManager` and calls `sync()`
-   - `_on_collect_status()` blocks with `"tls-certificates-pki relation is missing..."` when `vault-pki` exists but `tls-certificates-pki` does not
+   - `_sync_openbao_pki()` creates `PKIManager` and calls `sync()`
+   - `_on_collect_status()` blocks with `"tls-certificates-pki relation is missing..."` when `openbao-pki` exists but `tls-certificates-pki` does not
 
 4. `JujuFacade` has all needed secret methods:
    - `set_app_secret_content(content, label)` — create or update app secret
@@ -102,14 +102,14 @@ No constitution violations. The single self-signed CA approach was explicitly ch
 
 | Approach | How | Pros | Cons |
 |----------|-----|------|------|
-| A. Python crypto library (`charmlibs`) | Use `generate_private_key()` + `generate_ca()` in Python, then import bundle | Simple, no new Vault API methods needed | CA private key generated outside Vault, then imported |
-| B. Vault native (`generate_root`) | Use `hvac.Client.secrets.pki.generate_root("internal", ...)` | CA generated entirely within Vault; private key can be returned or kept in Vault | Requires new `VaultClient` method; response handling |
+| A. Python crypto library (`charmlibs`) | Use `generate_private_key()` + `generate_ca()` in Python, then import bundle | Simple, no new OpenBao API methods needed | CA private key generated outside OpenBao, then imported |
+| B. OpenBao native (`generate_root`) | Use `hvac.Client.secrets.pki.generate_root("internal", ...)` | CA generated entirely within OpenBao; private key can be returned or kept in OpenBao | Requires new `OpenBaoClient` method; response handling |
 
-**Decision**: Use **Approach B** — Vault native generation. It aligns with the feature description ("using a Vault self-signed CA") and keeps the private key lifecycle closer to Vault.
+**Decision**: Use **Approach B** — OpenBao native generation. It aligns with the feature description ("using a OpenBao self-signed CA") and keeps the private key lifecycle closer to OpenBao.
 
 ## Phase 1: Design
 
-### Component: `VaultClient`
+### Component: `OpenBaoClient`
 
 **New method**:
 ```python
@@ -125,11 +125,11 @@ def generate_self_signed_ca(
     organization: str | None = None,
     organizational_unit: str | None = None,
 ) -> tuple[str, str]:
-    """Generate a self-signed CA certificate in Vault.
+    """Generate a self-signed CA certificate in OpenBao.
 
     Uses the PKI secrets engine's /root/generate/internal endpoint.
     Returns the certificate (PEM) and the private key (PEM).
-    Vault returns the private key in the response; the caller is responsible
+    OpenBao returns the private key in the response; the caller is responsible
     for storing it securely.
 
     Args:
@@ -155,7 +155,7 @@ def generate_self_signed_ca(
 
 **Constructor changes**: Accept an optional `self_signed_ca: bool` flag (default `False`). When `True`, the manager skips all `tls_certificates_pki` interactions.
 
-**New constant**: `SELF_SIGNED_CA_SECRET_LABEL = "vault-pki-self-signed-ca"`
+**New constant**: `SELF_SIGNED_CA_SECRET_LABEL = "openbao-pki-self-signed-ca"`
 
 **New method**:
 ```python
@@ -166,7 +166,7 @@ def _generate_self_signed_ca(self) -> tuple[str, str]:
 Logic:
 1. Check Juju secret for existing CA cert + key
 2. If exists and matches current config (common_name, etc.), return it
-3. Otherwise, generate new CA using `VaultClient.generate_self_signed_ca()`
+3. Otherwise, generate new CA using `OpenBaoClient.generate_self_signed_ca()`
 4. Store new cert + key in Juju secret
 5. Return cert + key
 
@@ -204,7 +204,7 @@ if not self._self_signed_ca:
 def configure(self):
     if not self._juju_facade.is_leader:
         return
-    self._vault_client.enable_secrets_engine(SecretsBackend.PKI, self._mount_point)
+    self._openbao_client.enable_secrets_engine(SecretsBackend.PKI, self._mount_point)
 
     if self._self_signed_ca:
         self._configure_self_signed_ca()
@@ -254,7 +254,7 @@ manager = PKIManager(
 manager.configure()
 ```
 
-**Changes to `_sync_vault_pki()`**:
+**Changes to `_sync_openbao_pki()`**:
 
 Same `use_self_signed` detection, pass to `PKIManager`.
 
@@ -264,11 +264,11 @@ No changes needed. `calculate_certificates_ttl()` works with any `Certificate` o
 
 ### Component: Tests
 
-**Unit tests in `vault-package/tests/unit/test_vault_client.py`**:
+**Unit tests in `openbao-package/tests/unit/test_openbao_client.py`**:
 - Test `generate_self_signed_ca` calls hvac correctly
 - Test extracts cert and key from response
 
-**Unit tests in `k8s/tests/unit/lib/test_vault_managers.py`**:
+**Unit tests in `k8s/tests/unit/lib/test_openbao_managers.py`**:
 - Test `PKIManager.configure()` in self-signed mode generates CA when no secret exists
 - Test `PKIManager.configure()` in self-signed mode reuses existing CA when config unchanged
 - Test `PKIManager.configure()` in self-signed mode regenerates CA when config changed
@@ -284,7 +284,7 @@ No changes needed. `calculate_certificates_ttl()` works with any `Certificate` o
 - Add: `test_given_self_signed_pki_and_requirer_when_configure_then_certificate_issued`
 
 **Integration tests in `k8s/tests/integration/test_pki.py`**:
-- New test: deploy Vault without `SELF_SIGNED_CERTIFICATES_APPLICATION_NAME`, set `pki_ca_common_name`, relate `vault-pki` requirer, assert certificate is issued
+- New test: deploy OpenBao without `SELF_SIGNED_CERTIFICATES_APPLICATION_NAME`, set `pki_ca_common_name`, relate `openbao-pki` requirer, assert certificate is issued
 
 ### Data Flow Diagram
 
@@ -309,17 +309,17 @@ No changes needed. `calculate_certificates_ttl()` works with any `Certificate` o
                            └──────────┘              │
                                                      │
                            ┌──────────┐              │
-                           │ VaultClient  │◀──────────┤ generate_self_signed_ca()
+                           │ OpenBaoClient  │◀──────────┤ generate_self_signed_ca()
                            │ generate_root│            │ (hvac pki/root/generate/internal)
                            └──────────┘              │
                                                      │
                            ┌──────────┐              │
-                           │ Vault PKI    │◀──────────┤ import_ca_certificate_and_key()
+                           │ OpenBao PKI    │◀──────────┤ import_ca_certificate_and_key()
                            │  (mount)     │            │
                            └──────────┘              │
                                                      │
                            ┌──────────┐              │
-                           │ vault-pki    │◀──────────┤ sync() — issue certs
+                           │ openbao-pki    │◀──────────┤ sync() — issue certs
                            │ requirers    │
                            └──────────┘
 ```
@@ -328,27 +328,27 @@ No changes needed. `calculate_certificates_ttl()` works with any `Certificate` o
 
 Tasks are generated by `/speckit.tasks`. Key work packages:
 
-1. **VaultClient**: Add `generate_self_signed_ca()` method + unit test
+1. **OpenBaoClient**: Add `generate_self_signed_ca()` method + unit test
 2. **PKIManager**: Refactor for self-signed mode + unit tests
 3. **charm.py (k8s)**: Update status logic, integrate PKIManager with self-signed flag + unit tests
 4. **charm.py (machine)**: Mirror k8s changes
 5. **Integration test**: Self-signed CA end-to-end test
-6. **Vendor sync**: Run `make vendor-shared-code` in k8s/ and machine/ to sync vault-package changes
+6. **Vendor sync**: Run `make vendor-shared-code` in k8s/ and machine/ to sync openbao-package changes
 
 ## Rollback Strategy
 
 If the feature causes regressions in external CA mode:
 - The `self_signed_ca` flag in `PKIManager` defaults to `False`
 - External CA code path is unchanged when `self_signed_ca=False`
-- Status logic change only affects the case where `vault-pki` exists but `tls-certificates-pki` does not — previously always blocked, now conditionally active
+- Status logic change only affects the case where `openbao-pki` exists but `tls-certificates-pki` does not — previously always blocked, now conditionally active
 - Revert: set `self_signed_ca=False` unconditionally, restore old blocked status
 
 ## Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| CA private key leaked in logs | Low | Critical | Never log private key; Vault client returns it, JujuFacade stores it directly |
+| CA private key leaked in logs | Low | Critical | Never log private key; OpenBao client returns it, JujuFacade stores it directly |
 | Self-signed CA mode accidentally activates | Low | High | Explicit flag; only set when relation does not exist |
 | CA rotation causes service disruption | Medium | Medium | Old issuer remains until new is default; role TTL updated atomically |
 | hvac `generate_root` response format changes | Low | Medium | Unit test mocks response format; integration test verifies real behavior |
-| `vault-package` changes break machine charm | Low | High | Test both `tox` in k8s/ and machine/ after vendor sync |
+| `openbao-package` changes break machine charm | Low | High | Test both `tox` in k8s/ and machine/ after vendor sync |

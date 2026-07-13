@@ -1,4 +1,4 @@
-# Contributing to the `vault-k8s` charm
+# Contributing to the `openbao-k8s` charm
 
 To make contributions to this charm, you'll need a working [development setup](https://juju.is/docs/sdk/dev-setup).
 
@@ -40,18 +40,18 @@ tox                      # runs 'format', 'lint', 'static', and 'unit' environme
 To run the integration tests locally, you will need to have a Juju controller
 on `microk8s` active.
 
-First, you need to build the `vault-k8s` charm, as well as the test `vault-kv-requirer` charm. From the `k8s/` directory, run the following commands:
+First, you need to build the `openbao-k8s` charm, as well as the test `openbao-kv-requirer` charm. From the `k8s/` directory, run the following commands:
 
 ```shell
 make copy-test-libs
 charmcraft pack
-charmcraft pack --project-dir tests/integration/vault_kv_requirer_operator/
+charmcraft pack --project-dir tests/integration/openbao_kv_requirer_operator/
 ```
 
 The integration tests are run using `tox`. You can run them with:
 
 ```shell
-tox run -e integration -- --charm_path ./vault-k8s_amd64.charm --kv_requirer_charm_path ./vault-kv-requirer_amd64.charm -k test_autounseal.py
+tox run -e integration -- --charm_path ./openbao-k8s_amd64.charm --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm -k test_autounseal.py
 ```
 
 Where the `-k` argument is the test suite you want to run.
@@ -59,7 +59,7 @@ Where the `-k` argument is the test suite you want to run.
 Or, to run a specific test:
 
 ```shell
-tox run -e integration -- --charm_path ./vault-k8s_amd64.charm --kv_requirer_charm_path ./vault-kv-requirer_amd64.charm -k test_given_vault_is_deployed_when_integrate_another_vault_then_autounseal_activated
+tox run -e integration -- --charm_path ./openbao-k8s_amd64.charm --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm -k test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounseal_activated
 ```
 
 At this time, each integration test suite must be run separately.

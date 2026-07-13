@@ -12,36 +12,36 @@ import requests
 from config import (
     APPLICATION_NAME,
     JUJU_FAST_INTERVAL,
-    NUM_VAULT_UNITS,
+    NUM_OPENBAO_UNITS,
     SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
     SELF_SIGNED_CERTIFICATES_CHANNEL,
     SELF_SIGNED_CERTIFICATES_REVISION,
     UNMATCHING_COMMON_NAME,
 )
 from helpers import (
-    deploy_vault,
+    deploy_openbao,
     fast_forward,
     get_leader_unit_name,
+    get_openbao_token_and_unseal_key,
     get_unit_address,
-    get_vault_token_and_unseal_key,
-    initialize_unseal_authorize_vault,
+    initialize_unseal_authorize_openbao,
 )
 
 logger = logging.getLogger(__name__)
 
-VaultInit = namedtuple("VaultInit", ["root_token", "unseal_key"])
+OpenBaoInit = namedtuple("OpenBaoInit", ["root_token", "unseal_key"])
 
 ACME_MOUNT = "charm-acme"
 
 
 @pytest.fixture(scope="module")
-def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> VaultInit:
+def deploy(juju: jubilant.Juju, openbao_charm_path: Path, skip_deploy: bool) -> OpenBaoInit:
     """Build and deploy the application."""
     if skip_deploy:
         logger.info("Skipping deployment due to --no-deploy flag")
-        root_token, key = get_vault_token_and_unseal_key(juju, APPLICATION_NAME)
-        return VaultInit(root_token, key)
-    deploy_vault(juju, charm_path=vault_charm_path, num_units=NUM_VAULT_UNITS)
+        root_token, key = get_openbao_token_and_unseal_key(juju, APPLICATION_NAME)
+        return OpenBaoInit(root_token, key)
+    deploy_openbao(juju, charm_path=openbao_charm_path, num_units=NUM_OPENBAO_UNITS)
     juju.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
         channel=SELF_SIGNED_CERTIFICATES_CHANNEL,
@@ -52,18 +52,18 @@ def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> Va
         juju.wait(
             lambda s: (
                 jubilant.all_blocked(s, APPLICATION_NAME)
-                and len(s.apps[APPLICATION_NAME].units) == NUM_VAULT_UNITS
+                and len(s.apps[APPLICATION_NAME].units) == NUM_OPENBAO_UNITS
                 and jubilant.all_active(s, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME)
             ),
         )
 
-    root_token, unseal_key = initialize_unseal_authorize_vault(juju, APPLICATION_NAME)
-    return VaultInit(root_token, unseal_key)
+    root_token, unseal_key = initialize_unseal_authorize_openbao(juju, APPLICATION_NAME)
+    return OpenBaoInit(root_token, unseal_key)
 
 
 @pytest.mark.abort_on_fail
 def test_given_tls_certificates_acme_relation_when_integrate_then_status_is_active_and_acme_configured(
-    juju: jubilant.Juju, deploy: VaultInit
+    juju: jubilant.Juju, deploy: OpenBaoInit
 ):
     juju.config(
         APPLICATION_NAME,

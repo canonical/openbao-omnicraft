@@ -2,9 +2,9 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Charm for Vault running on Kubernetes.
+"""Charm for OpenBao running on Kubernetes.
 
-For more information on Vault, please visit https://www.vaultproject.io/.
+For more information on OpenBao, please visit https://openbao.org/.
 """
 
 import json
@@ -27,39 +27,38 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
+from charms.openbao_k8s.v0.openbao_kv import OpenBaoKvClientDetachedEvent, OpenBaoKvProvides
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from charms.traefik_k8s.v1.ingress_per_unit import IngressPerUnitRequirer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
-from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
-from ops import CharmBase, MaintenanceStatus, main, pebble
-from ops.charm import ActionEvent, CollectStatusEvent, InstallEvent, RemoveEvent
-from ops.framework import EventBase
-from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
-from ops.pebble import ChangeError, Layer
-from vault.juju_facade import JujuFacade, NoSuchSecretError, SecretRemovedError, TransientJujuError
-from vault.vault_autounseal import VaultAutounsealProvides, VaultAutounsealRequires
-from vault.vault_client import (
+from openbao.juju_facade import (
+    JujuFacade,
+    NoSuchSecretError,
+    SecretRemovedError,
+    TransientJujuError,
+)
+from openbao.openbao_autounseal import OpenBaoAutounsealProvides, OpenBaoAutounsealRequires
+from openbao.openbao_client import (
     AppRole,
-    AuditDeviceType,
+    OpenBaoAuthenticationError,
+    OpenBaoClient,
+    OpenBaoClientError,
     SecretsBackend,
     Token,
-    VaultAuthenticationError,
-    VaultClient,
-    VaultClientError,
 )
-from vault.vault_helpers import (
+from openbao.openbao_helpers import (
     AutounsealConfiguration,
     allowed_domains_config_is_valid,
     common_name_config_is_valid,
     config_file_content_matches,
     get_env_var,
-    render_vault_config_file,
+    render_openbao_config_file,
     sans_dns_config_is_valid,
     seal_type_has_changed,
 )
-from vault.vault_managers import (
+from openbao.openbao_managers import (
     TLS_CERTIFICATE_ACCESS_RELATION_NAME,
     TLS_CERTIFICATES_ACME_RELATION_NAME,
     TLS_CERTIFICATES_PKI_RELATION_NAME,
@@ -70,11 +69,16 @@ from vault.vault_managers import (
     File,
     KVManager,
     ManagerError,
+    OpenBaoCertsError,
     PKIManager,
     RaftManager,
     TLSManager,
-    VaultCertsError,
 )
+from ops import CharmBase, MaintenanceStatus, main, pebble
+from ops.charm import ActionEvent, CollectStatusEvent, InstallEvent, RemoveEvent
+from ops.framework import EventBase
+from ops.model import ActiveStatus, BlockedStatus, ModelError, Relation, WaitingStatus
+from ops.pebble import ChangeError, Layer
 
 from container import Container
 
@@ -82,27 +86,27 @@ logger = logging.getLogger(__name__)
 
 APPROLE_ROLE_NAME = "charm"
 AUTOUNSEAL_MOUNT_PATH = "charm-autounseal"
-AUTOUNSEAL_PROVIDES_RELATION_NAME = "vault-autounseal-provides"
-AUTOUNSEAL_REQUIRES_RELATION_NAME = "vault-autounseal-requires"
+AUTOUNSEAL_PROVIDES_RELATION_NAME = "openbao-autounseal-provides"
+AUTOUNSEAL_REQUIRES_RELATION_NAME = "openbao-autounseal-requires"
 CHARM_POLICY_NAME = "charm-access"
 CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
 CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
-CONFIG_TEMPLATE_NAME = "vault.hcl.j2"
-CONTAINER_NAME = "vault"
-CONTAINER_TLS_FILE_DIRECTORY_PATH = "/vault/certs"
-KV_RELATION_NAME = "vault-kv"
+CONFIG_TEMPLATE_NAME = "openbao.hcl.j2"
+CONTAINER_NAME = "openbao"
+CONTAINER_TLS_FILE_DIRECTORY_PATH = "/openbao/certs"
+KV_RELATION_NAME = "openbao-kv"
 LOG_FORWARDING_RELATION_NAME = "logging"
-PEER_RELATION_NAME = "vault-peers"
+PEER_RELATION_NAME = "openbao-peers"
 PKI_MOUNT = "charm-pki"
 ACME_MOUNT = "charm-acme"
-PKI_RELATION_NAME = "vault-pki"
+PKI_RELATION_NAME = "openbao-pki"
 PKI_ROLE_NAME = "charm"
 ACME_ROLE_NAME = "charm"
 PROMETHEUS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
 S3_RELATION_NAME = "s3-parameters"
-VAULT_CHARM_APPROLE_SECRET_LABEL = "vault-approle-auth-details"
-VAULT_CONFIG_FILE_PATH = "/vault/config/vault.hcl"
-VAULT_STORAGE_PATH = "/vault/raft"
+OPENBAO_CHARM_APPROLE_SECRET_LABEL = "openbao-approle-auth-details"
+OPENBAO_CONFIG_FILE_PATH = "/openbao/config/openbao.hcl"
+OPENBAO_STORAGE_PATH = "/openbao/raft"
 INGRESS_PER_APP_RELATION_NAME = "ingress"
 INGRESS_PER_UNIT_RELATION_NAME = "ingress-per-unit"
 
@@ -112,11 +116,11 @@ INGRESS_PER_UNIT_RELATION_NAME = "ingress-per-unit"
     server_cert="_tracing_server_cert",
     extra_types=(TLSCertificatesProvidesV4,),
 )
-class VaultCharm(CharmBase):
-    """Main class to handle Juju events for the vault-k8s charm."""
+class OpenBaoCharm(CharmBase):
+    """Main class to handle Juju events for the openbao-k8s charm."""
 
-    VAULT_PORT = 8200
-    VAULT_CLUSTER_PORT = 8201
+    OPENBAO_PORT = 8200
+    OPENBAO_CLUSTER_PORT = 8201
 
     def __init__(self, *args: Any):
         super().__init__(*args)
@@ -128,9 +132,9 @@ class VaultCharm(CharmBase):
         )
         self.juju_facade = JujuFacade(self)
         self._container = Container(container=self.unit.get_container(self._container_name))
-        self.unit.set_ports(self.VAULT_PORT)
-        self.vault_kv = VaultKvProvides(self, KV_RELATION_NAME)
-        self.vault_pki = TLSCertificatesProvidesV4(
+        self.unit.set_ports(self.OPENBAO_PORT)
+        self.openbao_kv = OpenBaoKvProvides(self, KV_RELATION_NAME)
+        self.openbao_pki = TLSCertificatesProvidesV4(
             charm=self,
             relationship_name=PKI_RELATION_NAME,
         )
@@ -154,10 +158,10 @@ class VaultCharm(CharmBase):
         self._tracing_endpoint, self._tracing_server_cert = charm_tracing_config(
             self.tracing, cert_path=None
         )
-        self.vault_autounseal_provides = VaultAutounsealProvides(
+        self.openbao_autounseal_provides = OpenBaoAutounsealProvides(
             self, AUTOUNSEAL_PROVIDES_RELATION_NAME
         )
-        self.vault_autounseal_requires = VaultAutounsealRequires(
+        self.openbao_autounseal_requires = OpenBaoAutounsealRequires(
             self, AUTOUNSEAL_REQUIRES_RELATION_NAME
         )
         self.grafana_dashboards = GrafanaDashboardProvider(self)
@@ -168,7 +172,7 @@ class VaultCharm(CharmBase):
                     "scheme": "https",
                     "tls_config": {"insecure_skip_verify": True},
                     "metrics_path": "/v1/sys/metrics",
-                    "static_configs": [{"targets": [f"*:{self.VAULT_PORT}"]}],
+                    "static_configs": [{"targets": [f"*:{self.OPENBAO_PORT}"]}],
                 }
             ],
             alert_rules_path=PROMETHEUS_ALERT_RULES_PATH,
@@ -209,7 +213,7 @@ class VaultCharm(CharmBase):
         )
         self.ingress_per_app = IngressPerAppRequirer(
             charm=self,
-            port=self.VAULT_PORT,
+            port=self.OPENBAO_PORT,
             strip_prefix=True,
             scheme=lambda: "https",
             relation_name=INGRESS_PER_APP_RELATION_NAME,
@@ -217,7 +221,7 @@ class VaultCharm(CharmBase):
         self.ingress_per_unit = IngressPerUnitRequirer(
             self,
             relation_name=INGRESS_PER_UNIT_RELATION_NAME,
-            port=self.VAULT_PORT,
+            port=self.OPENBAO_PORT,
             strip_prefix=True,
             redirect_https=True,
             scheme=lambda: "https",
@@ -226,18 +230,18 @@ class VaultCharm(CharmBase):
 
         configure_events = [
             self.on.update_status,
-            self.on.vault_pebble_ready,
+            self.on.openbao_pebble_ready,
             self.on.config_changed,
             self.on[PEER_RELATION_NAME].relation_created,
             self.on[PEER_RELATION_NAME].relation_changed,
-            self.on.vault_pki_relation_changed,
+            self.on.openbao_pki_relation_changed,
             self.on.tls_certificates_pki_relation_joined,
             self.tls_certificates_pki.on.certificate_available,
-            self.vault_autounseal_requires.on.vault_autounseal_details_ready,
-            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_created,
-            self.vault_autounseal_requires.on.vault_autounseal_provider_relation_broken,
-            self.vault_autounseal_provides.on.vault_autounseal_requirer_relation_broken,
-            self.vault_kv.on.new_vault_kv_client_attached,
+            self.openbao_autounseal_requires.on.openbao_autounseal_details_ready,
+            self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_created,
+            self.openbao_autounseal_requires.on.openbao_autounseal_provider_relation_broken,
+            self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_broken,
+            self.openbao_kv.on.new_openbao_kv_client_attached,
         ]
         for event in configure_events:
             self.framework.observe(event, self._configure)
@@ -250,7 +254,7 @@ class VaultCharm(CharmBase):
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
         self.framework.observe(self.on.bootstrap_raft_action, self._on_bootstrap_raft_action)
         self.framework.observe(
-            self.vault_kv.on.vault_kv_client_detached, self._on_vault_kv_client_detached
+            self.openbao_kv.on.openbao_kv_client_detached, self._on_openbao_kv_client_detached
         )
 
     @property
@@ -283,7 +287,7 @@ class VaultCharm(CharmBase):
         if not self._container.can_connect():
             event.defer()
             return
-        self._delete_vault_data()
+        self._delete_openbao_data()
 
     def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
         """Handle the collect status event."""
@@ -370,7 +374,7 @@ class VaultCharm(CharmBase):
             event.add_status(BlockedStatus("log_level config is not valid"))
             return
         if not self._container.can_connect():
-            event.add_status(WaitingStatus("Waiting to be able to connect to vault unit"))
+            event.add_status(WaitingStatus("Waiting to be able to connect to openbao unit"))
             return
         if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             event.add_status(WaitingStatus("Waiting for peer relation"))
@@ -390,36 +394,40 @@ class VaultCharm(CharmBase):
             event.add_status(WaitingStatus("Waiting for CA certificate to be shared"))
             return
         try:
-            vault = VaultClient(
+            openbao = OpenBaoClient(
                 url=self._api_address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
             )
         except TransientJujuError as e:
             event.add_status(WaitingStatus(e.message))
             return
-        if not vault.is_api_available():
-            event.add_status(WaitingStatus("Waiting for vault to be available"))
+        if not openbao.is_api_available():
+            event.add_status(WaitingStatus("Waiting for openbao to be available"))
             return
-        if not vault.is_initialized():
-            if vault.is_seal_type_transit():
-                event.add_status(BlockedStatus("Please initialize Vault"))
+        if not openbao.is_initialized():
+            if openbao.is_seal_type_transit():
+                event.add_status(BlockedStatus("Please initialize OpenBao"))
                 return
 
             event.add_status(
-                BlockedStatus("Please initialize Vault or integrate with an auto-unseal provider")
+                BlockedStatus(
+                    "Please initialize OpenBao or integrate with an auto-unseal provider"
+                )
             )
             return
         try:
-            if vault.is_sealed():
-                if vault.needs_migration():
-                    event.add_status(BlockedStatus("Please migrate Vault"))
+            if openbao.is_sealed():
+                if openbao.needs_migration():
+                    event.add_status(BlockedStatus("Please migrate OpenBao"))
                     return
-                if vault.is_seal_type_transit():
+                if openbao.is_seal_type_transit():
                     event.add_status(WaitingStatus("Waiting for transit auto-unseal"))
                     return
-                event.add_status(BlockedStatus("Please unseal Vault"))
+                event.add_status(BlockedStatus("Please unseal OpenBao"))
                 return
-        except VaultClientError:
-            event.add_status(MaintenanceStatus("Seal check failed, waiting for Vault to recover"))
+        except OpenBaoClientError:
+            event.add_status(
+                MaintenanceStatus("Seal check failed, waiting for OpenBao to recover")
+            )
             return
         if not (approle := self._get_approle_auth_secret()):
             event.add_status(
@@ -427,24 +435,24 @@ class VaultCharm(CharmBase):
             )
             return
         try:
-            if not vault.authenticate(approle):
-                event.add_status(WaitingStatus("Waiting for Vault to become available"))
+            if not openbao.authenticate(approle):
+                event.add_status(WaitingStatus("Waiting for OpenBao to become available"))
                 return
-        except VaultAuthenticationError:
+        except OpenBaoAuthenticationError:
             event.add_status(
                 BlockedStatus("Please authorize charm (see `authorize-charm` action)")
             )
             return
-        if not vault.is_active_or_standby():
-            event.add_status(WaitingStatus("Waiting for vault to finish raft leader election"))
+        if not openbao.is_active_or_standby():
+            event.add_status(WaitingStatus("Waiting for openbao to finish raft leader election"))
             return
         event.add_status(ActiveStatus())
 
     def _configure(self, _: EventBase) -> None:  # noqa: C901
         """Handle config-changed event.
 
-        Configures pebble layer, sets the unit address in the peer relation, starts the vault
-        service, and unseals Vault.
+        Configures pebble layer, sets the unit address in the peer relation, starts the openbao
+        service, and unseals OpenBao.
         """
         if not self._container.can_connect():
             return
@@ -473,77 +481,77 @@ class VaultCharm(CharmBase):
                 return
 
         self._set_peer_relation_node_api_address()
-        self._generate_vault_config_file()
+        self._generate_openbao_config_file()
         self._set_pebble_plan()
         try:
-            vault = VaultClient(
+            openbao = OpenBaoClient(
                 url=self._api_address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
             )
-        except VaultCertsError as e:
+        except OpenBaoCertsError as e:
             logger.error("Failed to get TLS file path: %s", e)
             return
         except TransientJujuError:
             # We get a transient error when the storage is not yet attached.
             return
 
-        if not vault.is_available_initialized_and_unsealed():
+        if not openbao.is_available_initialized_and_unsealed():
             try:
-                if vault.is_api_available() and vault.is_initialized() and vault.is_sealed():
-                    if vault.is_seal_type_transit():
+                if openbao.is_api_available() and openbao.is_initialized() and openbao.is_sealed():
+                    if openbao.is_seal_type_transit():
                         logger.info(
-                            "Vault is sealed with transit seal type, "
+                            "OpenBao is sealed with transit seal type, "
                             "restarting to trigger auto-unseal"
                         )
                         self._container.restart(self._service_name)
-            except VaultClientError:
+            except OpenBaoClientError:
                 pass
             return
-        if not self._authenticate_vault_client(vault):
+        if not self._authenticate_openbao_client(openbao):
             return
-        if not vault.is_active_or_standby():
+        if not openbao.is_active_or_standby():
             return
-        self._configure_pki_secrets_engine(vault)
-        self._configure_acme_server(vault)
-        self._sync_vault_autounseal(vault)
-        self._sync_vault_kv(vault)
-        self._sync_vault_pki(vault)
+        self._configure_pki_secrets_engine(openbao)
+        self._configure_acme_server(openbao)
+        self._sync_openbao_autounseal(openbao)
+        self._sync_openbao_kv(openbao)
+        self._sync_openbao_pki(openbao)
 
-        if vault.is_active_or_standby() and not vault.is_raft_cluster_healthy():
+        if openbao.is_active_or_standby() and not openbao.is_raft_cluster_healthy():
             # Log if a raft node starts reporting unhealthy
             logger.warning(
                 "Raft cluster is not healthy. %s",
-                vault.get_raft_cluster_state(),
+                openbao.get_raft_cluster_state(),
             )
 
     def _on_remove(self, event: RemoveEvent):
         """Handle remove charm event.
 
-        Removes the vault service and the raft data and removes the node from the raft cluster.
+        Removes the openbao service and the raft data and removes the node from the raft cluster.
         """
         if not self._container.can_connect():
             return
         self._remove_node_from_raft_cluster()
-        if self._vault_service_is_running():
+        if self._openbao_service_is_running():
             try:
                 self._container.stop(self._service_name)
             except ChangeError:
-                logger.warning("Failed to stop Vault service")
+                logger.warning("Failed to stop OpenBao service")
                 pass
-        self._delete_vault_data()
+        self._delete_openbao_data()
 
     def _remove_node_from_raft_cluster(self):
         """Remove the node from the raft cluster."""
-        vault = VaultClient(url=self._api_address, ca_cert_path=None)
-        if not vault.is_available_initialized_and_unsealed():
+        openbao = OpenBaoClient(url=self._api_address, ca_cert_path=None)
+        if not openbao.is_available_initialized_and_unsealed():
             return
-        self._authenticate_vault_client(vault)
-        if vault.is_node_in_raft_peers(self._node_id) and vault.get_num_raft_peers() > 1:
-            vault.remove_raft_node(self._node_id)
+        self._authenticate_openbao_client(openbao)
+        if openbao.is_node_in_raft_peers(self._node_id) and openbao.get_num_raft_peers() > 1:
+            openbao.remove_raft_node(self._node_id)
 
-    def _on_vault_kv_client_detached(self, event: VaultKvClientDetachedEvent):
+    def _on_openbao_kv_client_detached(self, event: OpenBaoKvClientDetachedEvent):
         KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
 
-    def _configure_pki_secrets_engine(self, vault: VaultClient) -> None:
+    def _configure_pki_secrets_engine(self, openbao: OpenBaoClient) -> None:
         if not common_name_config_is_valid(
             self.juju_facade.get_string_config("pki_ca_common_name")
         ):
@@ -574,11 +582,11 @@ class VaultCharm(CharmBase):
         )
         manager = PKIManager(
             charm=self,
-            vault_client=vault,
+            openbao_client=openbao,
             certificate_request_attributes=certificate_request,
             mount_point=PKI_MOUNT,
             role_name=PKI_ROLE_NAME,
-            vault_pki=self.vault_pki,
+            openbao_pki=self.openbao_pki,
             tls_certificates_pki=tls_certificates_pki,
             allowed_domains=self.juju_facade.get_string_config("pki_allowed_domains"),
             allow_bare_domains=self.juju_facade.get_bool_config("pki_allow_bare_domains"),
@@ -674,7 +682,7 @@ class VaultCharm(CharmBase):
             is_ca=True,
         )
 
-    def _configure_acme_server(self, vault: VaultClient) -> None:
+    def _configure_acme_server(self, openbao: OpenBaoClient) -> None:
         if not common_name_config_is_valid(
             self.juju_facade.get_string_config("acme_ca_common_name")
         ):
@@ -699,12 +707,12 @@ class VaultCharm(CharmBase):
             return
         manager = ACMEManager(
             charm=self,
-            vault_client=vault,
+            openbao_client=openbao,
             mount_point=ACME_MOUNT,
             tls_certificates_acme=self.tls_certificates_acme,
             certificate_request_attributes=certificate_request,
             role_name=ACME_ROLE_NAME,
-            vault_address=f"https://{self._ingress_address}:{self.VAULT_PORT}",
+            openbao_address=f"https://{self._ingress_address}:{self.OPENBAO_PORT}",
             allowed_domains=self.juju_facade.get_string_config("acme_allowed_domains"),
             allow_bare_domains=self.juju_facade.get_bool_config("acme_allow_bare_domains"),
             allow_subdomains=self.juju_facade.get_bool_config("acme_allow_subdomains"),
@@ -721,21 +729,21 @@ class VaultCharm(CharmBase):
         )
         manager.configure()
 
-    def _sync_vault_autounseal(self, vault_client: VaultClient) -> None:
-        """Sync the vault autounseal relation."""
+    def _sync_openbao_autounseal(self, openbao_client: OpenBaoClient) -> None:
+        """Sync the openbao autounseal relation."""
         if not self.unit.is_leader():
-            logger.debug("Only leader unit can handle a vault-autounseal request")
+            logger.debug("Only leader unit can handle a openbao-autounseal request")
             return
         autounseal_provider_manager = AutounsealProviderManager(
             charm=self,
-            client=vault_client,
-            provides=self.vault_autounseal_provides,
+            client=openbao_client,
+            provides=self.openbao_autounseal_provides,
             ca_cert=self.tls.pull_tls_file_from_workload(File.CA),
             mount_path=AUTOUNSEAL_MOUNT_PATH,
         )
         outstanding_relations = autounseal_provider_manager.get_outstanding_requests()
         if outstanding_relations:
-            vault_client.enable_secrets_engine(
+            openbao_client.enable_secrets_engine(
                 SecretsBackend.TRANSIT, autounseal_provider_manager.mount_path
             )
         for relation in outstanding_relations:
@@ -746,8 +754,8 @@ class VaultCharm(CharmBase):
             autounseal_provider_manager.create_credentials(relation, relation_address)
         autounseal_provider_manager.clean_up_credentials()
 
-    def _sync_vault_pki(self, vault: VaultClient) -> None:
-        """Goes through all the vault-pki relations and sends necessary TLS certificate."""
+    def _sync_openbao_pki(self, openbao: OpenBaoClient) -> None:
+        """Goes through all the openbao-pki relations and sends necessary TLS certificate."""
         if not common_name_config_is_valid(
             self.juju_facade.get_string_config("pki_ca_common_name")
         ):
@@ -769,11 +777,11 @@ class VaultCharm(CharmBase):
         )
         manager = PKIManager(
             charm=self,
-            vault_client=vault,
+            openbao_client=openbao,
             certificate_request_attributes=certificate_request,
             mount_point=PKI_MOUNT,
             role_name=PKI_ROLE_NAME,
-            vault_pki=self.vault_pki,
+            openbao_pki=self.openbao_pki,
             tls_certificates_pki=tls_certificates_pki,
             allowed_domains=self.juju_facade.get_string_config("pki_allowed_domains"),
             allow_bare_domains=self.juju_facade.get_bool_config("pki_allow_bare_domains"),
@@ -795,21 +803,21 @@ class VaultCharm(CharmBase):
         )
         manager.sync()
 
-    def _sync_vault_kv(self, vault: VaultClient) -> None:
-        """Goes through all the vault-kv relations and sends necessary KV information."""
+    def _sync_openbao_kv(self, openbao: OpenBaoClient) -> None:
+        """Goes through all the openbao-kv relations and sends necessary KV information."""
         if not self.juju_facade.is_leader:
-            logger.debug("Only leader unit can handle a vault-kv request")
+            logger.debug("Only leader unit can handle a openbao-kv request")
             return
         ca_certificate = self.tls.pull_tls_file_from_workload(File.CA)
         if not ca_certificate:
-            logger.debug("Vault CA certificate not available")
+            logger.debug("OpenBao CA certificate not available")
             return
-        manager = KVManager(self, vault, self.vault_kv, ca_certificate)
+        manager = KVManager(self, openbao, self.openbao_kv, ca_certificate)
 
-        kv_requests = self.vault_kv.get_kv_requests()
+        kv_requests = self.openbao_kv.get_kv_requests()
         for kv_request in kv_requests:
-            if not (vault_url := self._get_relation_api_address(kv_request.relation)):
-                logger.debug("Failed to get Vault URL for relation %s", kv_request.relation.id)
+            if not (openbao_url := self._get_relation_api_address(kv_request.relation)):
+                logger.debug("Failed to get OpenBao URL for relation %s", kv_request.relation.id)
                 continue
             manager.generate_credentials_for_requirer(
                 relation=kv_request.relation,
@@ -818,13 +826,13 @@ class VaultCharm(CharmBase):
                 mount_suffix=kv_request.mount_suffix,
                 egress_subnets=kv_request.egress_subnets,
                 nonce=kv_request.nonce,
-                vault_url=vault_url,
+                openbao_url=openbao_url,
             )
 
     def _on_authorize_charm_action(self, event: ActionEvent) -> None:
         """Handle the authorize-charm action.
 
-        Grants the charm access to interact with Vault
+        Grants the charm access to interact with OpenBao
         """
         if not self.unit.is_leader():
             event.fail("This action must be run on the leader unit.")
@@ -846,52 +854,53 @@ class VaultCharm(CharmBase):
                 "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
             )
             return
-        vault = VaultClient(self._api_address, self.tls.get_tls_file_path_in_charm(File.CA))
+        openbao = OpenBaoClient(self._api_address, self.tls.get_tls_file_path_in_charm(File.CA))
         try:
-            if not vault.authenticate(Token(token)):
+            if not openbao.authenticate(Token(token)):
                 logger.error("The token provided is not valid when authorizing charm.")
                 event.fail(
-                    "The token provided is not valid. Please use a Vault token with the appropriate permissions."
+                    "The token provided is not valid. Please use a OpenBao token with the appropriate permissions."
                 )
                 return
-        except VaultAuthenticationError:
+        except OpenBaoAuthenticationError:
             logger.error("The token provided is not valid when authorizing charm.")
             event.fail(
-                "The token provided is not valid. Please use a Vault token with the appropriate permissions."
+                "The token provided is not valid. Please use a OpenBao token with the appropriate permissions."
             )
             return
 
         try:
-            vault.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
-            vault.enable_approle_auth_method()
-            vault.create_or_update_policy_from_file(name=CHARM_POLICY_NAME, path=CHARM_POLICY_PATH)
-            role_id = vault.create_or_update_approle(
+            openbao.enable_approle_auth_method()
+            openbao.create_or_update_policy_from_file(
+                name=CHARM_POLICY_NAME, path=CHARM_POLICY_PATH
+            )
+            role_id = openbao.create_or_update_approle(
                 name=APPROLE_ROLE_NAME,
                 policies=[CHARM_POLICY_NAME, "default"],
                 token_ttl="1h",
                 token_max_ttl="1h",
             )
-            secret_id = vault.generate_role_secret_id(name=APPROLE_ROLE_NAME)
+            secret_id = openbao.generate_role_secret_id(name=APPROLE_ROLE_NAME)
             self.juju_facade.set_app_secret_content(
                 content={"role-id": role_id, "secret-id": secret_id},
-                label=VAULT_CHARM_APPROLE_SECRET_LABEL,
-                description="The authentication details for the charm's access to vault.",
+                label=OPENBAO_CHARM_APPROLE_SECRET_LABEL,
+                description="The authentication details for the charm's access to openbao.",
             )
             event.set_results(
                 {"result": "Charm authorized successfully. You may now remove the secret."}
             )
-        except VaultClientError as e:
-            logger.exception("Vault returned an error while authorizing the charm")
-            event.fail(f"Vault returned an error while authorizing the charm: {str(e)}")
+        except OpenBaoClientError as e:
+            logger.exception("OpenBao returned an error while authorizing the charm")
+            event.fail(f"OpenBao returned an error while authorizing the charm: {str(e)}")
 
     def _on_bootstrap_raft_action(self, event: ActionEvent) -> None:
         """Bootstraps the raft cluster when a single node is present.
 
-        This is useful when Vault has lost quorum. The application must first
+        This is useful when OpenBao has lost quorum. The application must first
         be reduced to a single unit.
         """
         try:
-            manager = RaftManager(self, self._container, self._service_name, VAULT_STORAGE_PATH)  # type: ignore[arg-type]
+            manager = RaftManager(self, self._container, self._service_name, OPENBAO_STORAGE_PATH)  # type: ignore[arg-type]
             manager.bootstrap(self._node_id, self._api_address)
         except ManagerError as e:
             logger.error("Failed to bootstrap raft: %s", e)
@@ -911,23 +920,23 @@ class VaultCharm(CharmBase):
         skip_verify: bool = event.params.get("skip-verify", False)
 
         try:
-            vault_client = VaultClient(
+            openbao_client = OpenBaoClient(
                 url=self._api_address,
                 ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
             )
-        except VaultCertsError as e:
-            logger.warning("Failed to get Vault client: %s", e)
-            event.fail(message="Failed to initialize Vault client.")
+        except OpenBaoCertsError as e:
+            logger.warning("Failed to get OpenBao client: %s", e)
+            event.fail(message="Failed to initialize OpenBao client.")
             return
         if (
-            not self._authenticate_vault_client(vault_client)
-            or not vault_client.is_active_or_standby()
+            not self._authenticate_openbao_client(openbao_client)
+            or not openbao_client.is_active_or_standby()
         ):
-            event.fail(message="Failed to initialize Vault client.")
+            event.fail(message="Failed to initialize OpenBao client.")
             return
         try:
             manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
-            backup_key = manager.create_backup(vault_client, skip_verify=skip_verify)
+            backup_key = manager.create_backup(openbao_client, skip_verify=skip_verify)
         except ManagerError as e:
             logger.error("Failed to create backup: %s", e)
             event.fail(message=f"Failed to create backup: {e}")
@@ -962,9 +971,9 @@ class VaultCharm(CharmBase):
         Args:
             event: ActionEvent
         """
-        vault_client = self._get_active_vault_client()
-        if not vault_client:
-            event.fail(message="Failed to initialize an active Vault client.")
+        openbao_client = self._get_active_openbao_client()
+        if not openbao_client:
+            event.fail(message="Failed to initialize an active OpenBao client.")
             return
         key = event.params.get("backup-id")
         # This should be enforced by Juju/charmcraft.yaml, but we assert here
@@ -974,7 +983,7 @@ class VaultCharm(CharmBase):
 
         try:
             manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
-            manager.restore_backup(vault_client, key, skip_verify=skip_verify)
+            manager.restore_backup(openbao_client, key, skip_verify=skip_verify)
         except ManagerError as e:
             logger.error("Failed to restore backup: %s", e)
             event.fail(message=f"Failed to restore backup: {e}")
@@ -982,21 +991,21 @@ class VaultCharm(CharmBase):
 
         event.set_results({"restored": event.params.get("backup-id")})
 
-    def _delete_vault_data(self) -> None:
-        """Delete Vault's data."""
+    def _delete_openbao_data(self) -> None:
+        """Delete OpenBao's data."""
         try:
-            self._container.remove_path(path=f"{VAULT_STORAGE_PATH}/vault.db")
-            logger.info("Removed Vault's main database")
+            self._container.remove_path(path=f"{OPENBAO_STORAGE_PATH}/vault.db")
+            logger.info("Removed OpenBao's main database")
         except ValueError:
-            logger.info("No Vault database to remove")
+            logger.info("No OpenBao database to remove")
         try:
-            self._container.remove_path(path=f"{VAULT_STORAGE_PATH}/raft/raft.db")
-            logger.info("Removed Vault's Raft database")
+            self._container.remove_path(path=f"{OPENBAO_STORAGE_PATH}/raft/raft.db")
+            logger.info("Removed OpenBao's Raft database")
         except ValueError:
-            logger.info("No Vault raft database to remove")
+            logger.info("No OpenBao raft database to remove")
 
-    def _vault_service_is_running(self) -> bool:
-        """Check if the vault service is running."""
+    def _openbao_service_is_running(self) -> bool:
+        """Check if the openbao service is running."""
         try:
             return self._container.get_service(service_name=self._service_name).is_running()
         except ModelError:
@@ -1005,7 +1014,7 @@ class VaultCharm(CharmBase):
     def _pebble_plan_is_applied(self) -> bool:
         """Check if the pebble plan is applied."""
         plan = self._container.get_plan()
-        layer = self._vault_layer
+        layer = self._openbao_layer
         return plan.services == layer.services
 
     def _get_relation_api_address(self, relation: Relation) -> str | None:
@@ -1015,10 +1024,10 @@ class VaultCharm(CharmBase):
         """
         if not (ingress_address := self.juju_facade.get_ingress_address(relation=relation)):
             return None
-        return f"https://{ingress_address}:{self.VAULT_PORT}"
+        return f"https://{ingress_address}:{self.OPENBAO_PORT}"
 
-    def _generate_vault_config_file(self) -> None:
-        """Handle the creation of the Vault config file."""
+    def _generate_openbao_config_file(self) -> None:
+        """Handle the creation of the OpenBao config file."""
         retry_joins = [
             {
                 "leader_api_addr": node_api_address,
@@ -1027,36 +1036,36 @@ class VaultCharm(CharmBase):
             for node_api_address in self._get_peer_relation_node_api_addresses()
         ]
 
-        content = render_vault_config_file(
+        content = render_openbao_config_file(
             config_template_path=CONFIG_TEMPLATE_DIR_PATH,
             config_template_name=CONFIG_TEMPLATE_NAME,
             default_lease_ttl=self.juju_facade.get_string_config("default_lease_ttl"),
             max_lease_ttl=self.juju_facade.get_string_config("max_lease_ttl"),
             cluster_address=self._cluster_address,
             api_address=self._api_address,
-            tcp_address=f"[::]:{self.VAULT_PORT}",
+            tcp_address=f"[::]:{self.OPENBAO_PORT}",
             tls_cert_file=f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.CERT.name.lower()}.pem",
             tls_key_file=f"{CONTAINER_TLS_FILE_DIRECTORY_PATH}/{File.KEY.name.lower()}.pem",
-            raft_storage_path=VAULT_STORAGE_PATH,
+            raft_storage_path=OPENBAO_STORAGE_PATH,
             node_id=self._node_id,
             retry_joins=retry_joins,
-            autounseal_config=self._get_vault_autounseal_configuration(),
+            autounseal_config=self._get_openbao_autounseal_configuration(),
             log_level=self._get_log_level(),
         )
         existing_content = ""
-        if self._container.exists(path=VAULT_CONFIG_FILE_PATH):
-            existing_content_stringio = self._container.pull(path=VAULT_CONFIG_FILE_PATH)
+        if self._container.exists(path=OPENBAO_CONFIG_FILE_PATH):
+            existing_content_stringio = self._container.pull(path=OPENBAO_CONFIG_FILE_PATH)
             existing_content = existing_content_stringio.read()
 
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
             self._push_config_file_to_workload(content=content)
-            # If the seal type has changed, we need to restart Vault to apply
+            # If the seal type has changed, we need to restart OpenBao to apply
             # the changes. SIGHUP is currently only supported as a beta feature
-            # for the enterprise version in Vault 1.16+
+            # for the enterprise version in OpenBao 1.16+
             if seal_type_has_changed(existing_content, content):
-                # Before restarting Vault, check if the pebble plan is applied
+                # Before restarting OpenBao, check if the pebble plan is applied
                 # If the plan was not applied, the service will restart anyway when applying the new plan
-                if self._vault_service_is_running() and self._pebble_plan_is_applied():
+                if self._openbao_service_is_running() and self._pebble_plan_is_applied():
                     self._container.restart(self._service_name)
 
     def _get_log_level(self) -> str:
@@ -1069,20 +1078,20 @@ class VaultCharm(CharmBase):
     def _log_level_is_valid(self, log_level: str) -> bool:
         return log_level in ["trace", "debug", "info", "warn", "error"]
 
-    def _get_vault_autounseal_token(self) -> str | None:
-        autounseal_relation_details = self.vault_autounseal_requires.get_details()
+    def _get_openbao_autounseal_token(self) -> str | None:
+        autounseal_relation_details = self.openbao_autounseal_requires.get_details()
         if not autounseal_relation_details:
             return None
         autounseal_requirer_manager = AutounsealRequirerManager(
-            self, self.vault_autounseal_requires
+            self, self.openbao_autounseal_requires
         )
-        provider_vault_token = autounseal_requirer_manager.get_provider_vault_token(
+        provider_openbao_token = autounseal_requirer_manager.get_provider_openbao_token(
             autounseal_relation_details, self.tls.get_tls_file_path_in_charm(File.AUTOUNSEAL_CA)
         )
-        return provider_vault_token
+        return provider_openbao_token
 
-    def _get_vault_autounseal_configuration(self) -> AutounsealConfiguration | None:
-        autounseal_relation_details = self.vault_autounseal_requires.get_details()
+    def _get_openbao_autounseal_configuration(self) -> AutounsealConfiguration | None:
+        autounseal_relation_details = self.openbao_autounseal_requires.get_details()
         if not autounseal_relation_details:
             return None
         self.tls.push_autounseal_ca_cert(autounseal_relation_details.ca_certificate)
@@ -1095,11 +1104,11 @@ class VaultCharm(CharmBase):
 
     def _push_config_file_to_workload(self, content: str):
         """Push the config file to the workload."""
-        self._container.push(path=VAULT_CONFIG_FILE_PATH, source=content)
-        logger.info("Pushed %s config file", VAULT_CONFIG_FILE_PATH)
+        self._container.push(path=OPENBAO_CONFIG_FILE_PATH, source=content)
+        logger.info("Pushed %s config file", OPENBAO_CONFIG_FILE_PATH)
 
     def _get_approle_auth_secret(self) -> AppRole | None:
-        """Get the vault approle login details secret.
+        """Get the openbao approle login details secret.
 
         Returns:
             AppRole: An AppRole object with role_id and secret_id set from the
@@ -1108,7 +1117,7 @@ class VaultCharm(CharmBase):
         """
         try:
             role_id, secret_id = self.juju_facade.get_secret_content_values(
-                "role-id", "secret-id", label=VAULT_CHARM_APPROLE_SECRET_LABEL, refresh=True
+                "role-id", "secret-id", label=OPENBAO_CHARM_APPROLE_SECRET_LABEL, refresh=True
             )
         except NoSuchSecretError:
             logger.warning("Approle secret not yet created")
@@ -1118,50 +1127,50 @@ class VaultCharm(CharmBase):
     def _set_pebble_plan(self) -> None:
         """Set the pebble plan if different from the currently applied one."""
         plan: pebble.Plan = self._container.get_plan()
-        layer = self._vault_layer
+        layer = self._openbao_layer
         if plan.services != layer.services:
             self._container.add_layer(self._container_name, layer, combine=True)
             self._container.replan()
             logger.info("Pebble layer added")
 
-    def _get_active_vault_client(self) -> VaultClient | None:
-        """Return a client for the _active_ vault service.
+    def _get_active_openbao_client(self) -> OpenBaoClient | None:
+        """Return a client for the _active_ openbao service.
 
-        This may not be the Vault service running on this unit.
+        This may not be the OpenBao service running on this unit.
         """
         for address in chain((self._api_address,), self._get_peer_relation_node_api_addresses()):
             try:
-                vault = VaultClient(
+                openbao = OpenBaoClient(
                     address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
                 )
-            except VaultCertsError as e:
-                logger.warning("Failed to get Vault client: %s", e)
+            except OpenBaoCertsError as e:
+                logger.warning("Failed to get OpenBao client: %s", e)
                 continue
-            if vault.is_active():
-                if not vault.is_api_available():
+            if openbao.is_active():
+                if not openbao.is_api_available():
                     return None
-                if not self._authenticate_vault_client(vault):
+                if not self._authenticate_openbao_client(openbao):
                     return None
-                return vault
+                return openbao
         return None
 
-    def _authenticate_vault_client(self, vault: VaultClient) -> bool:
-        """Authenticate the Vault client.
+    def _authenticate_openbao_client(self, openbao: OpenBaoClient) -> bool:
+        """Authenticate the OpenBao client.
 
         Returns:
-            bool: Whether the Vault client authentication was successful.
+            bool: Whether the OpenBao client authentication was successful.
         """
         if not (approle := self._get_approle_auth_secret()):
             return False
         try:
-            if not vault.authenticate(approle):
+            if not openbao.authenticate(approle):
                 return False
-        except VaultAuthenticationError:
+        except OpenBaoAuthenticationError:
             logger.warning(
-                "Vault rejected the charm's credentials. "
+                "OpenBao rejected the charm's credentials. "
                 "Removing stored credentials to prevent lockout."
             )
-            self.juju_facade.remove_secret(label=VAULT_CHARM_APPROLE_SECRET_LABEL)
+            self.juju_facade.remove_secret(label=OPENBAO_CHARM_APPROLE_SECRET_LABEL)
             return False
         return True
 
@@ -1171,7 +1180,7 @@ class VaultCharm(CharmBase):
 
         When any HTTP or HTTPS proxy is configured, `.svc.cluster.local` is
         always included in NO_PROXY so that internal Kubernetes pod-to-pod
-        traffic (e.g. Vault raft cluster join requests using pod FQDNs) is
+        traffic (e.g. OpenBao raft cluster join requests using pod FQDNs) is
         never routed through a corporate proxy.
         """
         cluster_local_domain = ".svc.cluster.local"
@@ -1194,17 +1203,17 @@ class VaultCharm(CharmBase):
         return env
 
     @property
-    def _vault_layer(self) -> Layer:
-        """Return the pebble layer to start Vault."""
+    def _openbao_layer(self) -> Layer:
+        """Return the pebble layer to start OpenBao."""
         layer = Layer(
             {
-                "summary": "vault layer",
-                "description": "pebble config layer for vault",
+                "summary": "openbao layer",
+                "description": "pebble config layer for openbao",
                 "services": {
-                    "vault": {
+                    "openbao": {
                         "override": "replace",
-                        "summary": "vault",
-                        "command": f"vault server -config={VAULT_CONFIG_FILE_PATH}",
+                        "summary": "openbao",
+                        "command": f"bao server -config={OPENBAO_CONFIG_FILE_PATH}",
                         "startup": "enabled",
                         "environment": self._juju_proxy_environment,
                     }
@@ -1212,10 +1221,12 @@ class VaultCharm(CharmBase):
             }
         )
 
-        # If we're using autounseal, provide the token to the external vault
-        # service (the autounsealer) as an environment variable
-        if token := self._get_vault_autounseal_token():
-            layer.services["vault"].environment["VAULT_TOKEN"] = token
+        # If we're using autounseal, provide the token to the external openbao
+        # service (the autounsealer) as an environment variable. VAULT_TOKEN is
+        # also set since OpenBao still honours the legacy variable name.
+        if token := self._get_openbao_autounseal_token():
+            layer.services["openbao"].environment["BAO_TOKEN"] = token
+            layer.services["openbao"].environment["VAULT_TOKEN"] = token
         return layer
 
     def _set_peer_relation_node_api_address(self) -> None:
@@ -1237,27 +1248,27 @@ class VaultCharm(CharmBase):
 
     @property
     def _node_id(self) -> str:
-        """Return the node id for vault.
+        """Return the node id for openbao.
 
-        Example of node id: "vault-k8s-0"
+        Example of node id: "openbao-k8s-0"
         """
         return f"{self.model.name}-{self.unit.name}"
 
     @property
     def _api_address(self) -> str:
-        """Return the FQDN with the https schema and vault port.
+        """Return the FQDN with the https schema and openbao port.
 
-        Example: "https://vault-k8s-1.vault-k8s-endpoints.test.svc.cluster.local:8200"
+        Example: "https://openbao-k8s-1.openbao-k8s-endpoints.test.svc.cluster.local:8200"
         """
-        return f"https://{socket.getfqdn()}:{self.VAULT_PORT}"
+        return f"https://{socket.getfqdn()}:{self.OPENBAO_PORT}"
 
     @property
     def _cluster_address(self) -> str:
-        """Return the FQDN with the https schema and vault cluster port.
+        """Return the FQDN with the https schema and openbao cluster port.
 
-        Example: "https://vault-k8s-1.vault-k8s-endpoints.test.svc.cluster.local:8201"
+        Example: "https://openbao-k8s-1.openbao-k8s-endpoints.test.svc.cluster.local:8201"
         """
-        return f"https://{socket.getfqdn()}:{self.VAULT_CLUSTER_PORT}"
+        return f"https://{socket.getfqdn()}:{self.OPENBAO_CLUSTER_PORT}"
 
     @property
     def _bind_address(self) -> str | None:
@@ -1279,4 +1290,4 @@ class VaultCharm(CharmBase):
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main(VaultCharm)
+    main(OpenBaoCharm)

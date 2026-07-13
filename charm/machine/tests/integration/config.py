@@ -4,6 +4,9 @@ import yaml
 
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 
+# Path to the built openbao snap, set from the --snap_path pytest option in conftest.
+OPENBAO_SNAP_PATH: str | None = None
+
 APP_NAME: str = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
 GRAFANA_AGENT_CHANNEL = "1/stable"
@@ -12,31 +15,31 @@ HAPROXY_APPLICATION_NAME = "haproxy"
 HAPROXY_REVISION = 290
 INGRESS_RELATION_NAME = "ingress"
 MINIO_APPLICATION_NAME = "minio"
-MINIO_S3_ACCESS_KEY = "vaultintegrationtest"
-MINIO_S3_SECRET_KEY = "vaultintegrationtest"
+MINIO_S3_ACCESS_KEY = "openbaointegrationtest"
+MINIO_S3_SECRET_KEY = "openbaointegrationtest"
 
-MICROCEPH_S3_ACCESS_KEY = "vaultmicrocephtest"
-MICROCEPH_S3_SECRET_KEY = "vaultmicrocephtest"
-MICROCEPH_S3_BUCKET = "vault-microceph-test"
+MICROCEPH_S3_ACCESS_KEY = "openbaomicrocephtest"
+MICROCEPH_S3_SECRET_KEY = "openbaomicrocephtest"
+MICROCEPH_S3_BUCKET = "openbao-microceph-test"
 MICROCEPH_RGW_PORT = 7480
-NUM_VAULT_UNITS = 3
-PEER_RELATION_NAME = "vault-peers"
+NUM_OPENBAO_UNITS = 3
+PEER_RELATION_NAME = "openbao-peers"
 S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
 S3_INTEGRATOR_CHANNEL = "stable"
 S3_INTEGRATOR_REVISION = 146
 SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
 SELF_SIGNED_CERTIFICATES_CHANNEL = "1/stable"
 SELF_SIGNED_CERTIFICATES_REVISION = 317
-VAULT_KV_REQUIRER_APPLICATION_NAME = "vault-kv-requirer"
-VAULT_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
-VAULT_PKI_REQUIRER_CHANNEL = "latest/stable"
+OPENBAO_KV_REQUIRER_APPLICATION_NAME = "openbao-kv-requirer"
+OPENBAO_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
+OPENBAO_PKI_REQUIRER_CHANNEL = "latest/stable"
 
-VAULT_KV_LIB_DIR = "lib/charms/vault_k8s/v0/vault_kv.py"
-VAULT_KV_REQUIRER_CHARM_DIR = "tests/integration/vault_kv_requirer_operator"
+OPENBAO_KV_LIB_DIR = "lib/charms/openbao_k8s/v0/openbao_kv.py"
+OPENBAO_KV_REQUIRER_CHARM_DIR = "tests/integration/openbao_kv_requirer_operator"
 
 MATCHING_COMMON_NAME = "example.com"
 UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
-VAULT_PKI_REQUIRER_REVISION = 93
+OPENBAO_PKI_REQUIRER_REVISION = 93
 
 # There is a dependency here on the `idle_period` we use in `wait_for_idle()`.
 # This value should be greater than the `idle_period` used, otherwise the

@@ -14,7 +14,7 @@ def read_file(path: str) -> str:
 
 
 class TestConfigFileContentMatches:
-    def test_given_identical_vault_config_when_config_file_content_matches_returns_true(self):
+    def test_given_identical_openbao_config_when_config_file_content_matches_returns_true(self):
         existing_content = read_file("tests/unit/config.hcl")
         new_content = read_file("tests/unit/config.hcl")
 
@@ -24,7 +24,7 @@ class TestConfigFileContentMatches:
 
         assert matches
 
-    def test_given_different_vault_config_when_config_file_content_matches_returns_false(self):
+    def test_given_different_openbao_config_when_config_file_content_matches_returns_false(self):
         existing_content = read_file("tests/unit/config.hcl")
         new_content = read_file("tests/unit/config_with_raft_peers.hcl")
 
@@ -34,7 +34,7 @@ class TestConfigFileContentMatches:
 
         assert not matches
 
-    def test_given_equivalent_vault_config_when_config_file_content_matches_returns_true(self):
+    def test_given_equivalent_openbao_config_when_config_file_content_matches_returns_true(self):
         existing_content = read_file("tests/unit/config_with_raft_peers.hcl")
         new_content = read_file("tests/unit/config_with_raft_peers_equivalent.hcl")
 

@@ -1,7 +1,7 @@
 # Contract: PKIManager Self-Signed CA Mode
 
 **Interface**: `PKIManager` (modified constructor and methods)  
-**Type**: Internal library class (vault-package)  
+**Type**: Internal library class (openbao-package)  
 **Consumers**: `charm.py` (k8s and machine charms)  
 
 ## Constructor Changes
@@ -10,7 +10,7 @@
 def __init__(
     self,
     charm: CharmBase,
-    vault_client: VaultClient,
+    openbao_client: OpenBaoClient,
     certificate_request_attributes: CertificateRequestAttributes,
     mount_point: str,
     role_name: str,
@@ -24,7 +24,7 @@ def __init__(
     country: str | None,
     province: str | None,
     locality: str | None,
-    vault_pki: TLSCertificatesProvidesV4,
+    openbao_pki: TLSCertificatesProvidesV4,
     tls_certificates_pki: TLSCertificatesRequiresV4,
     self_signed_ca: bool = False,  # NEW PARAMETER
 ):
@@ -42,9 +42,9 @@ def __init__(
 3. Call `_configure_self_signed_ca()`:
    a. Check Juju secret for existing CA cert + key
    b. If exists and matches current config, retrieve it
-   c. If not exists or config changed, generate new CA via `VaultClient.generate_self_signed_ca()`
+   c. If not exists or config changed, generate new CA via `OpenBaoClient.generate_self_signed_ca()`
    d. Store new cert + key in Juju secret
-   e. Import CA into Vault via `VaultClient.import_ca_certificate_and_key()`
+   e. Import CA into OpenBao via `OpenBaoClient.import_ca_certificate_and_key()`
 4. Update PKI role with appropriate TTL (half of CA validity)
 5. Make latest issuer default
 
@@ -57,12 +57,12 @@ Unchanged from existing behavior.
 ### Self-Signed Mode (`self_signed_ca=True`)
 
 1. Check leader status (skip if not leader)
-2. Get outstanding certificate requests from `vault_pki`
+2. Get outstanding certificate requests from `openbao_pki`
 3. For each request:
    a. Check PKI role exists
    b. Get CA certificate from Juju secret (not from relation)
    c. Calculate allowed cert validity
-   d. Sign CSR via `VaultClient.sign_pki_certificate_signing_request()`
+   d. Sign CSR via `OpenBaoClient.sign_pki_certificate_signing_request()`
    e. Build `ProviderCertificate` and set on relation
 
 ### External CA Mode (`self_signed_ca=False`)
@@ -71,7 +71,7 @@ Unchanged from existing behavior.
 
 ## Preconditions
 
-- Vault is initialized and unsealed
+- OpenBao is initialized and unsealed
 - `pki_ca_common_name` is set and valid
 - In self-signed mode: no `tls-certificates-pki` relation exists (or it exists but is ignored)
 
@@ -102,7 +102,7 @@ Unchanged from existing behavior.
     │ _configure_self │          │ _configure_ext  │
     │   _signed_ca()  │          │    _ca()        │
     │  (Juju secret   │          │  (tls-cert-     │
-    │   + Vault gen)  │          │   pki relation) │
+    │   + OpenBao gen)  │          │   pki relation) │
     └────────┬────────┘          └────────┬────────┘
              │                            │
              └─────────────┬──────────────┘

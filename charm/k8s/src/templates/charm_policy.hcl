@@ -13,7 +13,7 @@ path "sys/policy/" {
 
 # Required for managing policies with charm- prefix
 # Allows creating, reading, updating and deleting policies
-# The wildcard path is required as the charm won't know the full path of the policy at the time of policy creation in the case of vault-kv
+# The wildcard path is required as the charm won't know the full path of the policy at the time of policy creation in the case of openbao-kv
 path "sys/policy/charm-*" {
   capabilities = ["create", "read", "update", "delete"]
 }
@@ -22,7 +22,7 @@ path "sys/policy/charm-*" {
 
 # Allow management of approle's with charm- prefix
 # Allows creating, reading, updating, deleting and listing approle's
-# The wildcard path is required as the charm won't know the full path of the approle at the time of approle creation in the case of vault-kv
+# The wildcard path is required as the charm won't know the full path of the approle at the time of approle creation in the case of openbao-kv
 path "auth/approle/role/charm-*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
@@ -34,7 +34,7 @@ path "auth/approle/role/" {
 
 # Allow charm- prefixes secrets backends to be mounted and managed
 # Allows enabling, reading, updating, deleting and listing secret engines
-# The wildcard path is required as the charm won't know the full path of the secret engine at the time of secret engine creation in the case of vault-kv
+# The wildcard path is required as the charm won't know the full path of the secret engine at the time of secret engine creation in the case of openbao-kv
 path "sys/mounts/charm-*" {
   capabilities = ["create", "read", "update", "list", "delete"]
 }
@@ -58,7 +58,7 @@ path "sys/storage/raft/remove-peer" {
   capabilities = ["update"]
 }
 
-# Allow taking snapshots of Vault
+# Allow taking snapshots of OpenBao
 path "sys/storage/raft/snapshot" {
   capabilities = ["read"]
 }

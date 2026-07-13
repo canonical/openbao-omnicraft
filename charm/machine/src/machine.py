@@ -2,18 +2,17 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""Machine abstraction for the Vault charm."""
+"""Machine abstraction for the OpenBao charm."""
 
 import logging
 import os
 import shutil
-import signal
 from pathlib import Path
 from typing import TextIO
 
 import psutil
 from charms.operator_libs_linux.v2 import snap
-from vault.vault_managers import WorkloadBase
+from openbao.openbao_managers import WorkloadBase
 
 logger = logging.getLogger(__name__)
 
@@ -97,18 +96,19 @@ class Machine(WorkloadBase):
     def restart(self, process: str) -> None:
         """Restarts all services specified in the snap."""
         snap_cache = snap.SnapCache()
-        vault_snap = snap_cache[process]
-        vault_snap.restart()
+        openbao_snap = snap_cache[process]
+        openbao_snap.restart()
 
     def stop(self, process: str) -> None:
-        """Stop a process.
+        """Stop all services of the given snap.
 
         Args:
-            process: The name of the process
+            process: The name of the snap
         """
-        if pid := self._find_process(process):
-            os.kill(pid, signal.SIGTERM)
-            logger.info("Stopped process %s", process)
+        snap_cache = snap.SnapCache()
+        openbao_snap = snap_cache[process]
+        openbao_snap.stop()
+        logger.info("Stopped snap %s services", process)
 
     def get_service(self, process: str) -> psutil.Process | None:
         """Get a service.

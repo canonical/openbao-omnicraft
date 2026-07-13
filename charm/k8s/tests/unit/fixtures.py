@@ -6,13 +6,13 @@ from unittest.mock import patch
 
 import ops.testing as testing
 import pytest
+from openbao.testing.mocks import OpenBaoCharmFixturesBase
 from ops.model import ActiveStatus
-from vault.testing.mocks import VaultCharmFixturesBase
 
-from charm import VaultCharm
+from charm import OpenBaoCharm
 
 
-class VaultCharmFixtures(VaultCharmFixturesBase):
+class OpenBaoCharmFixtures(OpenBaoCharmFixturesBase):
     @pytest.fixture(autouse=True)
     def setup(self):
         with (
@@ -37,7 +37,7 @@ class VaultCharmFixtures(VaultCharmFixturesBase):
 
     @pytest.fixture(autouse=True)
     def context(self):
-        self.ctx = testing.Context(charm_type=VaultCharm)
+        self.ctx = testing.Context(charm_type=OpenBaoCharm)
 
 
 class MockNetwork:

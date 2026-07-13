@@ -1,5 +1,5 @@
 [project]
-name = "vault-operator"
+name = "openbao-operator"
 version = "0.1.0"
 requires-python = ">=3.10"
 
@@ -7,14 +7,14 @@ dependencies = [
     "jinja2",
     "ops",
     "psutil",
-    "vault-package",
+    "openbao-package",
     "charmlibs-interfaces-tls-certificates~=1.8",
     "charmlibs-interfaces-certificate_transfer",
     # via cos_agent
     "cosl",
     # via cos_agent and tls_certificates
     "cryptography",
-    # via vault_kv
+    # via openbao_kv
     "pytest-interface-tester",
     # Defense-in-depth: cffi 2.0.0 may also have calling-convention issues on s390x.
     "cffi<2; platform_machine == 's390x'",
@@ -55,7 +55,7 @@ extend-exclude = [
     "lib/charms/grafana_agent/",
     "lib/charms/operator_libs_linux/",
     "lib/charms/traefik_k8s/",
-    "lib/charms/vault_k8s/",
+    "lib/charms/openbao_k8s/",
 ]
 
 [tool.pyright]
@@ -68,7 +68,7 @@ ignore = [
     "lib/charms/grafana_agent/",
     "lib/charms/operator_libs_linux/",
     "lib/charms/traefik_k8s/",
-    "lib/charms/vault_k8s/",
+    "lib/charms/openbao_k8s/",
 ]
 
 [tool.uv]
@@ -79,4 +79,4 @@ environments = [
 ]
 
 [tool.uv.sources]
-vault-package = { path = ".vendored/vault-package", editable = true }
+openbao-package = { path = ".vendored/openbao-package", editable = true }

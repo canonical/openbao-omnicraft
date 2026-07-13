@@ -1,10 +1,10 @@
 # How-to guides
 
-These how-to guides cover key operations and processes for the Vault charms.
+These how-to guides cover key operations and processes for the OpenBao charms.
 
 ## Day-1 operations
 
-Day-1 operations cover the deployment and integration of the Vault charm.
+Day-1 operations cover the deployment and integration of the OpenBao charm.
 
 ```{toctree}
 :maxdepth: 1
@@ -22,7 +22,7 @@ configure_for_autounseal
 
 ## Day-2 operations
 
-Day-2 operations cover the management and maintenance of Vault charms over their lifecycle.
+Day-2 operations cover the management and maintenance of OpenBao charms over their lifecycle.
 
 ```{toctree}
 :maxdepth: 1

@@ -10,38 +10,38 @@ import requests
 from config import (
     APP_NAME,
     JUJU_FAST_INTERVAL,
-    NUM_VAULT_UNITS,
+    NUM_OPENBAO_UNITS,
     SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
     SELF_SIGNED_CERTIFICATES_CHANNEL,
     SELF_SIGNED_CERTIFICATES_REVISION,
     UNMATCHING_COMMON_NAME,
 )
 from helpers import (
-    deploy_vault,
+    deploy_openbao,
     fast_forward,
     get_leader_unit_name,
+    get_openbao_token_and_unseal_key,
     get_unit_address,
-    get_vault_token_and_unseal_key,
     has_relation,
-    initialize_unseal_authorize_vault,
+    initialize_unseal_authorize_openbao,
 )
 
 logger = logging.getLogger(__name__)
 
-VaultInit = namedtuple("VaultInit", ["root_token", "unseal_key"])
+OpenBaoInit = namedtuple("OpenBaoInit", ["root_token", "unseal_key"])
 
 
 @pytest.fixture(scope="module")
-def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> VaultInit:
+def deploy(juju: jubilant.Juju, openbao_charm_path: Path, skip_deploy: bool) -> OpenBaoInit:
     """Build and deploy the application."""
     if skip_deploy:
         logger.info("Skipping deployment due to --no-deploy flag")
-        root_token, key = get_vault_token_and_unseal_key(juju, APP_NAME)
-        return VaultInit(root_token, key)
-    deploy_vault(
+        root_token, key = get_openbao_token_and_unseal_key(juju, APP_NAME)
+        return OpenBaoInit(root_token, key)
+    deploy_openbao(
         juju,
-        charm_path=vault_charm_path,
-        num_vaults=NUM_VAULT_UNITS,
+        charm_path=openbao_charm_path,
+        num_openbaos=NUM_OPENBAO_UNITS,
     )
     juju.deploy(
         SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
@@ -50,7 +50,7 @@ def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> Va
         revision=SELF_SIGNED_CERTIFICATES_REVISION,
     )
 
-    # When waiting for Vault to go to the blocked state, we may need an update
+    # When waiting for OpenBao to go to the blocked state, we may need an update
     # status event to recognize that the API is available, so we wait in
     # fast-forward.
     with fast_forward(juju, JUJU_FAST_INTERVAL):
@@ -58,12 +58,12 @@ def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> Va
             lambda s: (
                 jubilant.all_active(s, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME)
                 and jubilant.all_blocked(s, APP_NAME)
-                and len(s.apps[APP_NAME].units) == NUM_VAULT_UNITS
+                and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
             ),
             timeout=1000,
         )
-    root_token, unseal_key = initialize_unseal_authorize_vault(juju, APP_NAME)
-    return VaultInit(root_token, unseal_key)
+    root_token, unseal_key = initialize_unseal_authorize_openbao(juju, APP_NAME)
+    return OpenBaoInit(root_token, unseal_key)
 
 
 def verify_acme_configured(juju: jubilant.Juju, app_name: str) -> bool:
@@ -89,7 +89,7 @@ def verify_acme_configured(juju: jubilant.Juju, app_name: str) -> bool:
 
 @pytest.mark.abort_on_fail
 def test_given_tls_certificates_acme_relation_when_integrate_then_status_is_active_and_acme_configured(
-    juju: jubilant.Juju, deploy: VaultInit
+    juju: jubilant.Juju, deploy: OpenBaoInit
 ):
     common_name = UNMATCHING_COMMON_NAME
     common_name_config = {
@@ -114,7 +114,7 @@ def test_given_tls_certificates_acme_relation_when_integrate_then_status_is_acti
             lambda s: (
                 jubilant.all_active(s, APP_NAME)
                 and jubilant.all_active(s, SELF_SIGNED_CERTIFICATES_APPLICATION_NAME)
-                and len(s.apps[APP_NAME].units) == NUM_VAULT_UNITS
+                and len(s.apps[APP_NAME].units) == NUM_OPENBAO_UNITS
             ),
             timeout=600,
         )

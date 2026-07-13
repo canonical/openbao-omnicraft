@@ -25,7 +25,7 @@ import yaml
 #
 # TODO: Update with the official name of your project or product
 
-project = "Vault Charms"
+project = "OpenBao Charms"
 author = "Canonical Ltd."
 
 
@@ -71,7 +71,7 @@ copyright = "%s CC-BY-SA, %s" % (datetime.date.today().year, author)
 # NOTE: The Open Graph Protocol (OGP) enhances page display in a social graph
 #       and is used by social media platforms; see https://ogp.me/
 
-ogp_site_url = "https://canonical-vault-charms.readthedocs-hosted.com/"
+ogp_site_url = "https://canonical-openbao-charms.readthedocs-hosted.com/"
 
 
 # Preview name of the documentation website
@@ -107,7 +107,7 @@ html_context = {
     # TODO: If there's no such website,
     #       remove the {{ product_page }} link from the page header template
     #       (usually .sphinx/_templates/header.html; also, see README.rst).
-    "product_page": "github.com/canonical/vault-k8s-operator",
+    "product_page": "github.com/canonical/openbao-k8s-operator",
     # Product tag image; the orange part of your logo, shown in the page header
     #
     # TODO: To add a tag image, uncomment and update as needed.
@@ -133,7 +133,7 @@ html_context = {
     #
     # NOTE: If set, links for viewing the documentation source files
     #       and creating GitHub issues are added at the bottom of each page.
-    "github_url": "https://github.com/canonical/vault-k8s-operator",
+    "github_url": "https://github.com/canonical/openbao-omnicraft",
     # Docs branch in the repo; used in links for viewing the source files
     #
     # TODO: To customise the branch, uncomment and update as needed.
@@ -178,7 +178,7 @@ html_context = {
 
 # Base URL of RTD hosted project
 
-html_baseurl = 'https://canonical-vault-charms.readthedocs-hosted.com/'
+html_baseurl = 'https://canonical-openbao-charms.readthedocs-hosted.com/'
 
 # URL scheme. Add language and version scheme elements.
 # When configured with RTD variables, check for RTD environment so manual runs succeed:

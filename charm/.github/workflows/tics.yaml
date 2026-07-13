@@ -9,7 +9,7 @@ jobs:
   analyze-k8s:
     uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.2
     with:
-      project: vault-k8s-operator
+      project: openbao-k8s-operator
       dir: k8s
     secrets:
       TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}
@@ -17,7 +17,7 @@ jobs:
   analyze-machine:
     uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.2
     with:
-      project: vault-operator
+      project: openbao-operator
       dir: machine
     secrets:
       TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}

@@ -1,10 +1,10 @@
-# Use Vault behind an Ingress (K8s)
+# Use OpenBao behind an Ingress (K8s)
 
-It is recommended to run Vault behind an ingress. The charm offers two integrations one that allows accessing Vault behind an ingress through a single endpoint and a second that allows accessing each of the units separately. In this guide we will list the necessary steps to achieve this using the [Traefik-K8s operator](https://charmhub.io/traefik-k8s).
+It is recommended to run OpenBao behind an ingress. The charm offers two integrations one that allows accessing OpenBao behind an ingress through a single endpoint and a second that allows accessing each of the units separately. In this guide we will list the necessary steps to achieve this using the [Traefik-K8s operator](https://charmhub.io/traefik-k8s).
 
 ## Pre-requisites
 
-- Vault-K8s deployed on a Juju model
+- OpenBao-K8s deployed on a Juju model
 
 ## Steps
 
@@ -26,16 +26,16 @@ Integrate Traefik with Self-Signed-Certificates Operator
 juju integrate self-signed-certificates:certificates traefik-k8s:certificates
 ```
 
-Integrate Vault with Traefik
+Integrate OpenBao with Traefik
 ```bash
-juju integrate vault-k8s:send-ca-cert traefik-k8s:receive-ca-cert
-juju integrate vault-k8s:ingress traefik-k8s:ingress
-juju integrate vault:ingress-per-unit traefik-k8s:ingress-per-unit
+juju integrate openbao-k8s:send-ca-cert traefik-k8s:receive-ca-cert
+juju integrate openbao-k8s:ingress traefik-k8s:ingress
+juju integrate openbao:ingress-per-unit traefik-k8s:ingress-per-unit
 ```
 
-The `ingress` integration will allow accessing Vault through a single endpoint while the `ingress-per-unit` integration will allow accessing each of the units individually.
+The `ingress` integration will allow accessing OpenBao through a single endpoint while the `ingress-per-unit` integration will allow accessing each of the units individually.
 
-Get the URLs of Vault and each of the units
+Get the URLs of OpenBao and each of the units
 
 Run the `show-proxied-endpoints` action on Traefik.
 
@@ -47,11 +47,11 @@ Running operation 1 with 1 task
   - task 2 on unit-traefik-k8s-0
 
 Waiting for task 2...
-proxied-endpoints: '{"vault/0": {"url": "https://10.0.0.5/vault-vault-k8s-0"},
-  "vault": {"url": "https://10.0.0.5/vault-vault-k8s"}}'
+proxied-endpoints: '{"openbao/0": {"url": "https://10.0.0.5/openbao-openbao-k8s-0"},
+  "openbao": {"url": "https://10.0.0.5/openbao-openbao-k8s"}}'
 ```
 
-You should now be able to access Vault using the URL in the action output.
+You should now be able to access OpenBao using the URL in the action output.
 
 Retrieve the Juju secrets list:
 
@@ -59,14 +59,14 @@ Retrieve the Juju secrets list:
 user@ubuntu:~$ juju secrets --format=yaml
 ck0i0h3q457c7bgte4kg:
   revision: 1
-  owner: vault-k8s
-  label: vault-ca-certificate
+  owner: openbao-k8s
+  label: openbao-ca-certificate
   created: 2023-09-13T02:36:57Z
   updated: 2023-09-13T02:36:57Z
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: vault-k8s
-  label: vault-initialization
+  owner: openbao-k8s
+  label: openbao-initialization
   created: 2023-09-13T02:37:10Z
   updated: 2023-09-13T02:37:10Z
 cks0s1c24l7c77v23p80:
@@ -78,13 +78,13 @@ cks0s1c24l7c77v23p80:
   updated: 2023-09-13T02:36:57Z
 ```
 
-Read the `vault-initialization` secret content:
+Read the `openbao-initialization` secret content:
 
 ```bash
 user@ubuntu:~$ juju show-secret ck0i0krq457c7bgte4l0 --reveal
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: vault-k8s
+  owner: openbao-k8s
   created: 2023-08-28T13:33:54Z
   updated: 2023-08-28T13:33:54Z
   content:
@@ -92,10 +92,10 @@ ck0i0krq457c7bgte4l0:
     unsealkeys: '["11bd448ccfec24db29ed5c14fdfe3d169589f5c5c6b57870e31d738aec623856"]'
 ```
 
-Set the vault token for use in the client:
+Set the openbao token for use in the client:
 
 ```bash
-export VAULT_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+export BAO_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
 ```
 
 Read the Self Signed Certificates operator's `ca-certificates` secret content:
@@ -134,21 +134,21 @@ cks0s1c24l7c77v23p80:
     [...]
 ```
 
-Copy the CA certificate content into a file and set the `VAULT_CAPATH` environment variable to reference this file:
+Copy the CA certificate content into a file and set the `OPENBAO_CAPATH` environment variable to reference this file:
 
 ```bash
-export VAULT_CAPATH=/path/to/vault_ca.pem
+export OPENBAO_CAPATH=/path/to/openbao_ca.pem
 ```
 
-Identify the vault address by setting the `VAULT_ADDR` environment variable using the Vault URL which is retrieved through `show-proxied-endpoints` action. In our example, the vault address is `https://10.0.0.5/vault-vault-k8s`:
+Identify the openbao address by setting the `OPENBAO_ADDR` environment variable using the OpenBao URL which is retrieved through `show-proxied-endpoints` action. In our example, the openbao address is `https://10.0.0.5/openbao-openbao-k8s`:
 
 ```bash
-export VAULT_ADDR="https://10.0.0.5/vault-vault-k8s"
+export OPENBAO_ADDR="https://10.0.0.5/openbao-openbao-k8s"
 ```
 
-You can now run vault commands against the vault unit.
+You can now run openbao commands against the openbao unit.
 
 ```bash
-vault status
-vault operator raft list-peers
+openbao status
+bao operator raft list-peers
 ```

@@ -1,6 +1,6 @@
 # Tutorials
 
-This section of our documentation contains a comprehensive, hands-on tutorial to help you learn how to deploy and use Vault Charms and become familiar with their operations.
+This section of our documentation contains a comprehensive, hands-on tutorial to help you learn how to deploy and use OpenBao Charms and become familiar with their operations.
 
 ## Table of content
 

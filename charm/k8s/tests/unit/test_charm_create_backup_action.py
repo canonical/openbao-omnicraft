@@ -5,13 +5,13 @@
 
 import ops.testing as testing
 import pytest
-from vault.vault_managers import ManagerError
+from openbao.openbao_managers import ManagerError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmCreateBackupAction(VaultCharmFixtures):
-    def test_given_failed_to_initialize_vault_client_when_create_backup_then_action_fails(self):
+class TestCharmCreateBackupAction(OpenBaoCharmFixtures):
+    def test_given_failed_to_initialize_openbao_client_when_create_backup_then_action_fails(self):
         self.mock_s3_requirer.configure_mock(
             **{
                 "get_s3_connection_info.return_value": {
@@ -24,7 +24,7 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
             },
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         s3_relation = testing.Relation(
@@ -38,7 +38,7 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
         )
         with pytest.raises(testing.ActionFailed) as e:
             self.ctx.run(self.ctx.on.action("create-backup"), state_in)
-        assert e.value.message == "Failed to initialize Vault client."
+        assert e.value.message == "Failed to initialize OpenBao client."
 
     def test_given_manager_raises_error_when_create_backup_then_action_fails(self):
         self.mock_s3_requirer.configure_mock(
@@ -53,18 +53,18 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
             },
         )
         self.mock_backup_manager.create_backup.side_effect = ManagerError("some error message")
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "is_active_or_standby.return_value": True,
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
         )
         s3_relation = testing.Relation(

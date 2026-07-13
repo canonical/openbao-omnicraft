@@ -1,13 +1,13 @@
 # Scale (Machine)
 
-The Vault charm uses the [raft](https://developer.hashicorp.com/vault/docs/configuration/storage/raft) backend to scale. This guide walks you through scaling Vault.
+The OpenBao charm uses the [raft](https://openbao.org/docs/configuration/storage/raft) backend to scale. This guide walks you through scaling OpenBao.
 
 ## Pre-requisites
 
-- Vault is initialised and unseal
-- The Vault charm is authorised
+- OpenBao is initialised and unseal
+- The OpenBao charm is authorised
 
-## 1. Validate that Vault is an active state
+## 1. Validate that OpenBao is an active state
 
 Run `juju status`:
 ```
@@ -15,21 +15,21 @@ Model  Controller           Cloud/Region         Version  SLA          Timestamp
 demo   localhost-localhost  localhost/localhost  3.4.0    unsupported  12:11:19-04:00
 
 App    Version  Status  Scale  Charm  Channel    Rev  Exposed  Message
-vault           active      1  vault  1.19/edge  257  no       
+openbao           active      1  openbao  1.19/edge  257  no       
 
 Unit      Workload  Agent  Machine  Public address  Ports  Message
-vault/0*  active    idle   0        10.191.126.116         
+openbao/0*  active    idle   0        10.191.126.116         
 
 Machine  State    Address         Inst id        Base          AZ  Message
 0        started  10.191.126.116  juju-b8368f-0  ubuntu@22.04      Running
 ```
 
-## 2. Scale Vault to 3 units
+## 2. Scale OpenBao to 3 units
 
 Add 2 more units:
 
 ```
-juju add-unit vault -n 2
+juju add-unit openbao -n 2
 ```
 
 The new units will be sealed:
@@ -39,12 +39,12 @@ Model  Controller           Cloud/Region         Version  SLA          Timestamp
 demo   localhost-localhost  localhost/localhost  3.4.0    unsupported  12:19:14-04:00
 
 App    Version  Status   Scale  Charm  Channel    Rev  Exposed  Message
-vault           blocked      3  vault  1.19/edge  257  no       Waiting for Vault to be unsealed
+openbao           blocked      3  openbao  1.19/edge  257  no       Waiting for OpenBao to be unsealed
 
 Unit      Workload  Agent  Machine  Public address  Ports  Message
-vault/0*  active    idle   0        10.191.126.116         
-vault/1   blocked   idle   1        10.191.126.151         Waiting for Vault to be unsealed
-vault/2   blocked   idle   2        10.191.126.90          Waiting for Vault to be unsealed
+openbao/0*  active    idle   0        10.191.126.116         
+openbao/1   blocked   idle   1        10.191.126.151         Waiting for OpenBao to be unsealed
+openbao/2   blocked   idle   2        10.191.126.90          Waiting for OpenBao to be unsealed
 
 Machine  State    Address         Inst id        Base          AZ  Message
 0        started  10.191.126.116  juju-b8368f-0  ubuntu@22.04      Running
@@ -53,21 +53,21 @@ Machine  State    Address         Inst id        Base          AZ  Message
 
 ```
 
-Set the `VAULT_ADDR` variable to the `vault/1` unit:
+Set the `OPENBAO_ADDR` variable to the `openbao/1` unit:
 ```
-export VAULT_ADDR=https://$(juju status vault/1 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $VAULT_ADDR
+export OPENBAO_ADDR=https://$(juju status openbao/1 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $OPENBAO_ADDR
 ```
-Unseal the the `vault/1` unit using the same unseal keys as received during the initialization of the Vault leader:
+Unseal the the `openbao/1` unit using the same unseal keys as received during the initialization of the OpenBao leader:
 
 ```
-vault operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
+bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 ```
 
-And complete the same operations for the `vault/2` unit:
+And complete the same operations for the `openbao/2` unit:
 
 ```
-export VAULT_ADDR=https://$(juju status vault/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $VAULT_ADDR
-vault operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
+export OPENBAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $OPENBAO_ADDR
+bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 ```
 
 ## 3. Validate that all units are part of the cluster
@@ -80,12 +80,12 @@ Model  Controller           Cloud/Region         Version  SLA          Timestamp
 demo   localhost-localhost  localhost/localhost  3.4.0    unsupported  12:24:32-04:00
 
 App    Version  Status  Scale  Charm  Channel    Rev  Exposed  Message
-vault           active      3  vault  1.19/edge  257  no       
+openbao           active      3  openbao  1.19/edge  257  no       
 
 Unit      Workload  Agent  Machine  Public address  Ports  Message
-vault/0*  active    idle   0        10.191.126.116         
-vault/1   active    idle   1        10.191.126.151         
-vault/2   active    idle   2        10.191.126.90          
+openbao/0*  active    idle   0        10.191.126.116         
+openbao/1   active    idle   1        10.191.126.151         
+openbao/2   active    idle   2        10.191.126.90          
 
 Machine  State    Address         Inst id        Base          AZ  Message
 0        started  10.191.126.116  juju-b8368f-0  ubuntu@22.04      Running
@@ -97,10 +97,10 @@ Machine  State    Address         Inst id        Base          AZ  Message
 And they should all be part of the raft cluster:
 
 ```
-$ vault operator raft list-peers
+$ bao operator raft list-peers
 Node            Address                State       Voter
 ----            -------                -----       -----
-demo-vault/0    10.191.126.116:8201    leader      true
-demo-vault/1    10.191.126.151:8201    follower    true
-demo-vault/2    10.191.126.90:8201     follower    true
+demo-openbao/0    10.191.126.116:8201    leader      true
+demo-openbao/1    10.191.126.151:8201    follower    true
+demo-openbao/2    10.191.126.90:8201     follower    true
 ```

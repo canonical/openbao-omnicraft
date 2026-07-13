@@ -1,15 +1,15 @@
-# Upgrade Vault
+# Upgrade OpenBao
 
 ## Pre-requisites
 
-- Vault >= 1.15 is deployed
-- In the case of upgrading `vault-k8s`, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
+- OpenBao >= 1.15 is deployed
+- In the case of upgrading `openbao-k8s`, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
 
 ## Upgrade Procedure
 
-- Create a backup of your Vault data following [this guide](create_backup.md) (in case anything goes wrong during the upgrade).
+- Create a backup of your OpenBao data following [this guide](create_backup.md) (in case anything goes wrong during the upgrade).
 - Make sure to save your unseal key(s), as this operation will seal all units.
-- Run `juju refresh vault --channel=$VAULT_HIGHER_VERSION`, where VAULT_HIGHER_VERSION is a supported version higher than the one you currently have deployed.
+- Run `juju refresh openbao --channel=$OPENBAO_HIGHER_VERSION`, where OPENBAO_HIGHER_VERSION is a supported version higher than the one you currently have deployed.
 
 ## Version-specific upgrade guides
 

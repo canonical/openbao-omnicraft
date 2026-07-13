@@ -6,9 +6,9 @@ MAKEFLAGS += --always-make
 
 # Copy shared package into the charm directory
 vendor-shared-code:
-	rsync --archive --delete --filter='merge ../.rsync-filter' ../vault-package .vendored/
+	rsync --archive --delete --filter='merge ../.rsync-filter' ../openbao-package .vendored/
 
 # Copy libs used by test charm
 copy-test-libs:
-	cp lib/charms/vault_k8s/v0/vault_kv.py tests/integration/vault_kv_requirer_operator/lib/charms/vault_k8s/v0/
-	cp .vendored/vault-package/vault/juju_facade.py tests/integration/vault_kv_requirer_operator/lib/vault/
+	cp lib/charms/openbao_k8s/v0/openbao_kv.py tests/integration/openbao_kv_requirer_operator/lib/charms/openbao_k8s/v0/
+	cp .vendored/openbao-package/openbao/juju_facade.py tests/integration/openbao_kv_requirer_operator/lib/openbao/

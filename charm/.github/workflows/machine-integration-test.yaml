@@ -7,8 +7,8 @@ on:
         description: Path to the charm's root directory
         required: true
         type: string
-      vault-charm-artifact-name:
-        description: Name of the artifact to be downloaded for the vault charm
+      openbao-charm-artifact-name:
+        description: Name of the artifact to be downloaded for the openbao charm
         required: true
         type: string
       kv-requirer-charm-artifact-name:
@@ -60,7 +60,7 @@ jobs:
       - name: Fetch Charm Under Test
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.vault-charm-artifact-name }}
+          name: ${{ inputs.openbao-charm-artifact-name }}
           path: ${{ inputs.path }}built/
       - name: Fetch KV Requirer Charm
         uses: actions/download-artifact@v8
@@ -71,9 +71,9 @@ jobs:
         id: charm-path
         working-directory: ${{ inputs.path }}
         run: |
-          VAULT_CHARM=$(ls built/*.charm | grep -v kv-requirer | head -1)
+          OPENBAO_CHARM=$(ls built/*.charm | grep -v kv-requirer | head -1)
           KV_CHARM=$(ls built/*kv-requirer*.charm | head -1)
-          echo "vault-charm=${VAULT_CHARM}" >> "$GITHUB_OUTPUT"
+          echo "openbao-charm=${OPENBAO_CHARM}" >> "$GITHUB_OUTPUT"
           echo "kv-charm=${KV_CHARM}" >> "$GITHUB_OUTPUT"
       - name: Install minio binaries and configure storage buckets for backup tests
         if: ${{ matrix.suite == 'test_backup.py' }}
@@ -90,8 +90,8 @@ jobs:
           sudo lxc config set core.storage_buckets_address ${lxd_bridge_addr}:8555
           echo "Waiting for Juju to react to the buckets restriction..."
           sleep 30 # For some reason, the Juju controller needs some time to make itself available after restricting the storage buckets address
-          sudo lxc storage bucket create default vault-integration-test
-          sudo lxc storage bucket key create default vault-integration-test vault-integration-test --role admin --access-key vaultintegrationtest --secret-key vaultintegrationtest
+          sudo lxc storage bucket create default openbao-integration-test
+          sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key openbaointegrationtest --secret-key openbaointegrationtest
       - name: Install MicroCeph and configure RGW for backup tests
         if: ${{ matrix.suite == 'test_backup_microceph.py' }}
         run: |
@@ -141,21 +141,21 @@ jobs:
             exit 1
           fi
 
-          echo "Creating S3 user for Vault integration tests..."
+          echo "Creating S3 user for OpenBao integration tests..."
           sudo microceph.radosgw-admin user create \
-            --uid=vaultmicrocephtest \
-            --display-name="Vault MicroCeph Test" \
-            --access-key=vaultmicrocephtest \
-            --secret-key=vaultmicrocephtest
+            --uid=openbaomicrocephtest \
+            --display-name="OpenBao MicroCeph Test" \
+            --access-key=openbaomicrocephtest \
+            --secret-key=openbaomicrocephtest
 
           echo "Creating S3 bucket..."
           sudo apt-get install -y -qq s3cmd > /dev/null
-          s3cmd --access_key=vaultmicrocephtest \
-            --secret_key=vaultmicrocephtest \
+          s3cmd --access_key=openbaomicrocephtest \
+            --secret_key=openbaomicrocephtest \
             --host=127.0.0.1:7480 \
             --host-bucket="127.0.0.1:7480/%(bucket)" \
             --no-ssl \
-            mb s3://vault-microceph-test
+            mb s3://openbao-microceph-test
 
           echo "MicroCeph RGW setup complete."
           sudo microceph status
@@ -163,7 +163,7 @@ jobs:
         working-directory: ${{ inputs.path }}
         run: |
           tox -e integration -- \
-            --charm_path=${{ steps.charm-path.outputs.vault-charm }} \
+            --charm_path=${{ steps.charm-path.outputs.openbao-charm }} \
             --kv_requirer_charm_path=${{ steps.charm-path.outputs.kv-charm }} \
             -k "${{ matrix.suite }}"
       - name: Archive charmcraft logs

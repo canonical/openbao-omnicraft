@@ -1,6 +1,6 @@
-# Vault K8s Terraform module
+# OpenBao K8s Terraform module
 
-This folder contains a base [Terraform][Terraform] module for the `vault-k8s` charm.
+This folder contains a base [Terraform][Terraform] module for the `openbao-k8s` charm.
 
 The module uses the [Terraform Juju provider][Terraform Juju provider] to model the charm deployment onto any Kubernetes environment managed by [Juju][Juju].
 
@@ -15,7 +15,7 @@ The base module is not intended to be deployed in separation (it is possible tho
 - The Juju client
 - Terraform
 
-### Deploying Vault K8s
+### Deploying OpenBao K8s
 
 On the host machine create a new directory called terraform:
 
@@ -39,7 +39,7 @@ terraform {
 EOF
 ```
 
-Create a Terraform module containing Vault K8s:
+Create a Terraform module containing OpenBao K8s:
 
 ```shell
 cat << EOF > main.tf
@@ -47,8 +47,8 @@ resource "juju_model" "demo" {
   name = "demo"
 }
 
-module "vault-k8s" {
-  source = "git::https://github.com/canonical/vault-k8s-operator//k8s/terraform"
+module "openbao-k8s" {
+  source = "git::https://github.com/canonical/openbao-omnicraft//k8s/terraform"
   
   model      = juju_model.demo.name
 }
@@ -71,20 +71,20 @@ terraform apply
 
 ### Create integrations
 
-Add the following content to your module's `main.tf` file to create the integration between the `vault-k8s` charm and other charms.
+Add the following content to your module's `main.tf` file to create the integration between the `openbao-k8s` charm and other charms.
 
 ```text
-resource "juju_integration" "vault-kv-integration" {
+resource "juju_integration" "openbao-kv-integration" {
   model = var.model
 
   application {
     name     = module.some-app.app_name
-    endpoint = module.some-app.vault-kv
+    endpoint = module.some-app.openbao-kv
   }
 
   application {
-    name     = module.vault-k8s.app_name
-    endpoint = module.vault-k8s.provides.vault-kv
+    name     = module.openbao-k8s.app_name
+    endpoint = module.openbao-k8s.provides.openbao-kv
   }
 }
 ```
@@ -101,5 +101,5 @@ resource "juju_integration" "vault-kv-integration" {
 [Terraform]: https://www.terraform.io/
 [Terraform Juju provider]: https://registry.terraform.io/providers/juju/juju/latest
 [Juju]: https://juju.is
-[vault-k8s-integrations]: https://charmhub.io/vault-k8s/integrations
+[openbao-k8s-integrations]: https://charmhub.io/openbao-k8s/integrations
 [set-up-environment]: [https://discourse.charmhub.io/t/set-up-your-development-environment-with-microk8s-for-juju-terraform-provider/13109#prepare-development-environment-2]

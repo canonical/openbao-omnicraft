@@ -14,34 +14,34 @@ from config import (
     MINIO_REVISION,
     MINIO_S3_ACCESS_KEY,
     MINIO_S3_SECRET_KEY,
-    NUM_VAULT_UNITS,
+    NUM_OPENBAO_UNITS,
     S3_INTEGRATOR_APPLICATION_NAME,
     S3_INTEGRATOR_REVISION,
     SHORT_TIMEOUT,
 )
 from helpers import (
-    deploy_vault,
-    get_vault_token_and_unseal_key,
-    initialize_unseal_authorize_vault,
+    deploy_openbao,
+    get_openbao_token_and_unseal_key,
+    initialize_unseal_authorize_openbao,
 )
 
 logger = logging.getLogger(__name__)
 
 
-VaultInit = namedtuple("VaultInit", ["root_token", "unseal_key"])
+OpenBaoInit = namedtuple("OpenBaoInit", ["root_token", "unseal_key"])
 
 
 @pytest.fixture(scope="module")
-def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> VaultInit:
+def deploy(juju: jubilant.Juju, openbao_charm_path: Path, skip_deploy: bool) -> OpenBaoInit:
     """Build and deploy the application."""
     if skip_deploy:
         logger.info("Skipping deployment due to --no-deploy flag")
-        root_token, key = get_vault_token_and_unseal_key(juju, APPLICATION_NAME)
-        return VaultInit(root_token, key)
-    deploy_vault(
+        root_token, key = get_openbao_token_and_unseal_key(juju, APPLICATION_NAME)
+        return OpenBaoInit(root_token, key)
+    deploy_openbao(
         juju,
-        charm_path=vault_charm_path,
-        num_units=NUM_VAULT_UNITS,
+        charm_path=openbao_charm_path,
+        num_units=NUM_OPENBAO_UNITS,
     )
     juju.deploy(
         S3_INTEGRATOR_APPLICATION_NAME,
@@ -67,11 +67,11 @@ def deploy(juju: jubilant.Juju, vault_charm_path: Path, skip_deploy: bool) -> Va
             and MINIO_APPLICATION_NAME in s.apps
             and jubilant.all_blocked(s, APPLICATION_NAME)
             and jubilant.all_active(s, MINIO_APPLICATION_NAME)
-            and len(s.apps[APPLICATION_NAME].units) == NUM_VAULT_UNITS
+            and len(s.apps[APPLICATION_NAME].units) == NUM_OPENBAO_UNITS
         ),
     )
-    root_token, unseal_key = initialize_unseal_authorize_vault(juju, APPLICATION_NAME)
-    return VaultInit(root_token, unseal_key)
+    root_token, unseal_key = initialize_unseal_authorize_openbao(juju, APPLICATION_NAME)
+    return OpenBaoInit(root_token, unseal_key)
 
 
 def _run_s3_integrator_sync_credentials(juju: jubilant.Juju) -> None:
@@ -86,7 +86,7 @@ def _run_s3_integrator_sync_credentials(juju: jubilant.Juju) -> None:
 
 
 def _run_create_backup_action(juju: jubilant.Juju) -> dict:
-    """Run create-backup action on the vault leader unit."""
+    """Run create-backup action on the openbao leader unit."""
     task = juju.run(
         f"{APPLICATION_NAME}/leader",
         "create-backup",
@@ -97,7 +97,7 @@ def _run_create_backup_action(juju: jubilant.Juju) -> dict:
 
 
 def _run_list_backups_action(juju: jubilant.Juju) -> dict:
-    """Run list-backups action on the vault leader unit."""
+    """Run list-backups action on the openbao leader unit."""
     task = juju.run(
         f"{APPLICATION_NAME}/leader",
         "list-backups",
@@ -108,7 +108,7 @@ def _run_list_backups_action(juju: jubilant.Juju) -> dict:
 
 
 def _run_restore_backup_action(juju: jubilant.Juju, backup_id: str) -> dict:
-    """Run restore-backup action on the vault leader unit."""
+    """Run restore-backup action on the openbao leader unit."""
     task = juju.run(
         f"{APPLICATION_NAME}/leader",
         "restore-backup",
@@ -120,7 +120,7 @@ def _run_restore_backup_action(juju: jubilant.Juju, backup_id: str) -> dict:
 
 @pytest.mark.abort_on_fail
 def test_given_application_is_deployed_and_related_to_s3_integrator_when_create_backup_action_then_backup_is_created(
-    juju: jubilant.Juju, deploy: VaultInit
+    juju: jubilant.Juju, deploy: OpenBaoInit
 ):
     _run_s3_integrator_sync_credentials(juju)
 
@@ -143,7 +143,7 @@ def test_given_application_is_deployed_and_related_to_s3_integrator_when_create_
     juju.wait(
         lambda s: (
             jubilant.all_active(s, APPLICATION_NAME)
-            and len(s.apps[APPLICATION_NAME].units) == NUM_VAULT_UNITS
+            and len(s.apps[APPLICATION_NAME].units) == NUM_OPENBAO_UNITS
             and all(
                 u.juju_status.current == "idle" for u in s.apps[APPLICATION_NAME].units.values()
             )
@@ -156,13 +156,13 @@ def test_given_application_is_deployed_and_related_to_s3_integrator_when_create_
 
 @pytest.mark.abort_on_fail
 def test_given_application_is_deployed_and_backup_created_when_list_backups_action_then_backups_are_listed(
-    juju: jubilant.Juju, deploy: VaultInit
+    juju: jubilant.Juju, deploy: OpenBaoInit
 ):
     juju.wait(
         lambda s: (
             jubilant.all_active(s, S3_INTEGRATOR_APPLICATION_NAME)
             and jubilant.all_active(s, APPLICATION_NAME)
-            and len(s.apps[APPLICATION_NAME].units) == NUM_VAULT_UNITS
+            and len(s.apps[APPLICATION_NAME].units) == NUM_OPENBAO_UNITS
         ),
         timeout=SHORT_TIMEOUT,
     )
@@ -173,13 +173,13 @@ def test_given_application_is_deployed_and_backup_created_when_list_backups_acti
 
 @pytest.mark.abort_on_fail
 def test_given_application_is_deployed_and_backup_created_when_restore_backup_action_then_backup_is_restored(
-    juju: jubilant.Juju, deploy: VaultInit
+    juju: jubilant.Juju, deploy: OpenBaoInit
 ):
     juju.wait(
         lambda s: (
             jubilant.all_active(s, S3_INTEGRATOR_APPLICATION_NAME)
             and jubilant.all_active(s, APPLICATION_NAME)
-            and len(s.apps[APPLICATION_NAME].units) == NUM_VAULT_UNITS
+            and len(s.apps[APPLICATION_NAME].units) == NUM_OPENBAO_UNITS
         ),
         timeout=SHORT_TIMEOUT,
     )

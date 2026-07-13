@@ -30,7 +30,7 @@ jobs:
         working-directory: ${{ inputs.path }}
         run: |
           make copy-test-libs
-          charmcraft pack --verbose --project-dir tests/integration/vault_kv_requirer_operator
+          charmcraft pack --verbose --project-dir tests/integration/openbao_kv_requirer_operator
 
       - name: Archive KV Requirer Charm
         uses: actions/upload-artifact@v7

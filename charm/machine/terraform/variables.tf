@@ -4,7 +4,7 @@
 variable "app_name" {
   description = "Name of the application in the Juju model."
   type        = string
-  default     = "vault"
+  default     = "openbao"
 }
 
 variable "channel" {
@@ -14,7 +14,7 @@ variable "channel" {
 }
 
 variable "config" {
-  description = "Application config. Details about available options can be found at https://charmhub.io/vault/configure."
+  description = "Application config. Details about available options can be found at https://charmhub.io/openbao/configure."
   type        = map(string)
   default     = {}
 }

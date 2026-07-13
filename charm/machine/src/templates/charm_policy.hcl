@@ -62,7 +62,7 @@ path "sys/storage/raft/snapshot-force" {
   capabilities = ["update"]
 }
 
-# Vault Transit permissions
+# OpenBao Transit permissions
 path "charm-transit/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }

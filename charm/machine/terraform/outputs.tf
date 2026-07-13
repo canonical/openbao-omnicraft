@@ -3,12 +3,12 @@
 
 output "app_name" {
   description = "Name of the deployed application."
-  value       = juju_application.vault.name
+  value       = juju_application.openbao.name
 }
 
 output "requires" {
   value = {
-    vault-autounseal-requires = "vault-autounseal-requires"
+    openbao-autounseal-requires = "openbao-autounseal-requires"
     ingress                   = "ingress"
     ingress-per-unit          = "ingress-per-unit"
     tls-certificates-access   = "tls-certificates-access"
@@ -21,9 +21,9 @@ output "requires" {
 
 output "provides" {
   value = {
-    vault-autounseal-provides = "vault-autounseal-provides"
-    vault-kv                  = "vault-kv"
-    vault-pki                 = "vault-pki"
+    openbao-autounseal-provides = "openbao-autounseal-provides"
+    openbao-kv                  = "openbao-kv"
+    openbao-pki                 = "openbao-pki"
     metrics-endpoint          = "metrics-endpoint"
     send-ca-cert              = "send-ca-cert"
     grafana-dashboard         = "grafana-dashboard"

@@ -5,34 +5,34 @@
 
 ## Prerequisites
 
-- A Juju model with Vault deployed and initialized
-- The Vault charm has `vault-pki` relation endpoint available
-- No external CA charm (e.g., `self-signed-certificates`) is related to Vault's `tls-certificates-pki` endpoint
+- A Juju model with OpenBao deployed and initialized
+- The OpenBao charm has `openbao-pki` relation endpoint available
+- No external CA charm (e.g., `self-signed-certificates`) is related to OpenBao's `tls-certificates-pki` endpoint
 
 ## Enable Self-Signed PKI
 
 ### 1. Configure the CA common name
 
 ```bash
-juju config vault pki_ca_common_name="vault-ca.example.com"
+juju config openbao pki_ca_common_name="openbao-ca.example.com"
 ```
 
 ### 2. (Optional) Configure additional CA attributes
 
 ```bash
-juju config vault pki_ca_sans_dns="vault-ca.example.com,ca.example.com"
-juju config vault pki_ca_country_name="US"
-juju config vault pki_ca_state_or_province_name="California"
-juju config vault pki_ca_locality_name="San Francisco"
-juju config vault pki_ca_organization="Example Corp"
-juju config vault pki_ca_organizational_unit="Security"
+juju config openbao pki_ca_sans_dns="openbao-ca.example.com,ca.example.com"
+juju config openbao pki_ca_country_name="US"
+juju config openbao pki_ca_state_or_province_name="California"
+juju config openbao pki_ca_locality_name="San Francisco"
+juju config openbao pki_ca_organization="Example Corp"
+juju config openbao pki_ca_organizational_unit="Security"
 ```
 
 ### 3. Relate a certificate requirer
 
 ```bash
 juju deploy tls-certificates-requirer --config common_name="app.example.com"
-juju integrate vault:vault-pki tls-certificates-requirer:certificates
+juju integrate openbao:openbao-pki tls-certificates-requirer:certificates
 ```
 
 ### 4. Verify certificates are issued
@@ -48,7 +48,7 @@ If you previously used an external CA charm:
 
 ```bash
 # Remove the external CA relation
-juju remove-relation vault:self-signed-certificates
+juju remove-relation openbao:self-signed-certificates
 
 # The charm will automatically transition to self-signed CA mode
 # and generate a new CA certificate
@@ -59,7 +59,7 @@ juju remove-relation vault:self-signed-certificates
 ```bash
 # Deploy and relate an external CA charm
 juju deploy self-signed-certificates
-juju integrate vault:tls-certificates-pki self-signed-certificates:certificates
+juju integrate openbao:tls-certificates-pki self-signed-certificates:certificates
 
 # The charm will automatically switch to external CA mode
 # and request an intermediate CA from the external provider
@@ -70,7 +70,7 @@ juju integrate vault:tls-certificates-pki self-signed-certificates:certificates
 Change the common name (or any CA attribute) to trigger rotation:
 
 ```bash
-juju config vault pki_ca_common_name="vault-ca-v2.example.com"
+juju config openbao pki_ca_common_name="openbao-ca-v2.example.com"
 ```
 
 The charm will:
@@ -84,17 +84,17 @@ The charm will:
 ### Charm shows "pki_ca_common_name is not set"
 
 ```bash
-juju config vault pki_ca_common_name="your-domain.com"
+juju config openbao pki_ca_common_name="your-domain.com"
 ```
 
 ### Charm shows blocked status with "tls-certificates-pki relation is missing"
 
 This should NOT happen in self-signed mode. If it does:
 - Check that `pki_ca_common_name` is valid
-- Check charm logs: `juju debug-log --include vault`
+- Check charm logs: `juju debug-log --include openbao`
 
 ### Certificates not being issued
 
-- Verify Vault is initialized and unsealed
-- Check that the `vault-pki` relation is established
+- Verify OpenBao is initialized and unsealed
+- Check that the `openbao-pki` relation is established
 - Check charm logs for PKI role or signing errors

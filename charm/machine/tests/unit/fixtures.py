@@ -6,13 +6,14 @@ from unittest.mock import patch
 
 import ops.testing as testing
 import pytest
-from vault.testing.mocks import VaultCharmFixturesBase
-from vault.vault_managers import RaftManager
+from charms.operator_libs_linux.v2 import snap
+from openbao.openbao_managers import RaftManager
+from openbao.testing.mocks import OpenBaoCharmFixturesBase
 
-from charm import VaultOperatorCharm
+from charm import OpenBaoOperatorCharm
 
 
-class VaultCharmFixtures(VaultCharmFixturesBase):
+class OpenBaoCharmFixtures(OpenBaoCharmFixturesBase):
     @pytest.fixture(autouse=True)
     def setup(self):
         with (
@@ -29,10 +30,15 @@ class VaultCharmFixtures(VaultCharmFixturesBase):
                 patch("charm.subprocess.run", autospec=True)
             )
             self.mock_snap_cache = stack.enter_context(patch("charm.snap.SnapCache"))
+            # Report the openbao snap as already installed by default so that
+            # _install_openbao_snap does not try to fetch the snap resource.
+            self.mock_snap_cache.return_value.__getitem__.return_value.state = (
+                snap.SnapState.Present
+            )
             self.mock_systemd_creds = stack.enter_context(patch("charm.SystemdCreds"))
             self.mock_logrotate_path = stack.enter_context(patch("charm.LOGROTATE_PATH"))
             yield
 
     @pytest.fixture(autouse=True)
     def context(self):
-        self.ctx = testing.Context(charm_type=VaultOperatorCharm)
+        self.ctx = testing.Context(charm_type=OpenBaoOperatorCharm)

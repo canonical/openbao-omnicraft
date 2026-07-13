@@ -19,7 +19,7 @@
 
 **Purpose**: Ensure the development environment is ready and understand the existing codebase.
 
-- [ ] T001 [P] Run `tox` in `vault-package/` to verify baseline tests pass
+- [ ] T001 [P] Run `tox` in `openbao-package/` to verify baseline tests pass
 - [ ] T002 [P] Run `tox` in `k8s/` to verify baseline tests pass
 - [ ] T003 [P] Run `tox` in `machine/` to verify baseline tests pass
 - [ ] T004 Review existing PKI integration test in `k8s/tests/integration/test_pki.py` to understand current test patterns
@@ -32,23 +32,23 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-### VaultClient — Self-Signed CA Generation
+### OpenBaoClient — Self-Signed CA Generation
 
-- [ ] T005 Add `generate_self_signed_ca()` method to `vault-package/vault/vault_client.py`
-- [ ] T006 Add unit tests for `generate_self_signed_ca()` in `vault-package/tests/unit/test_vault_client.py`
-- [ ] T007 Add mock for `generate_self_signed_ca()` to `vault-package/vault/testing/mocks.py`
+- [ ] T005 Add `generate_self_signed_ca()` method to `openbao-package/openbao/openbao_client.py`
+- [ ] T006 Add unit tests for `generate_self_signed_ca()` in `openbao-package/tests/unit/test_openbao_client.py`
+- [ ] T007 Add mock for `generate_self_signed_ca()` to `openbao-package/openbao/testing/mocks.py`
 
 ### PKIManager — Self-Signed Mode Refactoring
 
-- [ ] T008 [P] Add `self_signed_ca: bool = False` parameter to `PKIManager.__init__()` in `vault-package/vault/vault_managers.py`
-- [ ] T009 [P] Add `SELF_SIGNED_CA_SECRET_LABEL` constant to `vault-package/vault/vault_managers.py`
-- [ ] T010 Add `_generate_self_signed_ca()` method to `PKIManager` in `vault-package/vault/vault_managers.py`
-- [ ] T011 Add `_configure_self_signed_ca()` method to `PKIManager` in `vault-package/vault/vault_managers.py`
-- [ ] T012 Refactor `PKIManager.configure()` to branch between self-signed and external CA modes in `vault-package/vault/vault_managers.py`
-- [ ] T013 Refactor `PKIManager.sync()` to skip relation check in self-signed mode in `vault-package/vault/vault_managers.py`
-- [ ] T014 Refactor `PKIManager._generate_pki_certificate_for_requirer()` to get CA from secret in self-signed mode in `vault-package/vault/vault_managers.py`
+- [ ] T008 [P] Add `self_signed_ca: bool = False` parameter to `PKIManager.__init__()` in `openbao-package/openbao/openbao_managers.py`
+- [ ] T009 [P] Add `SELF_SIGNED_CA_SECRET_LABEL` constant to `openbao-package/openbao/openbao_managers.py`
+- [ ] T010 Add `_generate_self_signed_ca()` method to `PKIManager` in `openbao-package/openbao/openbao_managers.py`
+- [ ] T011 Add `_configure_self_signed_ca()` method to `PKIManager` in `openbao-package/openbao/openbao_managers.py`
+- [ ] T012 Refactor `PKIManager.configure()` to branch between self-signed and external CA modes in `openbao-package/openbao/openbao_managers.py`
+- [ ] T013 Refactor `PKIManager.sync()` to skip relation check in self-signed mode in `openbao-package/openbao/openbao_managers.py`
+- [ ] T014 Refactor `PKIManager._generate_pki_certificate_for_requirer()` to get CA from secret in self-signed mode in `openbao-package/openbao/openbao_managers.py`
 
-**Checkpoint**: Foundation ready — `VaultClient` can generate self-signed CAs and `PKIManager` supports self-signed mode. Unit tests in `vault-package/` pass.
+**Checkpoint**: Foundation ready — `OpenBaoClient` can generate self-signed CAs and `PKIManager` supports self-signed mode. Unit tests in `openbao-package/` pass.
 
 ---
 
@@ -56,28 +56,28 @@
 
 **Goal**: When `pki_ca_common_name` is set and no `tls-certificates-pki` relation exists, the charm generates a self-signed CA and uses it to issue certificates.
 
-**Independent Test**: Configure `pki_ca_common_name` on Vault with `vault-pki` relation but no `tls-certificates-pki` relation. Certificates should be issued to requirers.
+**Independent Test**: Configure `pki_ca_common_name` on OpenBao with `openbao-pki` relation but no `tls-certificates-pki` relation. Certificates should be issued to requirers.
 
 ### Tests for User Story 1
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T015 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode generates CA when no secret exists in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T016 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode reuses existing CA when config unchanged in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T017 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode regenerates CA when config changed in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T018 [P] [US1] Add unit test: `PKIManager.sync()` in self-signed mode issues certificates without relation in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T019 [P] [US1] Add unit test: charm collect_status does NOT block when `vault-pki` exists but `tls-certificates-pki` does not and `pki_ca_common_name` is valid in `k8s/tests/unit/test_charm_collect_status.py`
+- [ ] T015 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode generates CA when no secret exists in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T016 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode reuses existing CA when config unchanged in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T017 [P] [US1] Add unit test: `PKIManager.configure()` in self-signed mode regenerates CA when config changed in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T018 [P] [US1] Add unit test: `PKIManager.sync()` in self-signed mode issues certificates without relation in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T019 [P] [US1] Add unit test: charm collect_status does NOT block when `openbao-pki` exists but `tls-certificates-pki` does not and `pki_ca_common_name` is valid in `k8s/tests/unit/test_charm_collect_status.py`
 - [ ] T020 [P] [US1] Add unit test: charm `_configure_pki_secrets_engine()` creates `PKIManager` with `self_signed_ca=True` when no external relation in `k8s/tests/unit/test_charm_configure.py`
 
 ### Implementation for User Story 1
 
 - [ ] T021 [US1] Update `k8s/src/charm.py` `_on_collect_status()` to not block for missing `tls-certificates-pki` when `pki_ca_common_name` is valid
 - [ ] T022 [US1] Update `k8s/src/charm.py` `_configure_pki_secrets_engine()` to detect self-signed mode and pass `self_signed_ca=True` to `PKIManager`
-- [ ] T023 [US1] Update `k8s/src/charm.py` `_sync_vault_pki()` to detect self-signed mode and pass `self_signed_ca=True` to `PKIManager`
+- [ ] T023 [US1] Update `k8s/src/charm.py` `_sync_openbao_pki()` to detect self-signed mode and pass `self_signed_ca=True` to `PKIManager`
 - [ ] T024 [US1] Update `machine/src/charm.py` with the same status and PKIManager changes as `k8s/src/charm.py`
-- [ ] T025 [US1] Run `make vendor-shared-code` in `k8s/` to sync `vault-package/` changes
-- [ ] T026 [US1] Run `make vendor-shared-code` in `machine/` to sync `vault-package/` changes
-- [ ] T027 [US1] Run `tox` in `vault-package/` to verify all unit tests pass
+- [ ] T025 [US1] Run `make vendor-shared-code` in `k8s/` to sync `openbao-package/` changes
+- [ ] T026 [US1] Run `make vendor-shared-code` in `machine/` to sync `openbao-package/` changes
+- [ ] T027 [US1] Run `tox` in `openbao-package/` to verify all unit tests pass
 - [ ] T028 [US1] Run `tox` in `k8s/` to verify all unit tests pass
 - [ ] T029 [US1] Run `tox` in `machine/` to verify all unit tests pass
 
@@ -89,11 +89,11 @@
 
 **Goal**: When both external CA relation and `pki_ca_common_name` are present, external CA takes precedence. When external CA relation is removed, charm transitions to self-signed mode.
 
-**Independent Test**: Relate Vault to external CA via `tls-certificates-pki`, verify intermediate CA from external provider is used. Remove relation, verify self-signed CA is generated.
+**Independent Test**: Relate OpenBao to external CA via `tls-certificates-pki`, verify intermediate CA from external provider is used. Remove relation, verify self-signed CA is generated.
 
 ### Tests for User Story 2
 
-- [ ] T030 [P] [US2] Add unit test: `PKIManager.configure()` uses external CA when `self_signed_ca=False` in `k8s/tests/unit/lib/test_vault_managers.py`
+- [ ] T030 [P] [US2] Add unit test: `PKIManager.configure()` uses external CA when `self_signed_ca=False` in `k8s/tests/unit/lib/test_openbao_managers.py`
 - [ ] T031 [P] [US2] Add unit test: charm does not activate self-signed mode when `tls-certificates-pki` relation exists in `k8s/tests/unit/test_charm_configure.py`
 - [ ] T032 [P] [US2] Add unit test: charm transitions to self-signed mode after external CA relation is removed in `k8s/tests/unit/test_charm_configure.py`
 
@@ -116,9 +116,9 @@
 
 ### Tests for User Story 3
 
-- [ ] T037 [P] [US3] Add unit test: `PKIManager._generate_self_signed_ca()` creates new CA when common_name changes in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T038 [P] [US3] Add unit test: `PKIManager.configure()` imports new CA as new issuer and makes it default in `k8s/tests/unit/lib/test_vault_managers.py`
-- [ ] T039 [P] [US3] Add unit test: old issuer is not deleted after rotation in `k8s/tests/unit/lib/test_vault_managers.py`
+- [ ] T037 [P] [US3] Add unit test: `PKIManager._generate_self_signed_ca()` creates new CA when common_name changes in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T038 [P] [US3] Add unit test: `PKIManager.configure()` imports new CA as new issuer and makes it default in `k8s/tests/unit/lib/test_openbao_managers.py`
+- [ ] T039 [P] [US3] Add unit test: old issuer is not deleted after rotation in `k8s/tests/unit/lib/test_openbao_managers.py`
 
 ### Implementation for User Story 3
 
@@ -138,9 +138,9 @@
 ### Integration Tests
 
 - [ ] T044 [P] Add integration test for self-signed CA mode in `k8s/tests/integration/test_pki.py`
-  - Deploy Vault without external CA charm
+  - Deploy OpenBao without external CA charm
   - Set `pki_ca_common_name`
-  - Relate `vault-pki` requirer
+  - Relate `openbao-pki` requirer
   - Assert certificate is issued and valid
 - [ ] T045 [P] Add integration test for hybrid mode transition in `k8s/tests/integration/test_pki.py`
   - Start with external CA, verify it works
@@ -150,7 +150,7 @@
 
 ### Cross-Cutting Concerns
 
-- [ ] T046 [P] Verify `k8s/.vendored/vault-package/` and `machine/.vendored/vault-package/` are in sync with `vault-package/`
+- [ ] T046 [P] Verify `k8s/.vendored/openbao-package/` and `machine/.vendored/openbao-package/` are in sync with `openbao-package/`
 - [ ] T047 [P] Run `tox run -e lint` in `k8s/` and `machine/` to verify no linting errors
 - [ ] T048 [P] Run `tox run -e static` in `k8s/` and `machine/` to verify no type errors
 - [ ] T049 Update `specs/001-pki-self-signed-ca/quickstart.md` if any operator steps changed during implementation
@@ -166,7 +166,7 @@
 
 - **Setup (Phase 1)**: No dependencies — can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
-  - T005–T007 (VaultClient) can run in parallel with T008–T014 (PKIManager)
+  - T005–T007 (OpenBaoClient) can run in parallel with T008–T014 (PKIManager)
 - **User Stories (Phase 3–5)**: All depend on Foundational phase completion
   - User stories should proceed sequentially in priority order (P1 → P2 → P3)
   - US2 and US3 can be worked on in parallel with US1 if team capacity allows, but US1 is the MVP
@@ -181,14 +181,14 @@
 ### Within Each User Story
 
 - Tests MUST be written and FAIL before implementation
-- `vault-package/` changes before charm changes
+- `openbao-package/` changes before charm changes
 - `k8s/` changes before `machine/` mirror changes
 - Unit tests pass before integration tests
 
 ### Parallel Opportunities
 
 - T001–T004 (setup verification) can all run in parallel
-- T005–T007 (VaultClient) can run in parallel with T008–T014 (PKIManager refactoring)
+- T005–T007 (OpenBaoClient) can run in parallel with T008–T014 (PKIManager refactoring)
 - T015–T020 (US1 tests) can all be written in parallel
 - T030–T032 (US2 tests) can all be written in parallel
 - T037–T039 (US3 tests) can all be written in parallel
@@ -211,7 +211,7 @@ Task: "T020 Add unit test: charm _configure_pki_secrets_engine() creates PKIMana
 # After tests are written and failing, launch implementation:
 Task: "T021 Update k8s/src/charm.py _on_collect_status()"
 Task: "T022 Update k8s/src/charm.py _configure_pki_secrets_engine()"
-Task: "T023 Update k8s/src/charm.py _sync_vault_pki()"
+Task: "T023 Update k8s/src/charm.py _sync_openbao_pki()"
 ```
 
 ---
@@ -259,4 +259,4 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
-- **Critical**: `vault-package/` changes must be vendored to both `k8s/` and `machine/` before merging
+- **Critical**: `openbao-package/` changes must be vendored to both `k8s/` and `machine/` before merging

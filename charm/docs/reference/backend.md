@@ -5,4 +5,4 @@
 :align: center
 ```
 
-[Raft](https://developer.hashicorp.com/vault/docs/configuration/storage/raft) is the only supported Backend in Vault charms. As you scale your Juju application, you also scale your raft cluster.
+[Raft](https://openbao.org/docs/configuration/storage/raft) is the only supported Backend in OpenBao charms. As you scale your Juju application, you also scale your raft cluster.

@@ -1,7 +1,7 @@
 ui      = true
 storage "raft" {
-  path= "/var/snap/vault/common/raft"
-  node_id = "whatever-vault/0"
+  path= "/var/snap/openbao/common/raft"
+  node_id = "whatever-openbao/0"
   }
 log_level = "info"
 listener "tcp" {
@@ -9,8 +9,8 @@ listener "tcp" {
     unauthenticated_metrics_access = true
   }
   address       = "[::]:8200"
-  tls_cert_file = "/var/snap/vault/common/certs/cert.pem"
-  tls_key_file  = "/var/snap/vault/common/certs/key.pem"
+  tls_cert_file = "/var/snap/openbao/common/certs/cert.pem"
+  tls_key_file  = "/var/snap/openbao/common/certs/key.pem"
 }
 default_lease_ttl = "168h"
 max_lease_ttl     = "720h"

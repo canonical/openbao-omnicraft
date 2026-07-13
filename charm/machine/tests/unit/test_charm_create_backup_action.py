@@ -5,14 +5,14 @@
 
 import ops.testing as testing
 import pytest
+from openbao.openbao_managers import ManagerError
 from ops.testing import ActionFailed
-from vault.vault_managers import ManagerError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmCreateBackupAction(VaultCharmFixtures):
-    def test_given_failed_to_initialize_vault_client_when_create_backup_then_action_fails(self):
+class TestCharmCreateBackupAction(OpenBaoCharmFixtures):
+    def test_given_failed_to_initialize_openbao_client_when_create_backup_then_action_fails(self):
         state_in = testing.State(
             leader=True,
             relations=[],
@@ -20,13 +20,13 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(self.ctx.on.action("create-backup"), state_in)
 
-        assert e.value.message == "Failed to initialize Vault client."
+        assert e.value.message == "Failed to initialize OpenBao client."
 
     def test_given_manager_raises_error_when_create_backup_then_action_fails(self):
         self.mock_backup_manager.create_backup.side_effect = ManagerError("some error message")
 
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         s3_relation = testing.Relation(
@@ -34,7 +34,7 @@ class TestCharmCreateBackupAction(VaultCharmFixtures):
             interface="s3",
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             leader=True,

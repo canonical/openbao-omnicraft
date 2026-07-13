@@ -10,12 +10,12 @@ from unittest.mock import MagicMock, patch
 import hcl
 import ops.testing as testing
 import pytest
-from charms.operator_libs_linux.v2.snap import Snap
-from vault.vault_autounseal import AutounsealDetails
-from vault.vault_client import AppRole
+from charms.operator_libs_linux.v2.snap import Snap, SnapState
+from openbao.openbao_autounseal import AutounsealDetails
+from openbao.openbao_client import AppRole
 
 from certificates import generate_example_provider_certificate
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
 class MockRelation:
@@ -53,7 +53,7 @@ class MockBinding:
         self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
 
 
-class TestCharmConfigure(VaultCharmFixtures):
+class TestCharmConfigure(OpenBaoCharmFixtures):
     def test_given_leader_when_configure_then_config_file_is_pushed(self):
         self.mock_socket_fqdn.return_value = "myhostname"
         self.mock_autounseal_requires_get_details.return_value = None
@@ -61,7 +61,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         model_name = "whatever"
 
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             unit_status=testing.ActiveStatus(),
@@ -70,7 +70,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             model=testing.Model(name=model_name),
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -81,24 +81,25 @@ class TestCharmConfigure(VaultCharmFixtures):
         with open("tests/unit/config.hcl", "r") as f:
             expected_config = f.read()
 
-        vault_hcl_call = None
+        openbao_hcl_call = None
         for call in self.mock_machine.push.call_args_list:
-            if call.kwargs["path"] == "/var/snap/vault/common/vault.hcl":
-                vault_hcl_call = call
+            if call.kwargs["path"] == "/var/snap/openbao/common/openbao-config.hcl":
+                openbao_hcl_call = call
                 break
 
-        assert vault_hcl_call is not None, "vault.hcl was not pushed"
-        pushed_content_hcl = hcl.loads(vault_hcl_call.kwargs["source"])
+        assert openbao_hcl_call is not None, "openbao-config.hcl was not pushed"
+        pushed_content_hcl = hcl.loads(openbao_hcl_call.kwargs["source"])
         assert pushed_content_hcl == hcl.loads(expected_config)
 
-    def test_given_leader_when_configure_then_vault_service_is_started(self):
+    def test_given_leader_when_configure_then_openbao_service_is_started(self):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        vault_snap = MagicMock(spec=Snap)
-        snap_cache = {"vault": vault_snap}
+        openbao_snap = MagicMock(spec=Snap)
+        openbao_snap.state = SnapState.Present
+        snap_cache = {"openbao": openbao_snap}
         self.mock_snap_cache.return_value = snap_cache
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             unit_status=testing.ActiveStatus(),
@@ -106,7 +107,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             relations=[peer_relation],
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -114,14 +115,14 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        vault_snap.start.assert_called_with(services=["vaultd"])
+        openbao_snap.start.assert_called_with(services=["baod"])
 
     # PKI
 
     def test_given_certificate_available_when_configure_then_pki_secrets_engine_is_configured(
         self,
     ):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "authenticate.return_value": True,
@@ -135,14 +136,14 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
@@ -153,7 +154,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             config={"pki_ca_common_name": "myhostname.com"},
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -182,7 +183,7 @@ class TestCharmConfigure(VaultCharmFixtures):
     def test_given_pki_config_is_invalid_when_configure_then_pki_secrets_engine_is_not_configured(
         self, config_key: str, config_value: str
     ):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "authenticate.return_value": True,
@@ -196,14 +197,14 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         pki_relation = testing.Relation(
             endpoint="tls-certificates-pki",
             interface="tls-certificates",
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
@@ -217,7 +218,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -240,7 +241,7 @@ class TestCharmConfigure(VaultCharmFixtures):
     def test_given_certificate_available_when_configure_then_acme_server_is_configured(
         self,
     ):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "authenticate.return_value": True,
@@ -254,14 +255,14 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         acme_relation = testing.Relation(
             endpoint="tls-certificates-acme",
             interface="tls-certificates",
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
@@ -272,7 +273,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             config={"acme_ca_common_name": "myhostname.com"},
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -303,7 +304,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         config_key: str,
         config_value: str,
     ):
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "authenticate.return_value": True,
@@ -317,14 +318,14 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         acme_relation = testing.Relation(
             endpoint="tls-certificates-acme",
             interface="tls-certificates",
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
@@ -338,7 +339,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -366,7 +367,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         key_name = "my key"
         approle_id = "my approle id"
         approle_secret_id = "my approle secret id"
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "token": "some token",
                 "is_api_available.return_value": True,
@@ -377,7 +378,7 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_common_name_allowed_in_pki_role.return_value": False,
             },
         )
-        self.mock_vault_autounseal_provider_manager.configure_mock(
+        self.mock_openbao_autounseal_provider_manager.configure_mock(
             **{
                 "create_credentials.return_value": (key_name, approle_id, approle_secret_id),
             }
@@ -390,7 +391,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             approle_secret_id,
             "ca cert",
         )
-        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+        self.mock_openbao_autounseal_requirer_manager.get_provider_openbao_token.return_value = (
             "some token"
         )
         self.mock_tls.configure_mock(
@@ -403,33 +404,33 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
-        vault_autounseal_relation = testing.Relation(
-            endpoint="vault-autounseal-provides",
-            interface="vault-autounseal",
-            remote_app_name="vault-autounseal-requirer",
+        openbao_autounseal_relation = testing.Relation(
+            endpoint="openbao-autounseal-provides",
+            interface="openbao-autounseal",
+            remote_app_name="openbao-autounseal-requirer",
         )
         mock_get_binding.return_value = MockBinding(
             bind_address="myhostname",
             ingress_address="myhostname",
         )
-        relation = MockRelation(id=vault_autounseal_relation.id)
-        self.mock_vault_autounseal_provider_manager.get_outstanding_requests.return_value = [
+        relation = MockRelation(id=openbao_autounseal_relation.id)
+        self.mock_openbao_autounseal_provider_manager.get_outstanding_requests.return_value = [
             relation
         ]
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
             unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
-            relations=[peer_relation, vault_autounseal_relation],
+            relations=[peer_relation, openbao_autounseal_relation],
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("myhostname")])],
                     ingress_addresses=["myhostname"],
                 )
@@ -441,7 +442,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         calls = [
             call
             for call in self.mock_machine.push.call_args_list
-            if call.kwargs["path"] == "/var/snap/vault/common/vault.hcl"
+            if call.kwargs["path"] == "/var/snap/openbao/common/openbao-config.hcl"
         ]
         assert len(calls) == 1
         _, kwargs = calls[0]
@@ -450,7 +451,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         assert actual_config_hcl["seal"]["transit"]["address"] == "1.2.3.4"
         assert actual_config_hcl["seal"]["transit"]["mount_path"] == "charm-autounseal"
         assert actual_config_hcl["seal"]["transit"]["key_name"] == "key name"
-        self.mock_vault.authenticate.assert_called_with(AppRole("role id", "secret id"))
+        self.mock_openbao.authenticate.assert_called_with(AppRole("role id", "secret id"))
         self.mock_tls.push_autounseal_ca_cert.assert_called_with("ca cert")
 
     @patch("ops.model.Model.get_binding")
@@ -460,7 +461,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         key_name = "my key"
         approle_id = "my approle id"
         approle_secret_id = "my approle secret id"
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
                 "authenticate.return_value": True,
@@ -470,7 +471,7 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "is_common_name_allowed_in_pki_role.return_value": False,
             },
         )
-        self.mock_vault_autounseal_provider_manager.configure_mock(
+        self.mock_openbao_autounseal_provider_manager.configure_mock(
             **{
                 "create_credentials.return_value": (key_name, approle_id, approle_secret_id),
             }
@@ -483,7 +484,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             "secret id",
             "ca cert",
         )
-        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+        self.mock_openbao_autounseal_requirer_manager.get_provider_openbao_token.return_value = (
             "some token"
         )
         self.mock_tls.configure_mock(
@@ -494,33 +495,33 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
-        vault_autounseal_relation = testing.Relation(
-            endpoint="vault-autounseal-provides",
-            interface="vault-autounseal",
-            remote_app_name="vault-autounseal-requirer",
+        openbao_autounseal_relation = testing.Relation(
+            endpoint="openbao-autounseal-provides",
+            interface="openbao-autounseal",
+            remote_app_name="openbao-autounseal-requirer",
         )
         mock_get_binding.return_value = MockBinding(
             bind_address="myhostname",
             ingress_address="myhostname",
         )
-        relation = MockRelation(id=vault_autounseal_relation.id)
-        self.mock_vault_autounseal_provider_manager.get_outstanding_requests.return_value = [
+        relation = MockRelation(id=openbao_autounseal_relation.id)
+        self.mock_openbao_autounseal_provider_manager.get_outstanding_requests.return_value = [
             relation
         ]
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
             unit_status=testing.ActiveStatus(),
             leader=True,
             secrets=[approle_secret],
-            relations=[peer_relation, vault_autounseal_relation],
+            relations=[peer_relation, openbao_autounseal_relation],
             networks={
                 testing.Network(
-                    "vault-peers",
+                    "openbao-peers",
                     bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
                 )
             },
@@ -528,7 +529,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        self.mock_vault_autounseal_provider_manager.create_credentials.assert_called_with(
+        self.mock_openbao_autounseal_provider_manager.create_credentials.assert_called_with(
             relation,
             "https://myhostname:8200",
         )
@@ -539,7 +540,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self,
     ):
         self.mock_machine.pull.return_value = StringIO("")
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "token": "some token",
                 "is_api_available.return_value": True,
@@ -552,12 +553,12 @@ class TestCharmConfigure(VaultCharmFixtures):
         )
         self.mock_autounseal_requires_get_details.return_value = None
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         kv_relation = testing.Relation(
-            endpoint="vault-kv",
-            interface="vault-kv",
-            remote_app_name="vault-kv",
+            endpoint="openbao-kv",
+            interface="openbao-kv",
+            remote_app_name="openbao-kv",
             remote_app_data={
                 "mount_suffix": "remote-suffix",
             },
@@ -569,7 +570,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             },
         )
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
@@ -584,9 +585,9 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         kwargs = self.mock_kv_manager.generate_credentials_for_requirer.call_args_list[0].kwargs
         assert kwargs["relation"].id == kv_relation.id
-        assert kwargs["app_name"] == "vault-kv"
-        assert kwargs["unit_name"] == "vault-kv/0"
+        assert kwargs["app_name"] == "openbao-kv"
+        assert kwargs["unit_name"] == "openbao-kv/0"
         assert kwargs["mount_suffix"] == "remote-suffix"
         assert kwargs["egress_subnets"] == ["2.2.2.0/24"]
         assert kwargs["nonce"] == "123123"
-        assert kwargs["vault_url"] == "https://192.0.2.0:8200"
+        assert kwargs["openbao_url"] == "https://192.0.2.0:8200"

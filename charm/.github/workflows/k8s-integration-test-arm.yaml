@@ -7,8 +7,8 @@ on:
         description: Path to the charm's root directory
         required: true
         type: string
-      vault-charm-artifact-name:
-        description: Name of the artifact to be downloaded for the vault charm
+      openbao-charm-artifact-name:
+        description: Name of the artifact to be downloaded for the openbao charm
         required: true
         type: string
       kv-requirer-charm-artifact-name:
@@ -41,7 +41,7 @@ jobs:
       - name: Fetch Charm Under Test
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.vault-charm-artifact-name }}
+          name: ${{ inputs.openbao-charm-artifact-name }}
           path: ${{ inputs.path }}built/
       - name: Fetch KV Requirer Charm
         uses: actions/download-artifact@v8
@@ -52,15 +52,15 @@ jobs:
         id: charm-path
         working-directory: ${{ inputs.path }}
         run: |
-          VAULT_CHARM=$(ls built/*.charm | grep -v kv-requirer | head -1)
+          OPENBAO_CHARM=$(ls built/*.charm | grep -v kv-requirer | head -1)
           KV_CHARM=$(ls built/*kv-requirer*.charm | head -1)
-          echo "vault-charm=${VAULT_CHARM}" >> "$GITHUB_OUTPUT"
+          echo "openbao-charm=${OPENBAO_CHARM}" >> "$GITHUB_OUTPUT"
           echo "kv-charm=${KV_CHARM}" >> "$GITHUB_OUTPUT"
       - name: Run test_core integration test
         working-directory: ${{ inputs.path }}
         run: |
           tox -e integration -- \
-            --charm_path=${{ steps.charm-path.outputs.vault-charm }} \
+            --charm_path=${{ steps.charm-path.outputs.openbao-charm }} \
             --kv_requirer_charm_path=${{ steps.charm-path.outputs.kv-charm }} \
             -k "test_core.py"
       - name: Archive charmcraft logs

@@ -1,6 +1,6 @@
 # Supported Releases
 
-The following table lists the supported releases of the Vault charm, along with their associated charm base and architecture.
+The following table lists the supported releases of the OpenBao charm, along with their associated charm base and architecture.
 
 | Channel      | Charm Base     | Architecture     |
 | ------------ | -------------- | ---------------- |

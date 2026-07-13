@@ -1,13 +1,13 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-name: vault-k8s
+name: openbao-k8s
 
 summary: A tool for managing secrets
 description: |
-  Vault secures, stores, and tightly controls access to
+  OpenBao secures, stores, and tightly controls access to
   tokens, passwords, certificates, API keys, and other
-  secrets in modern computing. Vault handles leasing, key
+  secrets in modern computing. OpenBao handles leasing, key
   revocation, key rolling, and auditing. Through a unified
   API, users can access an encrypted Key/Value store and
   network encryption-as-a-service, or generate AWS IAM/STS
@@ -15,35 +15,35 @@ description: |
   SSH credentials, and more.
 links:
   website:
-    - https://canonical-vault-charms.readthedocs-hosted.com
+    - https://canonical-openbao-charms.readthedocs-hosted.com
   source:
-    - https://github.com/canonical/vault-k8s-operator
+    - https://github.com/canonical/openbao-omnicraft
   issues:
-    - https://github.com/canonical/vault-k8s-operator/issues
-  documentation: https://discourse.charmhub.io/t/vault-operator-kubernetes/12123
+    - https://github.com/canonical/openbao-omnicraft/issues
+  documentation: https://discourse.charmhub.io/t/openbao-operator-kubernetes/12123
   contact: https://matrix.to/#/!yAkGlrYcBFYzYRvOlQ:ubuntu.com?via=ubuntu.com&via=matrix.org&via=mozilla.org
 
 containers:
-  vault:
-    resource: vault-image
+  openbao:
+    resource: openbao-image
     mounts:
-      - storage: vault-raft
-        location: /vault/raft
+      - storage: openbao-raft
+        location: /openbao/raft
       - storage: config
-        location: /vault/config
+        location: /openbao/config
       - storage: certs
-        location: /vault/certs
+        location: /openbao/certs
       - storage: tmp
         location: /tmp
 
 resources:
-  vault-image:
+  openbao-image:
     type: oci-image
-    description: OCI image for Vault
-    upstream-source: ghcr.io/canonical/vault:2.0.0
+    description: OCI image for OpenBao
+    upstream-source: ghcr.io/canonical/openbao:2.5.2
 
 storage:
-  vault-raft:
+  openbao-raft:
     type: filesystem
     minimum-size: 10G
   config:
@@ -57,17 +57,17 @@ storage:
     minimum-size: 5G
 
 peers:
-  vault-peers:
-    interface: vault-peer
+  openbao-peers:
+    interface: openbao-peer
 
 provides:
-  vault-autounseal-provides:
-    interface: vault-autounseal
+  openbao-autounseal-provides:
+    interface: openbao-autounseal
     optional: true
-  vault-kv:
-    interface: vault-kv
+  openbao-kv:
+    interface: openbao-kv
     optional: true
-  vault-pki:
+  openbao-pki:
     interface: tls-certificates
     optional: true
   metrics-endpoint:
@@ -87,19 +87,19 @@ assumes:
   - k8s-api
 
 requires:
-  vault-autounseal-requires:
-    interface: vault-autounseal
+  openbao-autounseal-requires:
+    interface: openbao-autounseal
     limit: 1
     optional: true
   ingress:
     description: |
-      Ingress relation for the vault app (ingress per app).
+      Ingress relation for the openbao app (ingress per app).
     interface: ingress
     limit: 1
     optional: true
   ingress-per-unit:
     description: |
-      Ingress relation for the vault units (ingress per unit).
+      Ingress relation for the openbao units (ingress per unit).
     interface: ingress_per_unit
     limit: 1
     optional: true
@@ -107,22 +107,22 @@ requires:
     interface: tls-certificates
     limit: 1
     description: |
-      Communication between the vault units and from a client to Vault should 
+      Communication between the openbao units and from a client to OpenBao should 
       be done using the certificates provided by this integration.
     optional: true
   tls-certificates-pki:
     interface: tls-certificates
     limit: 1
     description: |
-      Interface to be used to provide Vault with its CA certificate. Vault will
-      use this certificate to sign the certificates it issues on the `vault-pki` interface.
+      Interface to be used to provide OpenBao with its CA certificate. OpenBao will
+      use this certificate to sign the certificates it issues on the `openbao-pki` interface.
     optional: true
   tls-certificates-acme:
     interface: tls-certificates
     limit: 1
     description: |
-      Interface to be used to provide Vault with an intermediate CA certificate for the ACME server.
-      Vault will use this certificate to sign the certificates it issues using the ACME protocol.
+      Interface to be used to provide OpenBao with an intermediate CA certificate for the ACME server.
+      OpenBao will use this certificate to sign the certificates it issues using the ACME protocol.
     optional: true
   logging:
     interface: loki_push_api
@@ -159,17 +159,17 @@ parts:
 actions:
   authorize-charm:
     description: >-
-      Authorizes the charm to be able to interact with Vault to manage its
-      operations. A token is required for Vault to use to create the app role and
-      the policy the charm will use to interact with Vault. This token must be
+      Authorizes the charm to be able to interact with OpenBao to manage its
+      operations. A token is required for OpenBao to use to create the app role and
+      the policy the charm will use to interact with OpenBao. This token must be
       placed in a juju secret, and access to this secret should be granted to the charm.
     params:
       secret-id:
         type: string
         description: >-
-          The Juju secret ID for the secret containing a token for Vault that can create 
+          The Juju secret ID for the secret containing a token for OpenBao that can create 
           new policies, such as the root token that is provided upon initializing 
-          Vault. Used to create the app role and policy for the charm. It is not
+          OpenBao. Used to create the app role and policy for the charm. It is not
           stored by the charm.
     required: [secret-id] 
 
@@ -179,7 +179,7 @@ actions:
       application to first be scaled to a single unit.  Bootstrapping can help
       recover when quorum is lost, however, it may cause uncommitted Raft log
       entries to be committed. See
-      https://developer.hashicorp.com/vault/docs/concepts/integrated-storage#manual-recovery-using-peers-json
+      https://openbao.org/docs/concepts/integrated-storage#manual-recovery-using-peers-json
       for more details.
   create-backup:
     description: >-
@@ -251,11 +251,11 @@ config:
     default_lease_ttl:
       type: string
       default: "168h"
-      description: Specifies the default lease duration for Vault's tokens and secrets.
+      description: Specifies the default lease duration for OpenBao's tokens and secrets.
     max_lease_ttl:
       type: string
       default: "720h"
-      description: Specifies the maximum possible lease duration for Vault's tokens and secrets.
+      description: Specifies the maximum possible lease duration for OpenBao's tokens and secrets.
     log_level:
       type: string
       default: "info"
@@ -266,102 +266,102 @@ config:
     access_sans_dns:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will automatically generate subject alternative names.
+        If not set, the OpenBao charm will automatically generate subject alternative names.
     access_country_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
     access_state_or_province_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
     access_locality_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
     access_organization:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
     access_organizational_unit:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
     access_email_address:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a certificate from a TLS provider
+        The OpenBao charm will use this configuration option when requesting a certificate from a TLS provider
         using the `tls-certificates-access` charm relation interface.
-        If not set, the Vault charm will request a certificate without this attribute.
+        If not set, the OpenBao charm will request a certificate without this attribute.
 
     # PKI engine options
     pki_ca_common_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
         This option is required when using the `tls-certificates-pki` charm relation interface.
     pki_ca_sans_dns:
       type: string
       description: >-
         Comma-separated list of DNS names for the CA certificate.
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA. If not set,
-        the Vault charm will automatically generate subject alternative names.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA. If not set,
+        the OpenBao charm will automatically generate subject alternative names.
     pki_ca_country_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_ca_state_or_province_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_ca_locality_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_ca_organization:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_ca_organizational_unit:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_ca_email_address:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
-        Charms integrating to Vault using the `vault-pki` charm relation interface will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-pki` charm relation interface.
+        Charms integrating to OpenBao using the `openbao-pki` charm relation interface will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     pki_allowed_domains:
       type: string
       description: >-
-        A comma-separated list of domain names for which the Vault charm can sign certificates.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
-        Certificate requests for charms integrating with Vault using the `vault-pki` integration will need to use a domain name from this list.
+        A comma-separated list of domain names for which the OpenBao charm can sign certificates.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
+        Certificate requests for charms integrating with OpenBao using the `openbao-pki` integration will need to use a domain name from this list.
     pki_allow_bare_domains:
       type: boolean
       default: true
@@ -381,8 +381,8 @@ config:
       default: true
       description: >-
         Specifies if clients can request certificates certificates with RFC 6125 wildcards in the CN field.
-        When set to False, Vault will not issue wildcards, even if they would've been allowed by another option.
-        Vault supports the following four wildcard types:
+        When set to False, OpenBao will not issue wildcards, even if they would've been allowed by another option.
+        OpenBao supports the following four wildcard types:
         - `*.example.com`: a single wildcard as the entire left-most label
         - `foo*.example.com`: a single suffixed wildcard in the left-most label
         - `*foo.example.com`: a single prefixed wildcard in the left-most label
@@ -391,44 +391,44 @@ config:
       type: boolean
       default: false
       description: >-
-        Allow the Vault charm to sign certificates coming from the `vault-pki` integration for any domain name.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Allow the OpenBao charm to sign certificates coming from the `openbao-pki` integration for any domain name.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
     pki_allow_ip_sans:
       type: boolean
       default: false
       description: >-
-        Allow the Vault charm to sign requests with IP Subject Alternative Names.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Allow the OpenBao charm to sign requests with IP Subject Alternative Names.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
     pki_organization:
       type: string
       description: >-
-        This value specifies the O (Organization) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the O (Organization) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an O value in the Subject field.
     pki_organizational_unit:
       type: string
       description: >-
-        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an OU value in the Subject field.
     pki_country:
       type: string
       description: >-
-        This value specifies the C (Country) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the C (Country) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have a C value in the Subject field.
     pki_province:
       type: string
       description: >-
-        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have a ST value in the Subject field.
     pki_locality:
       type: string
       description: >-
-        This value specifies the L (Locality) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the L (Locality) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an L value in the Subject field.
     pki_self_signed_ca_validity:
       type: int
       default: 87600
       description: >-
-        The validity period in hours for the self-signed CA certificate when using Vault's built-in PKI
+        The validity period in hours for the self-signed CA certificate when using OpenBao's built-in PKI
         without an external CA relation (tls-certificates-pki). Default is 87600 hours (10 years).
         This option is only used when the `tls-certificates-pki` relation is not present and
         `pki_ca_common_name` is configured.
@@ -437,58 +437,58 @@ config:
     acme_ca_common_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
         This option is required when using the `tls-certificates-acme` charm relation interface.
     acme_ca_sans_dns:
       type: string
       description: >-
         Comma-separated list of DNS names for the CA certificate.
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA. If not set,
-        the Vault charm will automatically generate subject alternative names.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA. If not set,
+        the OpenBao charm will automatically generate subject alternative names.
     acme_ca_country_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_ca_state_or_province_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_ca_locality_name:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_ca_organization:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_ca_organizational_unit:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_ca_email_address:
       type: string
       description: >-
-        The Vault charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
-        Requirers using the ACME server of Vault will receive signed certificates from that CA.
-        If not set, the Vault charm will request a CA certificate without this attribute.
+        The OpenBao charm will use this configuration option when requesting a CA certificate from a TLS provider using the `tls-certificates-acme` charm relation interface.
+        Requirers using the ACME server of OpenBao will receive signed certificates from that CA.
+        If not set, the OpenBao charm will request a CA certificate without this attribute.
     acme_allowed_domains:
       type: string
       description: >-
-        A comma-separated list of domain names for which the Vault charm can sign certificates.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
-        Certificate requests for clients using the ACME server of Vault will need to use a domain name from this list.
+        A comma-separated list of domain names for which the OpenBao charm can sign certificates.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
+        Certificate requests for clients using the ACME server of OpenBao will need to use a domain name from this list.
     acme_allow_subdomains:
       type: boolean
       default: false
@@ -507,8 +507,8 @@ config:
       default: true
       description: >-
         Specifies if clients can request certificates certificates with RFC 6125 wildcards in the CN field.
-        When set to False, Vault will not issue wildcards, even if they would've been allowed by another option.
-        Vault supports the following four wildcard types:
+        When set to False, OpenBao will not issue wildcards, even if they would've been allowed by another option.
+        OpenBao supports the following four wildcard types:
         - `*.example.com`: a single wildcard as the entire left-most label
         - `foo*.example.com`: a single suffixed wildcard in the left-most label
         - `*foo.example.com`: a single prefixed wildcard in the left-most label
@@ -517,36 +517,36 @@ config:
       type: boolean
       default: false
       description: >-
-        Allow the ACME server of Vault to issue certificates for any domain name.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Allow the ACME server of OpenBao to issue certificates for any domain name.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
     acme_allow_ip_sans:
       type: boolean
       default: false
       description: >-
-        Allow the ACME server of Vault to issue certificates with IP Subject Alternative Names.
-        The Vault charm will use this configuration option in the context of acting as an intermediate CA.
+        Allow the ACME server of OpenBao to issue certificates with IP Subject Alternative Names.
+        The OpenBao charm will use this configuration option in the context of acting as an intermediate CA.
     acme_organization:
       type: string
       description: >-
-        This value specifies the O (Organization) value in the Subject field of the certificate issued by Vault ACME.
+        This value specifies the O (Organization) value in the Subject field of the certificate issued by OpenBao ACME.
         If not set the issued certificate will not have an O value in the Subject field.
     acme_organizational_unit:
       type: string
       description: >-
-        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by Vault ACME.
+        This value specifies the OU (Organizational Unit) value in the Subject field of the certificate issued by OpenBao ACME.
         If not set the issued certificate will not have an OU value in the Subject field.
     acme_country:
       type: string
       description: >-
-        This value specifies the C (Country) value in the Subject field of the certificate issued by Vault ACME.
+        This value specifies the C (Country) value in the Subject field of the certificate issued by OpenBao ACME.
         If not set the issued certificate will not have a C value in the Subject field.
     acme_province:
       type: string
       description: >-
-        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by Vault ACME.
+        This value specifies the ST (State or Province) value in the Subject field of the certificate issued by OpenBao ACME.
         If not set the issued certificate will not have a ST value in the Subject field.
     acme_locality:
       type: string
       description: >-
-        This value specifies the L (Locality) value in the Subject field of the certificate issued by Vault PKI.
+        This value specifies the L (Locality) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an L value in the Subject field.

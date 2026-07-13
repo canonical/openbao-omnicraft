@@ -5,17 +5,17 @@
 
 import ops.testing as testing
 import pytest
-from vault.vault_managers import ManagerError
+from openbao.openbao_managers import ManagerError
 
-from fixtures import VaultCharmFixtures
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmRestoreBackupAction(VaultCharmFixtures):
+class TestCharmRestoreBackupAction(OpenBaoCharmFixtures):
     def test_given_manager_raises_error_when_restore_backup_then_action_fails(self):
         self.mock_backup_manager.restore_backup.side_effect = ManagerError("some error message")
 
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         s3_relation = testing.Relation(
@@ -23,7 +23,7 @@ class TestCharmRestoreBackupAction(VaultCharmFixtures):
             interface="s3",
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
             peers_data={
                 1: {"node_api_address": "1.2.3.4"},
             },

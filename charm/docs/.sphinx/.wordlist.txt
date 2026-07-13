@@ -307,7 +307,7 @@ Terraform
 Testflinger
 Thruk
 Tigera
-TrilioVault
+TrilioOpenBao
 TripleO
 Vue
 WebRTC

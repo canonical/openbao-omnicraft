@@ -10,16 +10,16 @@ from pathlib import Path
 import hcl
 import ops.testing as testing
 import pytest
-from ops.pebble import Layer
-from vault.vault_autounseal import AutounsealDetails
-from vault.vault_client import (
+from openbao.openbao_autounseal import AutounsealDetails
+from openbao.openbao_client import (
     AppRole,
 )
+from ops.pebble import Layer
 
 from certificates_helpers import (
     generate_example_provider_certificate,
 )
-from fixtures import MockBinding, VaultCharmFixtures
+from fixtures import MockBinding, OpenBaoCharmFixtures
 
 
 class MockRelation:
@@ -27,30 +27,30 @@ class MockRelation:
         self.id = id
 
 
-class TestCharmConfigure(VaultCharmFixtures):
+class TestCharmConfigure(OpenBaoCharmFixtures):
     def test_given_leader_when_configure_then_config_file_is_pushed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             self.mock_socket_fqdn.return_value = "myhostname"
             self.mock_autounseal_requires_get_details.return_value = None
             model_name = "whatever"
-            vault_raft_mount = testing.Mount(
-                location="/vault/raft",
+            openbao_raft_mount = testing.Mount(
+                location="/openbao/raft",
                 source=temp_dir,
             )
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-raft": vault_raft_mount,
-                    "vault-config": vault_config_mount,
+                    "openbao-raft": openbao_raft_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             state_in = testing.State(
                 containers=[container],
@@ -61,7 +61,7 @@ class TestCharmConfigure(VaultCharmFixtures):
 
             self.ctx.run(self.ctx.on.pebble_ready(container), state_in)
 
-            with open(f"{temp_dir}/vault.hcl", "r") as f:
+            with open(f"{temp_dir}/openbao.hcl", "r") as f:
                 actual_config = f.read()
 
             with open("tests/unit/config.hcl", "r") as f:
@@ -73,19 +73,19 @@ class TestCharmConfigure(VaultCharmFixtures):
     def test_given_leader_when_configure_then_pebble_layer_is_planned(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             self.mock_autounseal_requires_get_details.return_value = None
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             state_in = testing.State(
                 containers=[container],
@@ -95,16 +95,16 @@ class TestCharmConfigure(VaultCharmFixtures):
 
             state_out = self.ctx.run(self.ctx.on.pebble_ready(container), state_in)
             assert list(state_out.containers)[0].layers == {
-                "vault": Layer(
+                "openbao": Layer(
                     {
-                        "summary": "vault layer",
-                        "description": "pebble config layer for vault",
+                        "summary": "openbao layer",
+                        "description": "pebble config layer for openbao",
                         "services": {
-                            "vault": {
-                                "summary": "vault",
+                            "openbao": {
+                                "summary": "openbao",
                                 "startup": "enabled",
                                 "override": "replace",
-                                "command": "vault server -config=/vault/config/vault.hcl",
+                                "command": "bao server -config=/openbao/config/openbao.hcl",
                             }
                         },
                     }
@@ -117,7 +117,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.mock_vault.configure_mock(
+            self.mock_openbao.configure_mock(
                 **{
                     "is_api_available.return_value": True,
                     "authenticate.return_value": True,
@@ -128,26 +128,26 @@ class TestCharmConfigure(VaultCharmFixtures):
                 },
             )
             self.mock_autounseal_requires_get_details.return_value = None
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             pki_relation = testing.Relation(
                 endpoint="tls-certificates-pki",
                 interface="tls-certificates",
             )
             approle_secret = testing.Secret(
-                label="vault-approle-auth-details",
+                label="openbao-approle-auth-details",
                 tracked_content={"role-id": "role id", "secret-id": "secret id"},
             )
             state_in = testing.State(
@@ -183,7 +183,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self, config_key: str, config_value: str
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.mock_vault.configure_mock(
+            self.mock_openbao.configure_mock(
                 **{
                     "is_api_available.return_value": True,
                     "authenticate.return_value": True,
@@ -194,26 +194,26 @@ class TestCharmConfigure(VaultCharmFixtures):
                 },
             )
             self.mock_autounseal_requires_get_details.return_value = None
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             pki_relation = testing.Relation(
                 endpoint="tls-certificates-pki",
                 interface="tls-certificates",
             )
             approle_secret = testing.Secret(
-                label="vault-approle-auth-details",
+                label="openbao-approle-auth-details",
                 tracked_content={"role-id": "role id", "secret-id": "secret id"},
             )
             state_in = testing.State(
@@ -245,7 +245,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.mock_vault.configure_mock(
+            self.mock_openbao.configure_mock(
                 **{
                     "is_api_available.return_value": True,
                     "authenticate.return_value": True,
@@ -256,26 +256,26 @@ class TestCharmConfigure(VaultCharmFixtures):
                 },
             )
             self.mock_autounseal_requires_get_details.return_value = None
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             acme_relation = testing.Relation(
                 endpoint="tls-certificates-acme",
                 interface="tls-certificates",
             )
             approle_secret = testing.Secret(
-                label="vault-approle-auth-details",
+                label="openbao-approle-auth-details",
                 tracked_content={"role-id": "role id", "secret-id": "secret id"},
             )
             state_in = testing.State(
@@ -312,7 +312,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self, config_key: str, config_value: str
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.mock_vault.configure_mock(
+            self.mock_openbao.configure_mock(
                 **{
                     "is_api_available.return_value": True,
                     "authenticate.return_value": True,
@@ -323,26 +323,26 @@ class TestCharmConfigure(VaultCharmFixtures):
                 },
             )
             self.mock_autounseal_requires_get_details.return_value = None
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             acme_relation = testing.Relation(
                 endpoint="tls-certificates-acme",
                 interface="tls-certificates",
             )
             approle_secret = testing.Secret(
-                label="vault-approle-auth-details",
+                label="openbao-approle-auth-details",
                 tracked_content={"role-id": "role id", "secret-id": "secret id"},
             )
             state_in = testing.State(
@@ -376,7 +376,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         key_name = "my key"
         approle_id = "my approle id"
         approle_secret_id = "my approle secret id"
-        self.mock_vault.configure_mock(
+        self.mock_openbao.configure_mock(
             **{
                 "token": "some token",
                 "is_api_available.return_value": True,
@@ -387,7 +387,7 @@ class TestCharmConfigure(VaultCharmFixtures):
                 "get_intermediate_ca.return_value": "",
             },
         )
-        self.mock_vault_autounseal_provider_manager.configure_mock(
+        self.mock_openbao_autounseal_provider_manager.configure_mock(
             **{
                 "create_credentials.return_value": (key_name, approle_id, approle_secret_id),
             }
@@ -400,7 +400,7 @@ class TestCharmConfigure(VaultCharmFixtures):
             "secret id",
             "ca cert",
         )
-        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+        self.mock_openbao_autounseal_requirer_manager.get_provider_openbao_token.return_value = (
             "some token"
         )
         self.mock_tls.configure_mock(
@@ -411,54 +411,54 @@ class TestCharmConfigure(VaultCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
             "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
         )
-        vault_config_mount = testing.Mount(
-            location="/vault/config",
+        openbao_config_mount = testing.Mount(
+            location="/openbao/config",
             source=tmp_path,
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
             mounts={
-                "vault-config": vault_config_mount,
+                "openbao-config": openbao_config_mount,
             },
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
-        vault_autounseal_relation = testing.Relation(
-            endpoint="vault-autounseal-provides",
-            interface="vault-autounseal",
-            remote_app_name="vault-autounseal-requirer",
+        openbao_autounseal_relation = testing.Relation(
+            endpoint="openbao-autounseal-provides",
+            interface="openbao-autounseal",
+            remote_app_name="openbao-autounseal-requirer",
         )
         self.mock_get_binding.return_value = MockBinding(
             bind_address="myhostname",
             ingress_address="myhostname",
         )
-        relation = MockRelation(id=vault_autounseal_relation.id)
-        self.mock_vault_autounseal_provider_manager.get_outstanding_requests.return_value = [
+        relation = MockRelation(id=openbao_autounseal_relation.id)
+        self.mock_openbao_autounseal_provider_manager.get_outstanding_requests.return_value = [
             relation
         ]
         approle_secret = testing.Secret(
-            label="vault-approle-auth-details",
+            label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
         state_in = testing.State(
             containers=[container],
             leader=True,
             secrets=[approle_secret],
-            relations=[peer_relation, vault_autounseal_relation],
+            relations=[peer_relation, openbao_autounseal_relation],
             config={"pki_ca_common_name": "myhostname.com"},
         )
 
         self.ctx.run(self.ctx.on.pebble_ready(container), state_in)
 
-        with open(f"{tmp_path}/vault.hcl", "r") as f:
+        with open(f"{tmp_path}/openbao.hcl", "r") as f:
             actual_config = f.read()
         actual_config_hcl = hcl.loads(actual_config)
         assert actual_config_hcl["seal"]["transit"]["address"] == "1.2.3.4"
         assert actual_config_hcl["seal"]["transit"]["mount_path"] == "charm-autounseal"
         assert actual_config_hcl["seal"]["transit"]["key_name"] == "key name"
-        self.mock_vault.authenticate.assert_called_with(AppRole("role id", "secret id"))
+        self.mock_openbao.authenticate.assert_called_with(AppRole("role id", "secret id"))
 
     def test_given_autounseal_details_available_when_configure_then_token_added_to_layer(
         self, tmp_path: Path
@@ -471,23 +471,23 @@ class TestCharmConfigure(VaultCharmFixtures):
             secret_id="fake-secret-id",
             ca_certificate="fake-ca-cert",
         )
-        self.mock_vault_autounseal_requirer_manager.get_provider_vault_token.return_value = (
+        self.mock_openbao_autounseal_requirer_manager.get_provider_openbao_token.return_value = (
             "some token"
         )
 
-        vault_config_mount = testing.Mount(
-            location="/vault/config",
+        openbao_config_mount = testing.Mount(
+            location="/openbao/config",
             source=tmp_path,
         )
         container = testing.Container(
-            name="vault",
+            name="openbao",
             can_connect=True,
             mounts={
-                "vault-config": vault_config_mount,
+                "openbao-config": openbao_config_mount,
             },
         )
         peer_relation = testing.PeerRelation(
-            endpoint="vault-peers",
+            endpoint="openbao-peers",
         )
         state_in = testing.State(
             containers=[container],
@@ -497,17 +497,18 @@ class TestCharmConfigure(VaultCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.pebble_ready(container), state_in)
         assert list(state_out.containers)[0].layers == {
-            "vault": Layer(
+            "openbao": Layer(
                 {
-                    "summary": "vault layer",
-                    "description": "pebble config layer for vault",
+                    "summary": "openbao layer",
+                    "description": "pebble config layer for openbao",
                     "services": {
-                        "vault": {
-                            "summary": "vault",
+                        "openbao": {
+                            "summary": "openbao",
                             "startup": "enabled",
                             "override": "replace",
-                            "command": "vault server -config=/vault/config/vault.hcl",
+                            "command": "bao server -config=/openbao/config/openbao.hcl",
                             "environment": {
+                                "BAO_TOKEN": "some token",
                                 "VAULT_TOKEN": "some token",
                             },
                         }
@@ -522,7 +523,7 @@ class TestCharmConfigure(VaultCharmFixtures):
         self,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.mock_vault.configure_mock(
+            self.mock_openbao.configure_mock(
                 **{
                     "token": "some token",
                     "is_api_available.return_value": True,
@@ -535,12 +536,12 @@ class TestCharmConfigure(VaultCharmFixtures):
             )
             self.mock_autounseal_requires_get_details.return_value = None
             peer_relation = testing.PeerRelation(
-                endpoint="vault-peers",
+                endpoint="openbao-peers",
             )
             kv_relation = testing.Relation(
-                endpoint="vault-kv",
-                interface="vault-kv",
-                remote_app_name="vault-kv",
+                endpoint="openbao-kv",
+                interface="openbao-kv",
+                remote_app_name="openbao-kv",
                 remote_app_data={
                     "mount_suffix": "remote-suffix",
                 },
@@ -551,19 +552,19 @@ class TestCharmConfigure(VaultCharmFixtures):
                     },
                 },
             )
-            vault_config_mount = testing.Mount(
-                location="/vault/config",
+            openbao_config_mount = testing.Mount(
+                location="/openbao/config",
                 source=temp_dir,
             )
             container = testing.Container(
-                name="vault",
+                name="openbao",
                 can_connect=True,
                 mounts={
-                    "vault-config": vault_config_mount,
+                    "openbao-config": openbao_config_mount,
                 },
             )
             approle_secret = testing.Secret(
-                label="vault-approle-auth-details",
+                label="openbao-approle-auth-details",
                 tracked_content={"role-id": "role id", "secret-id": "secret id"},
             )
             state_in = testing.State(
@@ -574,16 +575,16 @@ class TestCharmConfigure(VaultCharmFixtures):
             )
             self.mock_kv_provides_get_credentials.return_value = {}
 
-            self.mock_get_binding.return_value = MockBinding("vault", "vault")
+            self.mock_get_binding.return_value = MockBinding("openbao", "openbao")
             self.ctx.run(self.ctx.on.pebble_ready(container), state_in)
 
             kwargs = self.mock_kv_manager.generate_credentials_for_requirer.call_args_list[
                 0
             ].kwargs
             assert kwargs["relation"].id == kv_relation.id
-            assert kwargs["app_name"] == "vault-kv"
-            assert kwargs["unit_name"] == "vault-kv/0"
+            assert kwargs["app_name"] == "openbao-kv"
+            assert kwargs["unit_name"] == "openbao-kv/0"
             assert kwargs["mount_suffix"] == "remote-suffix"
             assert kwargs["egress_subnets"] == ["2.2.2.0/24"]
             assert kwargs["nonce"] == "123123"
-            assert kwargs["vault_url"] == "https://vault:8200"
+            assert kwargs["openbao_url"] == "https://openbao:8200"

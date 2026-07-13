@@ -4,11 +4,11 @@ import ops.testing as testing
 import yaml
 from ops.testing import Context, State
 
-from charm import VaultCharm
-from fixtures import VaultCharmFixtures
+from charm import OpenBaoCharm
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmConfig(VaultCharmFixtures):
+class TestCharmConfig(OpenBaoCharmFixtures):
     config = {
         "cpu-request": "0.75",
         "memory-request": "1Gi",
@@ -67,9 +67,9 @@ class TestCharmConfig(VaultCharmFixtures):
 
     def test_given_config_with_defaults_then_default_config_values_are_correct(self):
         """This test checks the default config values."""
-        ctx = Context(VaultCharm)
+        ctx = Context(OpenBaoCharm)
         with ctx(
-            ctx.on.start(), State(containers=[testing.Container(name="vault", can_connect=True)])
+            ctx.on.start(), State(containers=[testing.Container(name="openbao", can_connect=True)])
         ) as manager:
             manager.run()
             assert manager.charm.model.config.get("default_lease_ttl") == "168h"
@@ -89,10 +89,10 @@ class TestCharmConfig(VaultCharmFixtures):
 
         This is supposed to fail if a key is removed or the type is changed.
         """
-        ctx = Context(VaultCharm)
+        ctx = Context(OpenBaoCharm)
         state_in = testing.State(
             config=self.config,
-            containers=[testing.Container(name="vault", can_connect=True)],
+            containers=[testing.Container(name="openbao", can_connect=True)],
         )
         with ctx(ctx.on.start(), state_in) as manager:
             manager.run()

@@ -46,11 +46,11 @@ jobs:
           filters: |
             k8s:
               - 'k8s/**'
-              - 'vault-package/**'
+              - 'openbao-package/**'
               - '.github/workflows/k8s-integration-test*.yaml'
             machine:
               - 'machine/**'
-              - 'vault-package/**'
+              - 'openbao-package/**'
               - '.github/workflows/machine-integration-test*.yaml'
 
   k8s-quality:
@@ -126,7 +126,7 @@ jobs:
     uses: ./.github/workflows/k8s-integration-test.yaml
     with:
       path: ./k8s/
-      vault-charm-artifact-name: ${{ needs.k8s-build.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.k8s-build.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
 
   k8s-integration-test-arm:
@@ -136,7 +136,7 @@ jobs:
     uses: ./.github/workflows/k8s-integration-test-arm.yaml
     with:
       path: ./k8s/
-      vault-charm-artifact-name: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
 
   k8s-integration-test-s390x:
@@ -145,7 +145,7 @@ jobs:
     uses: ./.github/workflows/k8s-integration-test-s390x.yaml
     with:
       path: ./k8s/
-      vault-charm-artifact-name: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
 
   k8s-publish-charm:
     name: Publish K8s Charm
@@ -281,7 +281,7 @@ jobs:
     uses: ./.github/workflows/machine-integration-test.yaml
     with:
       path: ./machine/
-      vault-charm-artifact-name: ${{ needs.machine-build.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.machine-build.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-machine-charm
 
   machine-integration-test-arm:
@@ -291,7 +291,7 @@ jobs:
     uses: ./.github/workflows/machine-integration-test-arm.yaml
     with:
       path: ./machine/
-      vault-charm-artifact-name: ${{ needs.machine-build-arm.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.machine-build-arm.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-machine-charm
 
   machine-integration-test-s390x:
@@ -300,7 +300,7 @@ jobs:
     uses: ./.github/workflows/machine-integration-test-s390x.yaml
     with:
       path: ./machine/
-      vault-charm-artifact-name: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
+      openbao-charm-artifact-name: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
 
   machine-publish-charm:
     name: Publish Machine Charm

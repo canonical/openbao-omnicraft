@@ -1,13 +1,13 @@
 import ops.testing as testing
 from ops.testing import Context
 
-from charm import VaultCharm
-from fixtures import VaultCharmFixtures
+from charm import OpenBaoCharm
+from fixtures import OpenBaoCharmFixtures
 
 
-class TestCharmIntegrations(VaultCharmFixtures):
+class TestCharmIntegrations(OpenBaoCharmFixtures):
     integration_endpoints = [
-        "vault-autounseal-requires",
+        "openbao-autounseal-requires",
         "ingress",
         "ingress-per-unit",
         "tls-certificates-access",
@@ -16,9 +16,9 @@ class TestCharmIntegrations(VaultCharmFixtures):
         "logging",
         "s3-parameters",
         "tracing",
-        "vault-kv",
-        "vault-pki",
-        "vault-autounseal-provides",
+        "openbao-kv",
+        "openbao-pki",
+        "openbao-autounseal-provides",
         "send-ca-cert",
         "grafana-dashboard",
         "metrics-endpoint",
@@ -26,7 +26,7 @@ class TestCharmIntegrations(VaultCharmFixtures):
 
     def test_given_integrations_when_start_then_integrations_are_complete(self):
         """Ensure no integrations were removed from the charmcraft.yaml."""
-        ctx = Context(VaultCharm)
+        ctx = Context(OpenBaoCharm)
         relations = []
         for integration in self.integration_endpoints:
             relation = testing.Relation(
@@ -34,23 +34,23 @@ class TestCharmIntegrations(VaultCharmFixtures):
             )
             relations.append(relation)
         state_in = testing.State(
-            relations=relations, containers=[testing.Container(name="vault", can_connect=True)]
+            relations=relations, containers=[testing.Container(name="openbao", can_connect=True)]
         )
         with ctx(ctx.on.start(), state_in) as manager:
             manager.run()
 
     def test_given_integrations_when_start_then_no_extra_integrations(self):
         """Ensure no integrations were added to the charmcraft.yaml without being added to the test."""
-        ctx = Context(VaultCharm)
+        ctx = Context(OpenBaoCharm)
         with ctx(
             ctx.on.start(),
             testing.State(
-                containers=[testing.Container(name="vault", can_connect=True)],
+                containers=[testing.Container(name="openbao", can_connect=True)],
             ),
         ) as manager:
             missing_relations = set(manager.charm.meta.relations.keys()).difference(
                 set(self.integration_endpoints)
-            ) - {"vault-peers"}
+            ) - {"openbao-peers"}
             if missing_relations:
                 raise AssertionError(
                     f"Charmcraft.yaml contains integrations missing from test: {missing_relations}"

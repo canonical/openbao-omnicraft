@@ -18,10 +18,10 @@ from lightkube.resources.core_v1 import Pod
 from config import (
     APPLICATION_NAME,
     JUJU_FAST_INTERVAL,
+    OPENBAO_RESOURCES,
     SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
-    VAULT_RESOURCES,
 )
-from vault_helpers import Vault
+from openbao_helpers import OpenBao
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +81,9 @@ def wait_for_status_message(
 
     Args:
         juju: Jubilant Juju instance.
-        app_name: Application name of the Vault, defaults to "vault-k8s"
+        app_name: Application name of the OpenBao, defaults to "openbao-k8s"
         count: How many units are expected to be emitting the message
-        expected_message: The message that vault units should be setting as a status message
+        expected_message: The message that openbao units should be setting as a status message
         timeout: Wait time, in seconds, before giving up
         cadence: How often to check the status of the units
         unit_name: The name of the unit to check the status of
@@ -108,12 +108,12 @@ def wait_for_status_message(
     juju.wait(ready, timeout=timeout, delay=cadence)
 
 
-def get_vault_client(
+def get_openbao_client(
     juju: jubilant.Juju, unit_name: str, token: str, ca_file_name: str | None = None
-) -> Vault:
-    """Get a Vault client for the given application."""
+) -> OpenBao:
+    """Get a OpenBao client for the given application."""
     address = get_unit_address(juju, unit_name)
-    return Vault(url=f"https://{address}:8200", token=token, ca_file_location=ca_file_name)
+    return OpenBao(url=f"https://{address}:8200", token=token, ca_file_location=ca_file_name)
 
 
 def get_model_secret_field(juju: jubilant.Juju, label: str, field: str) -> str:
@@ -137,7 +137,7 @@ def get_model_secret_id(juju: jubilant.Juju, label: str) -> str:
         return str(secret.uri)
 
 
-def get_vault_pki_intermediate_ca_common_name(root_token: str, endpoint: str, mount: str) -> str:
+def get_openbao_pki_intermediate_ca_common_name(root_token: str, endpoint: str, mount: str) -> str:
     client = hvac.Client(url=f"https://{endpoint}:8200", verify=False)
     client.token = root_token
     ca_cert = client.secrets.pki.read_ca_certificate(mount_point=mount)
@@ -154,7 +154,7 @@ def revoke_token(token_to_revoke: str, root_token: str, endpoint: str):
     client.revoke_token(token=token_to_revoke)
 
 
-def get_vault_token_and_unseal_key(
+def get_openbao_token_and_unseal_key(
     juju: jubilant.Juju, app_name: str = APPLICATION_NAME
 ) -> Tuple[str, str]:
     root_token, unseal_key = get_juju_secret(
@@ -163,8 +163,8 @@ def get_vault_token_and_unseal_key(
     return root_token, unseal_key
 
 
-def initialize_vault_leader(juju: jubilant.Juju, app_name: str) -> Tuple[str, str]:
-    """Initialize the leader vault unit and return the root token and unseal key.
+def initialize_openbao_leader(juju: jubilant.Juju, app_name: str) -> Tuple[str, str]:
+    """Initialize the leader openbao unit and return the root token and unseal key.
 
     Also adds the root token and unseal key to the model secrets so they can be
     retrieved if tests are run multiple times with a single deploy
@@ -176,17 +176,17 @@ def initialize_vault_leader(juju: jubilant.Juju, app_name: str) -> Tuple[str, st
     leader_name = get_leader_unit_name(juju, app_name)
     address = get_unit_address(juju, leader_name)
 
-    vault_url = f"https://{address}:8200"
+    openbao_url = f"https://{address}:8200"
 
-    vault = Vault(url=vault_url, ca_file_location=get_ca_cert_file_location(juju, app_name))
-    if not vault.is_initialized():
-        root_token, key = vault.initialize()
+    openbao = OpenBao(url=openbao_url, ca_file_location=get_ca_cert_file_location(juju, app_name))
+    if not openbao.is_initialized():
+        root_token, key = openbao.initialize()
         juju.add_secret(f"root-token-key-{app_name}", {"root-token": root_token, "key": key})
-        logger.info("Vault initialized")
+        logger.info("OpenBao initialized")
         return root_token, key
 
-    root_token, key = get_vault_token_and_unseal_key(juju, app_name=app_name)
-    logger.info("Vault is already initialized")
+    root_token, key = get_openbao_token_and_unseal_key(juju, app_name=app_name)
+    logger.info("OpenBao is already initialized")
     return root_token, key
 
 
@@ -197,8 +197,8 @@ def authorize_charm_and_wait(
 
     Args:
         juju: Jubilant Juju instance.
-        root_token: The root token for the vault
-        app_name: Application name of the Vault, defaults to "vault-k8s"
+        root_token: The root token for the openbao
+        app_name: Application name of the OpenBao, defaults to "openbao-k8s"
 
     Returns:
         Any | Dict: The result of the authorization
@@ -213,24 +213,24 @@ def authorize_charm_and_wait(
     return result
 
 
-def unseal_all_vault_units(
+def unseal_all_openbao_units(
     juju: jubilant.Juju, unseal_key: str, token: str, ca_file_name: str | None = None
 ) -> None:
-    """Unseal all the vault units."""
+    """Unseal all the openbao units."""
     status = juju.status()
     units = status.apps[APPLICATION_NAME].units
 
     # Find the leader first, since this is the one we initialized.
     leader_name = get_leader_unit_name(juju, APPLICATION_NAME)
-    vault = get_vault_client(juju, leader_name, unseal_key, ca_file_name)
-    if vault.is_sealed():
-        vault.unseal(unseal_key)
-    vault.wait_for_node_to_be_unsealed()
+    openbao = get_openbao_client(juju, leader_name, unseal_key, ca_file_name)
+    if openbao.is_sealed():
+        openbao.unseal(unseal_key)
+    openbao.wait_for_node_to_be_unsealed()
 
     for unit_name in units:
-        vault = get_vault_client(juju, unit_name, token, ca_file_name)
-        vault.unseal(unseal_key)
-        vault.wait_for_node_to_be_unsealed()
+        openbao = get_openbao_client(juju, unit_name, token, ca_file_name)
+        openbao.unseal(unseal_key)
+        openbao.wait_for_node_to_be_unsealed()
 
 
 def authorize_charm(
@@ -332,20 +332,20 @@ def get_juju_secret(juju: jubilant.Juju, label: str, fields: List[str]) -> List[
     return [revealed.content[field] for field in fields]
 
 
-def deploy_vault(
+def deploy_openbao(
     juju: jubilant.Juju,
     num_units: int,
     charm_path: Path | None = None,
     channel: str | None = None,
     revision: int | None = None,
 ) -> None:
-    """Ensure the Vault charm is deployed."""
+    """Ensure the OpenBao charm is deployed."""
     deploy_if_not_exists(
         juju,
         app_name=APPLICATION_NAME,
         charm_path=charm_path,
         num_units=num_units,
-        resources=VAULT_RESOURCES,
+        resources=OPENBAO_RESOURCES,
         channel=channel,
         revision=revision,
         constraints=_get_arch_constraint(),
@@ -375,19 +375,19 @@ def get_ca_cert_file_location(juju: jubilant.Juju, app_name: str = APPLICATION_N
     return ca_file.name
 
 
-def initialize_unseal_authorize_vault(juju: jubilant.Juju, app_name: str) -> tuple[str, str]:
-    root_token, unseal_key = initialize_vault_leader(juju, app_name)
+def initialize_unseal_authorize_openbao(juju: jubilant.Juju, app_name: str) -> tuple[str, str]:
+    root_token, unseal_key = initialize_openbao_leader(juju, app_name)
     leader_name = get_leader_unit_name(juju, app_name)
-    vault = get_vault_client(juju, leader_name, root_token)
-    assert vault.is_sealed()
+    openbao = get_openbao_client(juju, leader_name, root_token)
+    assert openbao.is_sealed()
 
     with fast_forward(juju):
-        unseal_all_vault_units(juju, unseal_key, root_token)
+        unseal_all_openbao_units(juju, unseal_key, root_token)
         authorize_charm_and_wait(juju, root_token)
     return root_token, unseal_key
 
 
-def get_vault_ca_certificate(juju: jubilant.Juju, unit_name: str) -> str:
+def get_openbao_ca_certificate(juju: jubilant.Juju, unit_name: str) -> str:
     task = juju.exec("cat /var/lib/juju/storage/certs/0/ca.pem", unit=unit_name)
     return task.stdout
 
