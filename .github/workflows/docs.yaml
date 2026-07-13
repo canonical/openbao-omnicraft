@@ -28,11 +28,11 @@ jobs:
 
       - name: Install the doc framework
         run: |
-          cd docs && make install
+          cd charm/docs && make install
 
       - name: Build docs and run spelling checker
         run: |
-          cd docs && make spelling
+          cd charm/docs && make spelling
 
   woke:
     name: Inclusive language check
@@ -61,8 +61,8 @@ jobs:
 
       - name: Install the doc framework
         run: |
-          cd docs && make install
+          cd charm/docs && make install
 
       - name: Run linkchecker
         run: |
-          cd docs && make linkcheck
+          cd charm/docs && make linkcheck

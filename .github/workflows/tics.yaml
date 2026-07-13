@@ -10,7 +10,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.2
     with:
       project: openbao-k8s-operator
-      dir: k8s
+      dir: charm/k8s
     secrets:
       TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}
 
@@ -18,6 +18,6 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.2
     with:
       project: openbao-operator
-      dir: machine
+      dir: charm/machine
     secrets:
       TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}

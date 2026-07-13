@@ -11,6 +11,10 @@ on:
         description: Name of the artifact to be downloaded for the openbao charm
         required: true
         type: string
+      openbao-rock-artifact-name:
+        description: Name of the artifact containing the openbao rock (OCI archive)
+        required: true
+        type: string
       kv-requirer-charm-artifact-name:
         description: Name of the artifact to be uploaded for the kv-requirer charm
         required: true
@@ -69,6 +73,20 @@ jobs:
         with:
           name: ${{ inputs.kv-requirer-charm-artifact-name }}
           path: ${{ inputs.path }}built/
+      - name: Fetch OpenBao Rock
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.openbao-rock-artifact-name }}
+          path: ${{ inputs.path }}rock/
+      - name: Import OpenBao rock into MicroK8s
+        working-directory: ${{ inputs.path }}
+        run: |
+          sudo apt-get install -y -qq skopeo > /dev/null
+          ROCK=$(ls rock/*.rock | head -1)
+          IMAGE=$(yq '.resources.openbao-image.upstream-source' charmcraft.yaml)
+          echo "Importing ${ROCK} as ${IMAGE}"
+          sudo skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:/tmp/openbao-rock.tar:${IMAGE}"
+          sudo microk8s ctr image import /tmp/openbao-rock.tar
       - name: Get Charm Path
         id: charm-path
         working-directory: ${{ inputs.path }}

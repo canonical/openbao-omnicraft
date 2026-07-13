@@ -37,14 +37,14 @@ jobs:
 
       - name: Fetch charm libraries (k8s)
         run: |
-          cd k8s
+          cd charm/k8s
           charmcraft fetch-lib
         env:
           CHARMCRAFT_AUTH: "${{ secrets.CHARMCRAFT_AUTH }}"
       
       - name: Fetch charm libraries (machine)
         run: |
-          cd machine
+          cd charm/machine
           charmcraft fetch-lib
         env:
           CHARMCRAFT_AUTH: "${{ secrets.CHARMCRAFT_AUTH }}"

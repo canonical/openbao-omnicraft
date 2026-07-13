@@ -14,7 +14,7 @@ jobs:
       contents: read
     uses: canonical/identity-credentials-workflows/.github/workflows/uv-scan.yaml@v3.1.2
     with:
-      path: ./k8s
+      path: ./charm/k8s
   scan-machine:
     permissions:
       security-events: write
@@ -22,4 +22,4 @@ jobs:
       contents: read
     uses: canonical/identity-credentials-workflows/.github/workflows/uv-scan.yaml@v3.1.2
     with:
-      path: ./machine
+      path: ./charm/machine

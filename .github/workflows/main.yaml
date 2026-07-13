@@ -21,10 +21,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Vendor shared code into K8s charm
-        working-directory: k8s
+        working-directory: charm/k8s
         run: make vendor-shared-code
       - name: Vendor shared code into machine charm
-        working-directory: machine
+        working-directory: charm/machine
         run: make vendor-shared-code
       - name: Ensure vendored code is checked in
         run: |
@@ -45,13 +45,93 @@ jobs:
         with:
           filters: |
             k8s:
-              - 'k8s/**'
-              - 'openbao-package/**'
+              - 'charm/k8s/**'
+              - 'charm/openbao-package/**'
               - '.github/workflows/k8s-integration-test*.yaml'
             machine:
-              - 'machine/**'
-              - 'openbao-package/**'
+              - 'charm/machine/**'
+              - 'charm/openbao-package/**'
               - '.github/workflows/machine-integration-test*.yaml'
+
+  snap-build:
+    name: Build OpenBao snap
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: snap/2.5.2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openbao-snap-amd64
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+
+  snap-build-arm:
+    name: Build OpenBao snap (ARM)
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
+    runs-on: ["self-hosted", "linux", "ARM64", "medium", "noble"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: snap/2.5.2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openbao-snap-arm64
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+
+  snap-build-s390x:
+    name: Build OpenBao snap (s390x)
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
+    runs-on: ["self-hosted-linux-s390x-noble-medium"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: snap/2.5.2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openbao-snap-s390x
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+
+  rock-build:
+    name: Build OpenBao rock
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/craft-actions/rockcraft-pack@main
+        id: rockcraft
+        with:
+          path: rock/2.5.2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openbao-rock-amd64
+          path: ${{ steps.rockcraft.outputs.rock }}
+          if-no-files-found: error
+
+  rock-build-arm:
+    name: Build OpenBao rock (ARM)
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
+    runs-on: ["self-hosted", "linux", "ARM64", "medium", "noble"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/craft-actions/rockcraft-pack@main
+        id: rockcraft
+        with:
+          path: rock/2.5.2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openbao-rock-arm64
+          path: ${{ steps.rockcraft.outputs.rock }}
+          if-no-files-found: error
 
   k8s-quality:
     name: K8s Quality
@@ -61,11 +141,11 @@ jobs:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.2
       - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.2
         with:
-          working-directory: k8s
+          working-directory: charm/k8s
           python-enabled: "true"
       - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.2
         with:
-          working-directory: k8s
+          working-directory: charm/k8s
           python-enabled: "true"
 
   k8s-grafana-dashboard-lint-report:
@@ -74,7 +154,7 @@ jobs:
     if: github.event.action != 'labeled'
     uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.2
     with:
-      path: ./k8s/src/grafana_dashboards/*
+      path: ./charm/k8s/src/grafana_dashboards/*
 
   k8s-build:
     if: github.event.action != 'labeled'
@@ -82,7 +162,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: k8s
+      path: charm/k8s
       artifact-suffix: k8s
 
   k8s-build-arm:
@@ -92,7 +172,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: k8s
+      path: charm/k8s
       arch: arm64
       runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
       artifact-suffix: k8s
@@ -104,7 +184,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: k8s
+      path: charm/k8s
       arch: s390x
       runner: '["self-hosted-linux-s390x-noble-medium"]'
       artifact-suffix: k8s
@@ -114,7 +194,7 @@ jobs:
     uses: ./.github/workflows/build-kv-requirer.yaml
     secrets: inherit
     with:
-      path: k8s
+      path: charm/k8s
       artifact-name: kv-requirer-k8s-charm
 
   k8s-integration-test:
@@ -123,28 +203,34 @@ jobs:
       - changes
       - k8s-build
       - k8s-build-kv-requirer
+      - rock-build
     uses: ./.github/workflows/k8s-integration-test.yaml
     with:
-      path: ./k8s/
+      path: ./charm/k8s/
       openbao-charm-artifact-name: ${{ needs.k8s-build.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
+      openbao-rock-artifact-name: openbao-rock-amd64
 
   k8s-integration-test-arm:
     needs:
       - k8s-build-arm
       - k8s-build-kv-requirer
+      - rock-build-arm
     uses: ./.github/workflows/k8s-integration-test-arm.yaml
     with:
-      path: ./k8s/
+      path: ./charm/k8s/
       openbao-charm-artifact-name: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-k8s-charm
+      openbao-rock-artifact-name: openbao-rock-arm64
 
   k8s-integration-test-s390x:
+    # Note: the rock does not declare an s390x platform yet, so this suite
+    # cannot pull an openbao-image on s390x until one is published.
     needs:
       - k8s-build-s390x
     uses: ./.github/workflows/k8s-integration-test-s390x.yaml
     with:
-      path: ./k8s/
+      path: ./charm/k8s/
       openbao-charm-artifact-name: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
 
   k8s-publish-charm:
@@ -162,7 +248,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: k8s
+      path: charm/k8s
       artifacts-key: ${{ needs.k8s-build.outputs.artifacts-key }}
       charm-paths: ${{ needs.k8s-build.outputs.charm-paths }}
       tag-prefix: k8s
@@ -182,7 +268,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: k8s
+      path: charm/k8s
       artifacts-key: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
       charm-paths: ${{ needs.k8s-build-arm.outputs.charm-paths }}
       tag-prefix: k8s
@@ -202,7 +288,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: k8s
+      path: charm/k8s
       artifacts-key: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
       charm-paths: ${{ needs.k8s-build-s390x.outputs.charm-paths }}
       tag-prefix: k8s
@@ -216,11 +302,11 @@ jobs:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.2
       - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.2
         with:
-          working-directory: machine
+          working-directory: charm/machine
           python-enabled: "true"
       - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.2
         with:
-          working-directory: machine
+          working-directory: charm/machine
           python-enabled: "true"
 
   machine-grafana-dashboard-lint-report:
@@ -229,7 +315,7 @@ jobs:
     if: github.event.action != 'labeled'
     uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.2
     with:
-      path: ./machine/src/grafana_dashboards/*
+      path: ./charm/machine/src/grafana_dashboards/*
 
   machine-build:
     if: github.event.action != 'labeled'
@@ -237,7 +323,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: machine
+      path: charm/machine
       artifact-suffix: machine
 
   machine-build-arm:
@@ -247,7 +333,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: machine
+      path: charm/machine
       arch: arm64
       runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
       artifact-suffix: machine
@@ -259,7 +345,7 @@ jobs:
     uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.2
     secrets: inherit
     with:
-      path: machine
+      path: charm/machine
       arch: s390x
       runner: '["self-hosted-linux-s390x-noble-medium"]'
       artifact-suffix: machine
@@ -269,7 +355,7 @@ jobs:
     uses: ./.github/workflows/build-kv-requirer.yaml
     secrets: inherit
     with:
-      path: machine
+      path: charm/machine
       artifact-name: kv-requirer-machine-charm
 
   machine-integration-test:
@@ -278,29 +364,35 @@ jobs:
       - changes
       - machine-build
       - machine-build-kv-requirer
+      - snap-build
     uses: ./.github/workflows/machine-integration-test.yaml
     with:
-      path: ./machine/
+      path: ./charm/machine/
       openbao-charm-artifact-name: ${{ needs.machine-build.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-machine-charm
+      openbao-snap-artifact-name: openbao-snap-amd64
 
   machine-integration-test-arm:
     needs:
       - machine-build-arm
       - machine-build-kv-requirer
+      - snap-build-arm
     uses: ./.github/workflows/machine-integration-test-arm.yaml
     with:
-      path: ./machine/
+      path: ./charm/machine/
       openbao-charm-artifact-name: ${{ needs.machine-build-arm.outputs.artifacts-key }}
       kv-requirer-charm-artifact-name: kv-requirer-machine-charm
+      openbao-snap-artifact-name: openbao-snap-arm64
 
   machine-integration-test-s390x:
     needs:
       - machine-build-s390x
+      - snap-build-s390x
     uses: ./.github/workflows/machine-integration-test-s390x.yaml
     with:
-      path: ./machine/
+      path: ./charm/machine/
       openbao-charm-artifact-name: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
+      openbao-snap-artifact-name: openbao-snap-s390x
 
   machine-publish-charm:
     name: Publish Machine Charm
@@ -317,7 +409,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: machine
+      path: charm/machine
       artifacts-key: ${{ needs.machine-build.outputs.artifacts-key }}
       charm-paths: ${{ needs.machine-build.outputs.charm-paths }}
       tag-prefix: machine
@@ -337,7 +429,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: machine
+      path: charm/machine
       artifacts-key: ${{ needs.machine-build-arm.outputs.artifacts-key }}
       charm-paths: ${{ needs.machine-build-arm.outputs.charm-paths }}
       tag-prefix: machine
@@ -357,7 +449,7 @@ jobs:
       CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
     with:
       destination_channel: 2.0/edge
-      path: machine
+      path: charm/machine
       artifacts-key: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
       charm-paths: ${{ needs.machine-build-s390x.outputs.charm-paths }}
       tag-prefix: machine

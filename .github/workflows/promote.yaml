@@ -42,7 +42,7 @@ jobs:
       - name: Promote Charm
         uses: canonical/charming-actions/release-charm@2.7.0
         with:
-          charm-path: ./${{ inputs.charm }}
+          charm-path: ./charm/${{ inputs.charm }}
           base-channel: 24.04
           credentials: ${{ secrets.CHARMCRAFT_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

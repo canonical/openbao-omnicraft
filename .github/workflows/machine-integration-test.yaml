@@ -11,6 +11,10 @@ on:
         description: Name of the artifact to be downloaded for the openbao charm
         required: true
         type: string
+      openbao-snap-artifact-name:
+        description: Name of the artifact containing the openbao snap
+        required: true
+        type: string
       kv-requirer-charm-artifact-name:
         description: Name of the artifact to be uploaded for the kv-requirer charm
         required: true
@@ -67,13 +71,20 @@ jobs:
         with:
           name: ${{ inputs.kv-requirer-charm-artifact-name }}
           path: ${{ inputs.path }}built/
+      - name: Fetch OpenBao Snap
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.openbao-snap-artifact-name }}
+          path: ${{ inputs.path }}built/
       - name: Get Charm Path
         id: charm-path
         working-directory: ${{ inputs.path }}
         run: |
           OPENBAO_CHARM=$(ls built/*.charm | grep -v kv-requirer | head -1)
           KV_CHARM=$(ls built/*kv-requirer*.charm | head -1)
+          OPENBAO_SNAP=$(ls built/*.snap | head -1)
           echo "openbao-charm=${OPENBAO_CHARM}" >> "$GITHUB_OUTPUT"
+          echo "openbao-snap=${OPENBAO_SNAP}" >> "$GITHUB_OUTPUT"
           echo "kv-charm=${KV_CHARM}" >> "$GITHUB_OUTPUT"
       - name: Install minio binaries and configure storage buckets for backup tests
         if: ${{ matrix.suite == 'test_backup.py' }}
@@ -164,6 +175,7 @@ jobs:
         run: |
           tox -e integration -- \
             --charm_path=${{ steps.charm-path.outputs.openbao-charm }} \
+            --snap_path=${{ steps.charm-path.outputs.openbao-snap }} \
             --kv_requirer_charm_path=${{ steps.charm-path.outputs.kv-charm }} \
             -k "${{ matrix.suite }}"
       - name: Archive charmcraft logs

@@ -1,4 +1,4 @@
-name: ARM Integration Tests (Machine)
+name: ARM Integration tests (K8s)
 
 on:
   workflow_call:
@@ -9,6 +9,10 @@ on:
         type: string
       openbao-charm-artifact-name:
         description: Name of the artifact to be downloaded for the openbao charm
+        required: true
+        type: string
+      openbao-rock-artifact-name:
+        description: Name of the artifact containing the openbao rock (OCI archive)
         required: true
         type: string
       kv-requirer-charm-artifact-name:
@@ -23,19 +27,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
+          provider: microk8s
+          channel: 1.35-strict/stable
           juju-channel: 3.6/stable
-          provider: lxd
-          lxd-channel: 5.21/stable
 
       - name: Install UV and Tox
         run: |
           pipx uninstall tox
           sudo snap install astral-uv --classic
           uv tool install tox --with tox-uv --force
+      - name: Enable Metallb
+        run: |
+          /usr/bin/sg snap_microk8s -c "sudo microk8s enable metallb:10.0.0.2-10.0.0.8"
       - name: Fetch Charm Under Test
         uses: actions/download-artifact@v8
         with:
@@ -46,6 +52,20 @@ jobs:
         with:
           name: ${{ inputs.kv-requirer-charm-artifact-name }}
           path: ${{ inputs.path }}built/
+      - name: Fetch OpenBao Rock
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.openbao-rock-artifact-name }}
+          path: ${{ inputs.path }}rock/
+      - name: Import OpenBao rock into MicroK8s
+        working-directory: ${{ inputs.path }}
+        run: |
+          sudo apt-get install -y -qq skopeo > /dev/null
+          ROCK=$(ls rock/*.rock | head -1)
+          IMAGE=$(yq '.resources.openbao-image.upstream-source' charmcraft.yaml)
+          echo "Importing ${ROCK} as ${IMAGE}"
+          sudo skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:/tmp/openbao-rock.tar:${IMAGE}"
+          sudo microk8s ctr image import /tmp/openbao-rock.tar
       - name: Get Charm Path
         id: charm-path
         working-directory: ${{ inputs.path }}
@@ -65,11 +85,11 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: charmcraft-logs-test_core-machine-arm
+          name: charmcraft-logs-test_core-k8s-arm
           path: /home/runner/.local/state/charmcraft/log/*.log
       - name: Archive juju crashdump
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: juju-crashdump-machine-test_core-arm
+          name: juju-crashdump-k8s-test_core-arm
           path: ${{ inputs.path }}/juju-crashdump-*.tar.xz
