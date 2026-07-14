@@ -11,6 +11,7 @@ from typing import Tuple
 
 import hvac
 import requests
+from hvac.exceptions import InvalidRequest
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class OpenBao:
             try:
                 self.client.sys.submit_unseal_key(unseal_key)
                 break
-            except (hvac.exceptions.InvalidRequest, requests.exceptions.RequestException) as e:
+            except (InvalidRequest, requests.exceptions.RequestException) as e:
                 if "not initialized" not in str(e).lower() and not isinstance(
                     e, requests.exceptions.RequestException
                 ):

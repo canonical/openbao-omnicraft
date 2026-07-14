@@ -11,6 +11,7 @@ from typing import Tuple
 
 import hvac
 import requests
+from hvac.exceptions import InvalidRequest
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class OpenBao:
             except requests.exceptions.RequestException:
                 logger.debug("OpenBao is not yet available. Waiting...")
                 time.sleep(5)
-            except hvac.exceptions.InvalidRequest as e:
+            except InvalidRequest as e:
                 # A raft follower cannot accept an unseal key until it has
                 # joined the cluster, which may take a few retry_join cycles
                 # after the leader is unsealed.
