@@ -3,17 +3,17 @@ name: Protected branch workflow
 on:
   push:
     branches:
-      - master
+      - main
       - 'stable/**'
   pull_request:
     branches:
-      - master
+      - main
       - 'stable/**'
   schedule:
     - cron: '0 6 * * 0'
 
 concurrency:
-    group: ${{ github.ref == 'refs/heads/master' && format('ignore-master-{0}', github.run_id) || format('{0}-{1}', github.workflow, github.ref_name) }}
+    group: ${{ github.ref == 'refs/heads/main' && format('ignore-main-{0}', github.run_id) || format('{0}-{1}', github.workflow, github.ref_name) }}
     cancel-in-progress: true
 
 jobs:
@@ -27,12 +27,14 @@ jobs:
       - name: Build snap locally
         uses: snapcore/action-build@v1
         id: build
+        with:
+          path: snap/2.5.2
 
       - name: Get snapcraft track
         if: ${{ github.ref_protected }}
         id: track
         run: |
-          if [ "${{ github.ref_name }}" == "master" ]; then
+          if [ "${{ github.ref_name }}" == "main" ]; then
             echo "track=latest" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
             TRACK_NAME=${BASH_REMATCH[1]}
@@ -74,13 +76,14 @@ jobs:
         run: sudo snap install snapcraft --classic
 
       - name: Build snap
+        working-directory: snap/2.5.2
         run: snapcraft pack --verbose
 
       - name: Get snapcraft track
         if: ${{ github.ref_protected }}
         id: track
         run: |
-          if [ "${{ github.ref_name }}" == "master" ]; then
+          if [ "${{ github.ref_name }}" == "main" ]; then
             echo "track=latest" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
             TRACK_NAME=${BASH_REMATCH[1]}
@@ -92,14 +95,14 @@ jobs:
 
       - name: Get snap file path
         id: snap-path
-        run: echo "snap=$(ls *.snap)" >> "$GITHUB_OUTPUT"
+        run: echo "snap=$(ls snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload snap artifact
         id: upload-snap
         uses: actions/upload-artifact@v7
         with:
           name: snap-arm64
-          path: "*.snap"
+          path: snap/2.5.2/*.snap
 
       - name: Publish snap
         if: ${{ github.ref_protected }}
@@ -126,13 +129,14 @@ jobs:
         run: sudo snap install snapcraft --classic
 
       - name: Build snap
+        working-directory: snap/2.5.2
         run: snapcraft pack --verbose
 
       - name: Get snapcraft track
         if: ${{ github.ref_protected }}
         id: track
         run: |
-          if [ "${{ github.ref_name }}" == "master" ]; then
+          if [ "${{ github.ref_name }}" == "main" ]; then
             echo "track=latest" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
             TRACK_NAME=${BASH_REMATCH[1]}
@@ -144,14 +148,14 @@ jobs:
 
       - name: Get snap file path
         id: snap-path
-        run: echo "snap=$(ls *.snap)" >> "$GITHUB_OUTPUT"
+        run: echo "snap=$(ls snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
 
       - name: Upload snap artifact
         id: upload-snap
         uses: actions/upload-artifact@v7
         with:
           name: snap-s390x
-          path: "*.snap"
+          path: snap/2.5.2/*.snap
 
       - name: Publish snap
         if: ${{ github.ref_protected }}
@@ -178,9 +182,9 @@ jobs:
           echo "Installing snap $SNAP_NAME"
           sudo snap install --dangerous $SNAP_NAME
 
-      - name: Start the vault snap service
+      - name: Start the openbao snap service
         run: |
-          sudo snap start vault
+          sudo snap start openbao.baod
           sleep 30
 
       - name: Test snap service
@@ -211,9 +215,9 @@ jobs:
           echo "Installing snap $SNAP_NAME"
           sudo snap install --dangerous $SNAP_NAME
 
-      - name: Start the vault snap service
+      - name: Start the openbao snap service
         run: |
-          sudo snap start vault
+          sudo snap start openbao.baod
           sleep 30
 
       - name: Test snap service
@@ -229,8 +233,8 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          sudo snap stop vault || true
-          sudo snap remove vault || true
+          sudo snap stop openbao.baod || true
+          sudo snap remove openbao || true
 
   test-service-s390x:
     name: Test snap service (s390x)
@@ -248,9 +252,9 @@ jobs:
           echo "Installing snap $SNAP_NAME"
           sudo snap install --dangerous $SNAP_NAME
 
-      - name: Start the vault snap service
+      - name: Start the openbao snap service
         run: |
-          sudo snap start vault
+          sudo snap start openbao.baod
           sleep 30
 
       - name: Test snap service
@@ -266,5 +270,5 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          sudo snap stop vault || true
-          sudo snap remove vault || true
+          sudo snap stop openbao.baod || true
+          sudo snap remove openbao || true

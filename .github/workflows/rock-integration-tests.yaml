@@ -24,9 +24,9 @@ jobs:
 
       - name: Import
         run: |
-          image_name="$(yq '.name' rockcraft.yaml)"
+          image_name="$(yq '.name' rock/2.5.2/rockcraft.yaml)"
           echo "image_name=${image_name}" >> $GITHUB_ENV
-          version="$(yq '.version' rockcraft.yaml)"
+          version="$(yq '.version' rock/2.5.2/rockcraft.yaml)"
           echo "version=${version}" >> $GITHUB_ENV
           rock_file=$(ls *.rock | tail -n 1)
           sudo rockcraft.skopeo \
@@ -35,9 +35,28 @@ jobs:
             oci-archive:"${rock_file}" \
             docker-daemon:"${image_name}-rock:test"
 
-      - name: Install tox
-        run: pip install tox
+      - name: Smoke test the image
+        run: |
+          # Pebble (the rock entrypoint) starts the openbao service with the
+          # baked-in default config: an HTTP listener on :8200 backed by file
+          # storage. Wait for the API and check that it answers sanely.
+          docker run --rm -d --name openbao-rock-test -p 8200:8200 "${image_name}-rock:test"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8200/v1/sys/seal-status > /tmp/seal-status.json; then
+              break
+            fi
+            sleep 2
+          done
+          cat /tmp/seal-status.json
+          jq -e '.initialized == false and .sealed == true' /tmp/seal-status.json
+          server_version=$(jq -r '.version' /tmp/seal-status.json)
+          echo "Server reports version ${server_version}, rock version ${version}"
+          test "${server_version}" = "${version}"
 
-      - name: Integration tests
-        id: test_image
-        run: cd tests && tox -e integration
+      - name: Show container logs
+        if: always()
+        run: docker logs openbao-rock-test || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f openbao-rock-test || true

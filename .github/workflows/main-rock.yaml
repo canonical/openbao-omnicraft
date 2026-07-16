@@ -31,11 +31,9 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: [self-hosted, linux, ARM64, medium, jammy]
-          - arch: s390x
-            runner: [self-hosted-linux-s390x-noble-medium]
     uses: canonical/identity-credentials-workflows/.github/workflows/rock-build.yaml@v3.1.2
     with:
-      path: .
+      path: rock/2.5.2
       arch: ${{ matrix.arch.arch }}
       runner: ${{ toJson(matrix.arch.runner) }}
 
@@ -78,16 +76,12 @@ jobs:
         with:
           name: ${{ github.sha }}-build-arm64
 
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ github.sha }}-build-s390x
-
       - name: Import and push to github package
         run: |
-          image_name="$(yq '.name' rockcraft.yaml)"
-          version="$(cat version/VERSION)"
+          image_name="$(yq '.name' rock/2.5.2/rockcraft.yaml)"
+          version="$(yq '.version' rock/2.5.2/rockcraft.yaml)"
 
-          for arch in amd64 arm64 s390x; do
+          for arch in amd64 arm64; do
             rock_file=$(ls *_${arch}.rock | tail -n 1)
             sudo rockcraft.skopeo \
               --insecure-policy \
@@ -99,12 +93,10 @@ jobs:
 
           docker manifest create ghcr.io/canonical/${image_name}:${version} \
             ghcr.io/canonical/${image_name}:${version}-amd64 \
-            ghcr.io/canonical/${image_name}:${version}-arm64 \
-            ghcr.io/canonical/${image_name}:${version}-s390x
+            ghcr.io/canonical/${image_name}:${version}-arm64
           docker manifest push ghcr.io/canonical/${image_name}:${version}
 
           docker manifest create ghcr.io/canonical/${image_name}:latest \
             ghcr.io/canonical/${image_name}:${version}-amd64 \
-            ghcr.io/canonical/${image_name}:${version}-arm64 \
-            ghcr.io/canonical/${image_name}:${version}-s390x
+            ghcr.io/canonical/${image_name}:${version}-arm64
           docker manifest push ghcr.io/canonical/${image_name}:latest
