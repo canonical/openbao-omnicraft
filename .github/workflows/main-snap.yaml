@@ -1,0 +1,270 @@
+name: Protected branch workflow
+
+on:
+  push:
+    branches:
+      - master
+      - 'stable/**'
+  pull_request:
+    branches:
+      - master
+      - 'stable/**'
+  schedule:
+    - cron: '0 6 * * 0'
+
+concurrency:
+    group: ${{ github.ref == 'refs/heads/master' && format('ignore-master-{0}', github.run_id) || format('{0}-{1}', github.workflow, github.ref_name) }}
+    cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build snap (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build snap locally
+        uses: snapcore/action-build@v1
+        id: build
+
+      - name: Get snapcraft track
+        if: ${{ github.ref_protected }}
+        id: track
+        run: |
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            echo "track=latest" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
+            TRACK_NAME=${BASH_REMATCH[1]}
+            echo "track=$TRACK_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch name does not match expected patterns. Exiting."
+            exit 1
+          fi
+
+      - name: Upload snap artifact
+        id: upload-snap
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-amd64
+          path: ${{ steps.build.outputs.snap }}
+
+      - name: Publish snap
+        if: ${{ github.ref_protected }}
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: ${{ steps.track.outputs.track }}/edge
+
+  build-arm:
+    name: Build snap (arm64)
+    runs-on: [self-hosted, linux, ARM64, medium, noble]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@main
+        with:
+          channel: 5.21/stable
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Build snap
+        run: snapcraft pack --verbose
+
+      - name: Get snapcraft track
+        if: ${{ github.ref_protected }}
+        id: track
+        run: |
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            echo "track=latest" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
+            TRACK_NAME=${BASH_REMATCH[1]}
+            echo "track=$TRACK_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch name does not match expected patterns. Exiting."
+            exit 1
+          fi
+
+      - name: Get snap file path
+        id: snap-path
+        run: echo "snap=$(ls *.snap)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload snap artifact
+        id: upload-snap
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-arm64
+          path: "*.snap"
+
+      - name: Publish snap
+        if: ${{ github.ref_protected }}
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap-path.outputs.snap }}
+          release: ${{ steps.track.outputs.track }}/edge
+
+  build-s390x:
+    name: Build snap (s390x)
+    runs-on: [self-hosted-linux-s390x-noble-medium]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@main
+        with:
+          channel: 5.21/stable
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+
+      - name: Build snap
+        run: snapcraft pack --verbose
+
+      - name: Get snapcraft track
+        if: ${{ github.ref_protected }}
+        id: track
+        run: |
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            echo "track=latest" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_name }}" =~ ^stable\/(.+) ]]; then
+            TRACK_NAME=${BASH_REMATCH[1]}
+            echo "track=$TRACK_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch name does not match expected patterns. Exiting."
+            exit 1
+          fi
+
+      - name: Get snap file path
+        id: snap-path
+        run: echo "snap=$(ls *.snap)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload snap artifact
+        id: upload-snap
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-s390x
+          path: "*.snap"
+
+      - name: Publish snap
+        if: ${{ github.ref_protected }}
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap-path.outputs.snap }}
+          release: ${{ steps.track.outputs.track }}/edge
+
+  test-service:
+    name: Test snap service (amd64)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download snap artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: snap-amd64
+
+      - name: Install snap
+        run: |
+          SNAP_NAME=$(ls *.snap)
+          echo "Installing snap $SNAP_NAME"
+          sudo snap install --dangerous $SNAP_NAME
+
+      - name: Start the vault snap service
+        run: |
+          sudo snap start vault
+          sleep 30
+
+      - name: Test snap service
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y net-tools
+          # Check if a service is listening on port 8200
+          if netstat -tuln | grep ':8200'; then
+            echo "Service is listening on port 8200"
+          else
+            echo "Service is NOT listening on port 8200"
+            exit 1
+          fi
+
+  test-service-arm:
+    name: Test snap service (arm64)
+    needs: build-arm
+    runs-on: [self-hosted, linux, ARM64, medium, noble]
+    steps:
+      - name: Download snap artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: snap-arm64
+
+      - name: Install snap
+        run: |
+          SNAP_NAME=$(ls *.snap)
+          echo "Installing snap $SNAP_NAME"
+          sudo snap install --dangerous $SNAP_NAME
+
+      - name: Start the vault snap service
+        run: |
+          sudo snap start vault
+          sleep 30
+
+      - name: Test snap service
+        run: |
+          # Check if a service is listening on port 8200
+          if ss -tuln | grep ':8200'; then
+            echo "Service is listening on port 8200"
+          else
+            echo "Service is NOT listening on port 8200"
+            exit 1
+          fi
+
+      - name: Clean up
+        if: always()
+        run: |
+          sudo snap stop vault || true
+          sudo snap remove vault || true
+
+  test-service-s390x:
+    name: Test snap service (s390x)
+    needs: build-s390x
+    runs-on: [self-hosted-linux-s390x-noble-medium]
+    steps:
+      - name: Download snap artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: snap-s390x
+
+      - name: Install snap
+        run: |
+          SNAP_NAME=$(ls *.snap)
+          echo "Installing snap $SNAP_NAME"
+          sudo snap install --dangerous $SNAP_NAME
+
+      - name: Start the vault snap service
+        run: |
+          sudo snap start vault
+          sleep 30
+
+      - name: Test snap service
+        run: |
+          # Check if a service is listening on port 8200
+          if ss -tuln | grep ':8200'; then
+            echo "Service is listening on port 8200"
+          else
+            echo "Service is NOT listening on port 8200"
+            exit 1
+          fi
+
+      - name: Clean up
+        if: always()
+        run: |
+          sudo snap stop vault || true
+          sudo snap remove vault || true
