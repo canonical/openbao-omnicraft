@@ -102,7 +102,7 @@ jobs:
           echo "Waiting for Juju to react to the buckets restriction..."
           sleep 30 # For some reason, the Juju controller needs some time to make itself available after restricting the storage buckets address
           sudo lxc storage bucket create default openbao-integration-test
-          sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key openbaointegrationtest --secret-key openbaointegrationtest
+          sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key baointegrationtest --secret-key baointegrationtest
       - name: Install MicroCeph and configure RGW for backup tests
         if: ${{ matrix.suite == 'test_backup_microceph.py' }}
         run: |

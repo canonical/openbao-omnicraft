@@ -60,12 +60,16 @@ jobs:
       - name: Import OpenBao rock into MicroK8s
         working-directory: ${{ inputs.path }}
         run: |
+          sudo apt-get update -qq
           sudo apt-get install -y -qq skopeo > /dev/null
           ROCK=$(ls rock/*.rock | head -1)
           IMAGE=$(yq '.resources.openbao-image.upstream-source' charmcraft.yaml)
           echo "Importing ${ROCK} as ${IMAGE}"
-          sudo skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:/tmp/openbao-rock.tar:${IMAGE}"
-          sudo microk8s ctr image import /tmp/openbao-rock.tar
+          # Keep the archive inside the workspace and import via stdin: the
+          # strictly confined microk8s snap cannot read the host's /tmp.
+          sudo skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/openbao-rock.tar:${IMAGE}"
+          sudo microk8s ctr image import - < rock/openbao-rock.tar
+          sudo microk8s ctr image ls | grep openbao
       - name: Get Charm Path
         id: charm-path
         working-directory: ${{ inputs.path }}
