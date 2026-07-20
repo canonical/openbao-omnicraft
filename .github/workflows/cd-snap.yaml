@@ -4,17 +4,38 @@ name: OpenBao Snap CI/CD
 on:
   workflow_dispatch:
 
+env:
+  SNAP_VERSION: 2.5.2
+
 jobs:
   continuous-delivery-snap:
     name: Continuous delivery
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-        name: check if this part of the repo was changed. if not, end in a success.
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
       - name: Setup toolchains
         env:
-          TOOLCHAINS: python go
+          TOOLCHAINS: snapcraft
         run: just setup
+      - name: Build snap
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: snap/${{env.SNAP_VERSION}}
+          snapcraft-enabled: "true"
+      - name: Locate snap artifact
+        id: artifacts
+        run: echo "snap=$(ls ${{ github.workspace }}/snap/${{env.SNAP_VERSION}}/*.snap | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Run integration tests
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        with:
+          working-directory: snap/${{env.SNAP_VERSION}}
+          snap-enabled: "true"
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-amd64
+          path: snap/${{SNAP_VERSION}}/*.snap
+          if-no-files-found: error
