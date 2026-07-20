@@ -33,7 +33,6 @@ jobs:
         with:
           working-directory: snap/${{env.SNAP_VERSION}}
           snap-enabled: "true"
-
       - name: Upload snap artifact
         uses: actions/upload-artifact@v7
         with:
