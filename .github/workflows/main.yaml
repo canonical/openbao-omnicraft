@@ -4,458 +4,138 @@ on:
   pull_request:
     branches: ["main", "release-*"]
     # `labeled` lets a PR opt in to arm64/s390x tests by adding the
-    # `test-arm` / `test-s390x` labels (see the arch build jobs below).
+    # `test-arm` / `test-s390x` labels (see the arch jobs below).
     types: [opened, synchronize, reopened, labeled]
   push:
     branches: ["main", "release-*"]
+  schedule:
+    # Weekly rebuild and republish of all artifacts.
+    - cron: "0 6 * * 0"
 
 concurrency:
   group: ${{ (github.ref == 'refs/heads/main' && format('ignore-main-{0}', github.run_id)) || (contains(github.ref, 'refs/heads/release-') && format('ignore-release-{0}', github.run_id)) || format('{0}-{1}', github.workflow, github.ref_name) }}
   cancel-in-progress: true
 
 jobs:
-  ensure-shared-code-in-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Vendor shared code into K8s charm
-        working-directory: charm/k8s
-        run: make vendor-shared-code
-      - name: Vendor shared code into machine charm
-        working-directory: charm/machine
-        run: make vendor-shared-code
-      - name: Ensure vendored code is checked in
-        run: |
-          STATUS=$(git status --porcelain)
-          echo "$STATUS"
-          test -z "$STATUS"
-
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
-      k8s: ${{ steps.filter.outputs.k8s }}
-      machine: ${{ steps.filter.outputs.machine }}
+      # Everything is considered changed on push and schedule events.
+      k8s: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.k8s }}
+      machine: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.machine }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
         id: filter
         with:
           filters: |
             k8s:
               - 'charm/k8s/**'
               - 'charm/openbao-package/**'
-              - '.github/workflows/k8s-integration-test*.yaml'
+              - 'rock/**'
+              - 'justfile'
+              - '.github/workflows/main.yaml'
             machine:
               - 'charm/machine/**'
               - 'charm/openbao-package/**'
-              - '.github/workflows/machine-integration-test*.yaml'
+              - 'snap/**'
+              - 'justfile'
+              - '.github/workflows/main.yaml'
 
-  snap-build:
+  quality:
+    name: Code quality and unit tests
     if: github.event.action != 'labeled'
-    uses: canonical/identity-credentials-workflows/.github/workflows/snap-build.yaml@v3.1.3
-    with:
-      path: snap/2.5.2
-      artifact-suffix: snap
-
-  snap-build-arm:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
-    uses: canonical/identity-credentials-workflows/.github/workflows/snap-build.yaml@v3.1.3
-    with:
-      path: snap/2.5.2
-      arch: arm64
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
-      artifact-suffix: snap
-
-  snap-build-s390x:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
-    uses: canonical/identity-credentials-workflows/.github/workflows/snap-build.yaml@v3.1.3
-    with:
-      path: snap/2.5.2
-      arch: s390x
-      runner: '["self-hosted-linux-s390x-noble-medium"]'
-      artifact-suffix: snap
-
-  rock-build:
-    if: github.event.action != 'labeled'
-    uses: canonical/identity-credentials-workflows/.github/workflows/rock-build.yaml@v3.1.3
-    with:
-      path: rock/2.5.2
-      artifact-suffix: rock
-
-  rock-build-arm:
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
-    uses: canonical/identity-credentials-workflows/.github/workflows/rock-build.yaml@v3.1.3
-    with:
-      path: rock/2.5.2
-      arch: arm64
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
-      artifact-suffix: rock
-
-  k8s-quality:
-    name: K8s Quality
-    needs: [ensure-shared-code-in-sync]
     runs-on: ubuntu-24.04
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-      - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          # go is needed for the grafana dashboard linter.
+          TOOLCHAINS: python go
+        run: just setup
+      - name: Ensure vendored shared code is in sync
+        run: |
+          make -C charm/k8s vendor-shared-code
+          make -C charm/machine vendor-shared-code
+          STATUS=$(git status --porcelain)
+          echo "$STATUS"
+          test -z "$STATUS"
+      - name: Shared package code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: K8s charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
         with:
           working-directory: charm/k8s
           python-enabled: "true"
-      - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: Shared package unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+      - name: K8s charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
         with:
           working-directory: charm/k8s
           python-enabled: "true"
 
-  k8s-grafana-dashboard-lint-report:
-    # A pure label-add (`labeled`) re-triggers CI only to run the arch jobs; the
-    # AMD-path jobs below already ran, so skip them on that event to save runners.
-    if: github.event.action != 'labeled'
-    uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.3
-    with:
-      path: ./charm/k8s/src/grafana_dashboards/*
-
-  k8s-build:
-    if: github.event.action != 'labeled'
-    needs: [k8s-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/k8s
-      artifact-suffix: k8s
-
-  k8s-build-arm:
-    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
-    needs: [k8s-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/k8s
-      arch: arm64
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
-      artifact-suffix: k8s
-
-  k8s-build-s390x:
-    # Runs on merge, or on a PR labelled `test-s390x` to verify s390x-specific fixes.
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
-    needs: [k8s-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/k8s
-      arch: s390x
-      runner: '["self-hosted-linux-s390x-noble-medium"]'
-      artifact-suffix: k8s
-
-  k8s-build-kv-requirer:
-    needs: [k8s-quality]
-    uses: ./.github/workflows/build-kv-requirer.yaml
-    secrets: inherit
-    with:
-      path: charm/k8s
-      artifact-name: kv-requirer-k8s-charm
-
-  k8s-integration-test:
-    if: github.event_name == 'push' || needs.changes.outputs.k8s == 'true'
-    needs:
-      - changes
-      - k8s-build
-      - k8s-build-kv-requirer
-      - rock-build
+  machine:
+    name: Machine charm and snap (build, integration tests, artifacts)
+    if: github.event.action != 'labeled' && needs.changes.outputs.machine == 'true'
+    needs: [changes]
     runs-on: [self-hosted, linux, X64, large, noble]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
-      - name: Setup juju on Canonical K8s
+      - name: Setup toolchains and bootstrap juju on LXD
         env:
-          TOOLCHAINS: python juju-k8s
+          TOOLCHAINS: python juju-machine charmcraft snapcraft
           JUJU_CHANNEL: 3.6/stable
         run: just setup
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.k8s-build.outputs.artifacts-key }}
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: kv-requirer-k8s-charm
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.rock-build.outputs.artifacts-key }}
-          path: built/
-      - name: Import rock into Canonical K8s containerd
-        run: |
-          sudo snap install rockcraft --classic
-          ROCK=$(ls built/*.rock | head -1)
-          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/k8s/charmcraft.yaml)
-          echo "Importing ${ROCK} as ${IMAGE}"
-          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:built/openbao-rock.tar:${IMAGE}"
-          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import built/openbao-rock.tar
-      - name: Locate artifacts
-        id: artifacts
-        run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Run integration tests
-        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
-        env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
-        with:
-          working-directory: charm/k8s
-          charm-enabled: "true"
-          charm-file-name: ${{ steps.artifacts.outputs.charm }}
-
-  k8s-integration-test-arm:
-    needs:
-      - k8s-build-arm
-      - k8s-build-kv-requirer
-      - rock-build-arm
-    runs-on: [self-hosted, linux, ARM64, medium, noble]
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-        with:
-          workflows-ref: v3.1.3
-      - name: Setup juju on Canonical K8s
-        env:
-          TOOLCHAINS: python juju-k8s
-          JUJU_CHANNEL: 3.6/stable
-        run: just setup
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: kv-requirer-k8s-charm
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.rock-build-arm.outputs.artifacts-key }}
-          path: built/
-      - name: Import rock into Canonical K8s containerd
-        run: |
-          sudo snap install rockcraft --classic
-          ROCK=$(ls built/*.rock | head -1)
-          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/k8s/charmcraft.yaml)
-          echo "Importing ${ROCK} as ${IMAGE}"
-          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:built/openbao-rock.tar:${IMAGE}"
-          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import built/openbao-rock.tar
-      - name: Locate artifacts
-        id: artifacts
-        run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Run integration tests
-        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
-        env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
-          PYTEST_ADDOPTS_EXTRA: -k test_core
-        with:
-          working-directory: charm/k8s
-          charm-enabled: "true"
-          charm-file-name: ${{ steps.artifacts.outputs.charm }}
-
-  k8s-integration-test-s390x:
-    # Note: the rock does not declare an s390x platform yet, so this suite
-    # cannot pull an openbao-image on s390x until one is published.
-    needs:
-      - k8s-build-s390x
-    runs-on: [self-hosted-linux-s390x-noble-medium]
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-        with:
-          workflows-ref: v3.1.3
-      - name: Setup juju on Canonical K8s
-        env:
-          TOOLCHAINS: python juju-k8s
-          JUJU_CHANNEL: 3.6/stable
-        run: just setup
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
-          path: built/
-      - name: Locate artifacts
-        id: artifacts
-        run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Run integration tests
-        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
-        env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
-          PYTEST_ADDOPTS_EXTRA: -k test_deploy_unseal
-        with:
-          working-directory: charm/k8s
-          charm-enabled: "true"
-          charm-file-name: ${{ steps.artifacts.outputs.charm }}
-
-  k8s-publish-charm:
-    name: Publish K8s Charm
-    needs:
-      - k8s-quality
-      - k8s-integration-test
-      - k8s-build
-      - k8s-build-kv-requirer
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
-    permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/k8s
-      artifacts-key: ${{ needs.k8s-build.outputs.artifacts-key }}
-      charm-paths: ${{ needs.k8s-build.outputs.charm-paths }}
-      tag-prefix: k8s
-
-  k8s-publish-charm-arm:
-    name: Publish K8s Charm (ARM)
-    needs:
-      - k8s-quality
-      - k8s-integration-test-arm
-      - k8s-build-arm
-      - k8s-build-kv-requirer
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
-    permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/k8s
-      artifacts-key: ${{ needs.k8s-build-arm.outputs.artifacts-key }}
-      charm-paths: ${{ needs.k8s-build-arm.outputs.charm-paths }}
-      tag-prefix: k8s
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
-
-  k8s-publish-charm-s390x:
-    name: Publish K8s Charm (s390x)
-    needs:
-      - k8s-quality
-      - k8s-build-s390x
-      - k8s-integration-test-s390x
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
-    permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/k8s
-      artifacts-key: ${{ needs.k8s-build-s390x.outputs.artifacts-key }}
-      charm-paths: ${{ needs.k8s-build-s390x.outputs.charm-paths }}
-      tag-prefix: k8s
-      runner: '["self-hosted-linux-s390x-noble-medium"]'
-
-  machine-quality:
-    name: Machine Quality
-    needs: [ensure-shared-code-in-sync]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-      - uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+      - name: Build machine charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
           working-directory: charm/machine
-          python-enabled: "true"
-      - uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+          charmcraft-enabled: "true"
+      - name: Copy test libs into the KV requirer charm
+        run: make -C charm/machine copy-test-libs
+      - name: Build KV requirer test charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          working-directory: charm/machine
-          python-enabled: "true"
-
-  machine-grafana-dashboard-lint-report:
-    # A pure label-add (`labeled`) re-triggers CI only to run the arch jobs; the
-    # AMD-path jobs below already ran, so skip them on that event to save runners.
-    if: github.event.action != 'labeled'
-    uses: canonical/identity-credentials-workflows/.github/workflows/grafana-dashboard-lint-report.yaml@v3.1.3
-    with:
-      path: ./charm/machine/src/grafana_dashboards/*
-
-  machine-build:
-    if: github.event.action != 'labeled'
-    needs: [machine-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/machine
-      artifact-suffix: machine
-
-  machine-build-arm:
-    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-arm')
-    needs: [machine-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/machine
-      arch: arm64
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
-      artifact-suffix: machine
-
-  machine-build-s390x:
-    # Runs on merge, or on a PR labelled `test-s390x` to verify s390x-specific fixes.
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
-    needs: [machine-quality]
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-build.yaml@v3.1.3
-    secrets: inherit
-    with:
-      path: charm/machine
-      arch: s390x
-      runner: '["self-hosted-linux-s390x-noble-medium"]'
-      artifact-suffix: machine
-
-  machine-build-kv-requirer:
-    needs: [machine-quality]
-    uses: ./.github/workflows/build-kv-requirer.yaml
-    secrets: inherit
-    with:
-      path: charm/machine
-      artifact-name: kv-requirer-machine-charm
-
-  machine-integration-test:
-    if: github.event_name == 'push' || needs.changes.outputs.machine == 'true'
-    needs:
-      - changes
-      - machine-build
-      - machine-build-kv-requirer
-      - snap-build
-    runs-on: [self-hosted, linux, X64, large, noble]
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+          working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
+          charmcraft-enabled: "true"
+      - name: Build snap
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          workflows-ref: v3.1.3
-      - name: Setup juju on LXD
-        env:
-          TOOLCHAINS: python juju-machine
-          JUJU_CHANNEL: 3.6/stable
-        run: just setup
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.machine-build.outputs.artifacts-key }}
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: kv-requirer-machine-charm
-          path: built/
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ needs.snap-build.outputs.artifacts-key }}
-          path: built/
+          working-directory: snap/2.5.2
+          snapcraft-enabled: "true"
       - name: Locate artifacts
         id: artifacts
         run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
+          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Install minio binaries and configure storage buckets for backup tests
         run: |
           minio_binaries_path="/var/snap/lxd/common/minio"
@@ -546,41 +226,126 @@ jobs:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
+          snap-enabled: "true"
           snap-file-name: ${{ steps.artifacts.outputs.snap }}
+          snap-service-name: openbao.baod
+          snap-service-port: "8200"
+          snap-executable-name: openbao.bao
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-amd64
+          path: charm/machine/*.charm
+          if-no-files-found: error
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-amd64
+          path: snap/2.5.2/*.snap
+          if-no-files-found: error
 
-  machine-integration-test-arm:
-    needs:
-      - machine-build-arm
-      - machine-build-kv-requirer
-      - snap-build-arm
+  k8s:
+    name: K8s charm and rock (build, integration tests, artifacts)
+    if: github.event.action != 'labeled' && needs.changes.outputs.k8s == 'true'
+    needs: [changes]
+    runs-on: [self-hosted, linux, X64, large, noble]
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on Canonical K8s
+        env:
+          TOOLCHAINS: python juju-k8s charmcraft rockcraft
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Build k8s charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/k8s
+          charmcraft-enabled: "true"
+      - name: Copy test libs into the KV requirer charm
+        run: make -C charm/k8s copy-test-libs
+      - name: Build KV requirer test charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/k8s/tests/integration/openbao_kv_requirer_operator
+          charmcraft-enabled: "true"
+      - name: Build rock
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: rock/2.5.2
+          rockcraft-enabled: "true"
+      - name: Import rock into Canonical K8s containerd
+        run: |
+          ROCK=$(ls rock/2.5.2/*.rock | head -1)
+          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/k8s/charmcraft.yaml)
+          echo "Importing ${ROCK} as ${IMAGE}"
+          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
+          rm rock/2.5.2/openbao-rock.tar
+      - name: Locate artifacts
+        id: artifacts
+        run: |
+          echo "charm=$(ls ${{ github.workspace }}/charm/k8s/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/k8s/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Run integration tests
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        env:
+          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+        with:
+          working-directory: charm/k8s
+          charm-enabled: "true"
+          charm-file-name: ${{ steps.artifacts.outputs.charm }}
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-k8s-amd64
+          path: charm/k8s/*.charm
+          if-no-files-found: error
+      - name: Upload rock artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rock-amd64
+          path: rock/2.5.2/*.rock
+          if-no-files-found: error
+
+  machine-arm:
+    name: Machine charm and snap (arm64)
+    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-arm')
     runs-on: [self-hosted, linux, ARM64, medium, noble]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
-      - name: Setup juju on LXD
+      - name: Setup toolchains and bootstrap juju on LXD
         env:
-          TOOLCHAINS: python juju-machine
+          TOOLCHAINS: python juju-machine charmcraft snapcraft
           JUJU_CHANNEL: 3.6/stable
         run: just setup
-      - uses: actions/download-artifact@v8
+      - name: Build machine charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          name: ${{ needs.machine-build-arm.outputs.artifacts-key }}
-          path: built/
-      - uses: actions/download-artifact@v8
+          working-directory: charm/machine
+          charmcraft-enabled: "true"
+      - name: Copy test libs into the KV requirer charm
+        run: make -C charm/machine copy-test-libs
+      - name: Build KV requirer test charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          name: kv-requirer-machine-charm
-          path: built/
-      - uses: actions/download-artifact@v8
+          working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
+          charmcraft-enabled: "true"
+      - name: Build snap
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          name: ${{ needs.snap-build-arm.outputs.artifacts-key }}
-          path: built/
+          working-directory: snap/2.5.2
+          snapcraft-enabled: "true"
       - name: Locate artifacts
         id: artifacts
         run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
+          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Run integration tests
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
@@ -590,104 +355,245 @@ jobs:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
+          snap-enabled: "true"
           snap-file-name: ${{ steps.artifacts.outputs.snap }}
+          snap-service-name: openbao.baod
+          snap-service-port: "8200"
+          snap-executable-name: openbao.bao
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-arm64
+          path: charm/machine/*.charm
+          if-no-files-found: error
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-arm64
+          path: snap/2.5.2/*.snap
+          if-no-files-found: error
 
-  machine-integration-test-s390x:
-    needs:
-      - machine-build-s390x
-      - snap-build-s390x
+  machine-s390x:
+    name: Machine charm and snap (s390x)
+    # Runs on merge, or on a PR labelled `test-s390x` to verify s390x-specific fixes.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
     runs-on: [self-hosted-linux-s390x-noble-medium]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
-      - name: Setup juju on LXD
+      - name: Setup toolchains and bootstrap juju on LXD
         env:
-          TOOLCHAINS: python juju-machine
+          TOOLCHAINS: python juju-machine charmcraft snapcraft
           JUJU_CHANNEL: 3.6/stable
         run: just setup
-      - uses: actions/download-artifact@v8
+      - name: Build machine charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          name: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
-          path: built/
-      - uses: actions/download-artifact@v8
+          working-directory: charm/machine
+          charmcraft-enabled: "true"
+      - name: Build snap
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          name: ${{ needs.snap-build-s390x.outputs.artifacts-key }}
-          path: built/
+          working-directory: snap/2.5.2
+          snapcraft-enabled: "true"
       - name: Locate artifacts
         id: artifacts
         run: |
-          echo "charm=$(ls ${{ github.workspace }}/built/*.charm | grep -v kv-requirer | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/built/*kv-requirer*.charm 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/built/*.snap 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
+          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Run integration tests
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
           PYTEST_ADDOPTS_EXTRA: -k test_deploy_unseal.py
         with:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
+          snap-enabled: "true"
           snap-file-name: ${{ steps.artifacts.outputs.snap }}
+          snap-service-name: openbao.baod
+          snap-service-port: "8200"
+          snap-executable-name: openbao.bao
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-s390x
+          path: charm/machine/*.charm
+          if-no-files-found: error
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-s390x
+          path: snap/2.5.2/*.snap
+          if-no-files-found: error
 
-  machine-publish-charm:
-    name: Publish Machine Charm
-    needs:
-      - machine-quality
-      - machine-integration-test
-      - machine-build
-      - machine-build-kv-requirer
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
-    permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/machine
-      artifacts-key: ${{ needs.machine-build.outputs.artifacts-key }}
-      charm-paths: ${{ needs.machine-build.outputs.charm-paths }}
-      tag-prefix: machine
+  k8s-arm:
+    name: K8s charm and rock (arm64)
+    # Runs on merge, or on a PR labelled `test-arm` to verify arm64-specific fixes.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-arm')
+    runs-on: [self-hosted, linux, ARM64, medium, noble]
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on Canonical K8s
+        env:
+          TOOLCHAINS: python juju-k8s charmcraft rockcraft
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Build k8s charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/k8s
+          charmcraft-enabled: "true"
+      - name: Copy test libs into the KV requirer charm
+        run: make -C charm/k8s copy-test-libs
+      - name: Build KV requirer test charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/k8s/tests/integration/openbao_kv_requirer_operator
+          charmcraft-enabled: "true"
+      - name: Build rock
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: rock/2.5.2
+          rockcraft-enabled: "true"
+      - name: Import rock into Canonical K8s containerd
+        run: |
+          ROCK=$(ls rock/2.5.2/*.rock | head -1)
+          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/k8s/charmcraft.yaml)
+          echo "Importing ${ROCK} as ${IMAGE}"
+          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
+          rm rock/2.5.2/openbao-rock.tar
+      - name: Locate artifacts
+        id: artifacts
+        run: |
+          echo "charm=$(ls ${{ github.workspace }}/charm/k8s/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/k8s/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Run integration tests
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        env:
+          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          PYTEST_ADDOPTS_EXTRA: -k test_core
+        with:
+          working-directory: charm/k8s
+          charm-enabled: "true"
+          charm-file-name: ${{ steps.artifacts.outputs.charm }}
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-k8s-arm64
+          path: charm/k8s/*.charm
+          if-no-files-found: error
+      - name: Upload rock artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rock-arm64
+          path: rock/2.5.2/*.rock
+          if-no-files-found: error
 
-  machine-publish-charm-arm:
-    name: Publish Machine Charm (ARM)
-    needs:
-      - machine-quality
-      - machine-build-arm
-      - machine-integration-test-arm
-      - machine-build-kv-requirer
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
-    permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/machine
-      artifacts-key: ${{ needs.machine-build-arm.outputs.artifacts-key }}
-      charm-paths: ${{ needs.machine-build-arm.outputs.charm-paths }}
-      tag-prefix: machine
-      runner: '["self-hosted", "linux", "ARM64", "medium", "noble"]'
+  k8s-s390x:
+    name: K8s charm (s390x, build only)
+    # The rock does not declare an s390x platform yet, so there is no image to
+    # run integration tests against on s390x; the charm is built and published
+    # without them.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-s390x')
+    runs-on: [self-hosted-linux-s390x-noble-medium]
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: python charmcraft
+        run: just setup
+      - name: Build k8s charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/k8s
+          charmcraft-enabled: "true"
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-k8s-s390x
+          path: charm/k8s/*.charm
+          if-no-files-found: error
 
-  machine-publish-charm-s390x:
-    name: Publish Machine Charm (s390x)
-    needs:
-      - machine-quality
-      - machine-build-s390x
-      - machine-integration-test-s390x
-    if: ${{ github.ref_name == 'main' || startsWith(github.ref_name, 'release-') }}
+  publish:
+    name: Publish artifacts
+    if: github.event_name != 'pull_request'
+    needs: [quality, machine, k8s, machine-arm, machine-s390x, k8s-arm, k8s-s390x]
+    runs-on: ubuntu-24.04
     permissions:
-      contents: write
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-publish.yaml@v3.1.3
-    secrets:
-      CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
-    with:
-      destination_channel: 2.0/edge
-      path: charm/machine
-      artifacts-key: ${{ needs.machine-build-s390x.outputs.artifacts-key }}
-      charm-paths: ${{ needs.machine-build-s390x.outputs.charm-paths }}
-      tag-prefix: machine
-      runner: '["self-hosted-linux-s390x-noble-medium"]'
+      contents: read
+      packages: write
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: charmcraft snapcraft rockcraft
+        run: just setup
+      - name: Download machine charm artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: charm-machine-*
+          path: charm/machine/
+          merge-multiple: true
+      - name: Download k8s charm artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: charm-k8s-*
+          path: charm/k8s/
+          merge-multiple: true
+      - name: Download snap artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: snap-*
+          path: snap/2.5.2/
+          merge-multiple: true
+      - name: Download rock artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rock-*
+          path: rock/2.5.2/
+          merge-multiple: true
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish machine charm
+        uses: canonical/identity-credentials-workflows/.github/actions/publish@v3.1.3
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+        with:
+          working-directory: charm/machine
+          charm-publish-enabled: "true"
+          charm-channel: "2.0"
+      - name: Publish k8s charm
+        uses: canonical/identity-credentials-workflows/.github/actions/publish@v3.1.3
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_AUTH }}
+        with:
+          working-directory: charm/k8s
+          charm-publish-enabled: "true"
+          charm-channel: "2.0"
+      - name: Publish snap
+        uses: canonical/identity-credentials-workflows/.github/actions/publish@v3.1.3
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          working-directory: snap/2.5.2
+          snap-publish-enabled: "true"
+          snap-track: latest
+      - name: Publish rock
+        uses: canonical/identity-credentials-workflows/.github/actions/publish@v3.1.3
+        with:
+          working-directory: rock/2.5.2
+          rock-publish-enabled: "true"
+          rock-architectures: amd64 arm64
