@@ -2,7 +2,6 @@
 name: OpenBao Charm CI/CD
 
 on:
-  workflow_dispatch:
   workflow_call:
 
 jobs:

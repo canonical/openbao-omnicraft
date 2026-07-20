@@ -1,4 +1,4 @@
-name: Automatic documentation checks
+name: Docs Linter
 
 on:
   pull_request:

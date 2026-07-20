@@ -2,7 +2,7 @@
 name: OpenBao Snap CI/CD
 
 on:
-  workflow_dispatch:
+  workflow_call:
 
 env:
   SNAP_VERSION: 2.5.2
