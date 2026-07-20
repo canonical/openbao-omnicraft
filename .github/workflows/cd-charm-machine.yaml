@@ -3,12 +3,6 @@ name: OpenBao Charm CI/CD
 
 on:
   workflow_call:
-    inputs:
-      snap-changed:
-        description: Whether the snap changed, meaning the snap continuous delivery job already built and uploaded a snap artifact
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   machine:
@@ -20,7 +14,7 @@ jobs:
           workflows-ref: v3.1.3
       - name: Setup toolchains and bootstrap juju on LXD
         env:
-          TOOLCHAINS: python juju-machine charmcraft snapcraft
+          TOOLCHAINS: python juju-machine charmcraft
           JUJU_CHANNEL: 3.6/stable
         run: just setup
       - name: Build machine charm
@@ -36,17 +30,10 @@ jobs:
           working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
       - name: Download snap artifact from snap continuous delivery
-        if: inputs.snap-changed
         uses: actions/download-artifact@v8
         with:
           name: snap-amd64
           path: snap/2.5.2
-      - name: Build snap
-        if: ${{ !inputs.snap-changed }}
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: snap/2.5.2
-          snapcraft-enabled: "true"
       - name: Locate artifacts
         id: artifacts
         run: |
@@ -153,11 +140,4 @@ jobs:
         with:
           name: charm-machine-amd64
           path: charm/machine/*.charm
-          if-no-files-found: error
-      - name: Upload snap artifact
-        if: ${{ !inputs.snap-changed }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: snap-amd64
-          path: snap/2.5.2/*.snap
           if-no-files-found: error

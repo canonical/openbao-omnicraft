@@ -3,12 +3,6 @@ name: OpenBao Charm CI/CD
 
 on:
   workflow_call:
-    inputs:
-      rock-changed:
-        description: Whether the rock changed, meaning the rock continuous delivery job already built and uploaded a rock artifact
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   k8s:
@@ -36,17 +30,10 @@ jobs:
           working-directory: charm/k8s/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
       - name: Download rock artifact from rock continuous delivery
-        if: inputs.rock-changed
         uses: actions/download-artifact@v8
         with:
           name: rock-amd64
           path: rock/2.5.2
-      - name: Build rock
-        if: ${{ !inputs.rock-changed }}
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: rock/2.5.2
-          rockcraft-enabled: "true"
       - name: Import rock into Canonical K8s containerd
         run: |
           ROCK=$(ls rock/2.5.2/*.rock | head -1)
@@ -73,77 +60,4 @@ jobs:
         with:
           name: charm-k8s-amd64
           path: charm/k8s/*.charm
-          if-no-files-found: error
-      - name: Upload rock artifact
-        if: ${{ !inputs.rock-changed }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: rock-amd64
-          path: rock/2.5.2/*.rock
-          if-no-files-found: error
-
-
-  k8s-arm:
-    name: K8s charm and rock (arm64)
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'test-arm')
-    runs-on: [self-hosted, linux, ARM64, medium, noble]
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-        with:
-          workflows-ref: v3.1.3
-      - name: Setup toolchains and bootstrap juju on Canonical K8s
-        env:
-          TOOLCHAINS: python juju-k8s charmcraft rockcraft
-          JUJU_CHANNEL: 3.6/stable
-        run: just setup
-      - name: Build k8s charm
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: charm/k8s
-          charmcraft-enabled: "true"
-      - name: Copy test libs into the KV requirer charm
-        run: make -C charm/k8s copy-test-libs
-      - name: Build KV requirer test charm
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: charm/k8s/tests/integration/openbao_kv_requirer_operator
-          charmcraft-enabled: "true"
-      - name: Build rock
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: rock/2.5.2
-          rockcraft-enabled: "true"
-      - name: Import rock into Canonical K8s containerd
-        run: |
-          ROCK=$(ls rock/2.5.2/*.rock | head -1)
-          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/k8s/charmcraft.yaml)
-          echo "Importing ${ROCK} as ${IMAGE}"
-          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
-          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
-          rm rock/2.5.2/openbao-rock.tar
-      - name: Locate artifacts
-        id: artifacts
-        run: |
-          echo "charm=$(ls ${{ github.workspace }}/charm/k8s/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/charm/k8s/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Run integration tests
-        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
-        env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
-          PYTEST_ADDOPTS_EXTRA: -k test_core
-        with:
-          working-directory: charm/k8s
-          charm-enabled: "true"
-          charm-file-name: ${{ steps.artifacts.outputs.charm }}
-      - name: Upload charm artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: charm-k8s-arm64
-          path: charm/k8s/*.charm
-          if-no-files-found: error
-      - name: Upload rock artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: rock-arm64
-          path: rock/2.5.2/*.rock
           if-no-files-found: error

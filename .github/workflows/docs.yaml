@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   spellcheck:
-    name: Spelling check
+    name: Documentation Spellchecks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
