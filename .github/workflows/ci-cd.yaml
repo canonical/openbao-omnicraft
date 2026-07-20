@@ -2,11 +2,7 @@
 name: OpenBao CI/CD
 
 on:
-  pull_request:
-    branches: ["main"]
-    types: [opened, synchronize, reopened, labeled]
-  push:
-    branches: ["main", "claude/frosty-goldstine-bbf89a"] # temporary, not required once it exists in the main branch
+  push: # TODO: limit this
 
 jobs:
   continuous-integration:
