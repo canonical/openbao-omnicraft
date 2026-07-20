@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao CI/CD
+
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: ["main"]
+
+jobs:
+  continuous-integration:
+    name: Continuous integration
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: python go
+        run: just setup
+      - name: Ensure vendored shared code is in sync
+        run: |
+          make -C charm/k8s vendor-shared-code
+          make -C charm/machine vendor-shared-code
+      - name: Shared package code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: K8s charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/k8s
+          python-enabled: "true"
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: Shared package unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+      - name: K8s charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/k8s
+          python-enabled: "true"
+
+  continuous-delivery-snap:
+    name: Continuous delivery
+    needs: continuous-integration
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Snap Flow
+        uses: ./.github/workflows/continuous-delivery-snap
+  continuous-delivery-rock:
+    name: Continuous delivery
+    needs: continuous-integration
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Snap Flow
+        uses: ./.github/workflows/continuous-delivery-snap
+  continuous-delivery-charm:
+    name: Continuous delivery
+    needs: continuous-integration
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Snap Flow
+        uses: ./.github/workflows/continuous-delivery-snap
+
+  publish:
+    name: Publish artifacts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: todo
+        uses: canonical/identity-credentials-workflows/.github/actions/publish@v3.1.3
