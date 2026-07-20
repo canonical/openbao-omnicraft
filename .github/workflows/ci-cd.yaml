@@ -102,11 +102,23 @@ jobs:
     uses: ./.github/workflows/cd-rock.yaml
   continuous-delivery-charm-k8s:
     name: k8s charm continuous delivery
-    needs: continuous-integration
-    if: needs.continuous-integration.outputs.charm-k8s-changed == 'true'
+    needs: [continuous-integration, continuous-delivery-rock]
+    if: >-
+      !cancelled() &&
+      needs.continuous-integration.result == 'success' &&
+      needs.continuous-integration.outputs.charm-k8s-changed == 'true' &&
+      (needs.continuous-delivery-rock.result == 'success' || needs.continuous-delivery-rock.result == 'skipped')
     uses: ./.github/workflows/cd-charm-k8s.yaml
+    with:
+      rock-changed: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
   continuous-delivery-charm-machine:
     name: machine charm continuous delivery
-    needs: continuous-integration
-    if: needs.continuous-integration.outputs.charm-machine-changed == 'true'
+    needs: [continuous-integration, continuous-delivery-snap]
+    if: >-
+      !cancelled() &&
+      needs.continuous-integration.result == 'success' &&
+      needs.continuous-integration.outputs.charm-machine-changed == 'true' &&
+      (needs.continuous-delivery-snap.result == 'success' || needs.continuous-delivery-snap.result == 'skipped')
     uses: ./.github/workflows/cd-charm-machine.yaml
+    with:
+      snap-changed: ${{ needs.continuous-integration.outputs.snap-changed == 'true' }}

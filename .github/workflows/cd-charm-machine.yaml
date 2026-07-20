@@ -3,6 +3,12 @@ name: OpenBao Charm CI/CD
 
 on:
   workflow_call:
+    inputs:
+      snap-changed:
+        description: Whether the snap changed, meaning the snap continuous delivery job already built and uploaded a snap artifact
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   machine:
@@ -29,7 +35,14 @@ jobs:
         with:
           working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
+      - name: Download snap artifact from snap continuous delivery
+        if: inputs.snap-changed
+        uses: actions/download-artifact@v8
+        with:
+          name: snap-amd64
+          path: snap/2.5.2
       - name: Build snap
+        if: ${{ !inputs.snap-changed }}
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
           working-directory: snap/2.5.2
@@ -142,70 +155,9 @@ jobs:
           path: charm/machine/*.charm
           if-no-files-found: error
       - name: Upload snap artifact
+        if: ${{ !inputs.snap-changed }}
         uses: actions/upload-artifact@v7
         with:
           name: snap-amd64
-          path: snap/2.5.2/*.snap
-          if-no-files-found: error
-
-  machine-arm:
-    name: Machine charm and snap (arm64)
-    runs-on: [self-hosted, linux, ARM64, medium, noble]
-    steps:
-      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
-        with:
-          workflows-ref: v3.1.3
-      - name: Setup toolchains and bootstrap juju on LXD
-        env:
-          TOOLCHAINS: python juju-machine charmcraft snapcraft
-          JUJU_CHANNEL: 3.6/stable
-        run: just setup
-      - name: Build machine charm
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: charm/machine
-          charmcraft-enabled: "true"
-      - name: Copy test libs into the KV requirer charm
-        run: make -C charm/machine copy-test-libs
-      - name: Build KV requirer test charm
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
-          charmcraft-enabled: "true"
-      - name: Build snap
-        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
-        with:
-          working-directory: snap/2.5.2
-          snapcraft-enabled: "true"
-      - name: Locate artifacts
-        id: artifacts
-        run: |
-          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Run integration tests
-        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
-        env:
-          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
-          PYTEST_ADDOPTS_EXTRA: -k test_core.py
-        with:
-          working-directory: charm/machine
-          charm-enabled: "true"
-          charm-file-name: ${{ steps.artifacts.outputs.charm }}
-          snap-enabled: "true"
-          snap-file-name: ${{ steps.artifacts.outputs.snap }}
-          snap-service-name: openbao.baod
-          snap-service-port: "8200"
-          snap-executable-name: openbao.bao
-      - name: Upload charm artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: charm-machine-arm64
-          path: charm/machine/*.charm
-          if-no-files-found: error
-      - name: Upload snap artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: snap-arm64
           path: snap/2.5.2/*.snap
           if-no-files-found: error
