@@ -2,7 +2,12 @@
 name: OpenBao CI/CD
 
 on:
-  push: # TODO: limit this
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
 
 jobs:
   continuous-integration:
