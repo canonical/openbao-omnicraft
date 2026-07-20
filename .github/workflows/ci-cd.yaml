@@ -11,7 +11,7 @@ on:
 
 jobs:
   continuous-integration:
-    name: Continuous integration
+    name: code quality and health checks
     runs-on: ubuntu-24.04
     outputs:
       snap-changed: ${{ steps.changes.outputs.snap }}
@@ -91,22 +91,22 @@ jobs:
           python-enabled: "true"
 
   continuous-delivery-snap:
-    name: Snap continuous delivery
+    name: snap continuous delivery
     needs: continuous-integration
     if: needs.continuous-integration.outputs.snap-changed == 'true'
     uses: ./.github/workflows/cd-snap.yaml
   continuous-delivery-rock:
-    name: Rock continuous delivery
+    name: rock continuous delivery
     needs: continuous-integration
     if: needs.continuous-integration.outputs.rock-changed == 'true'
     uses: ./.github/workflows/cd-rock.yaml
   continuous-delivery-charm-k8s:
-    name: Charm continuous delivery
+    name: k8s charm continuous delivery
     needs: continuous-integration
     if: needs.continuous-integration.outputs.charm-k8s-changed == 'true'
     uses: ./.github/workflows/cd-charm-k8s.yaml
   continuous-delivery-charm-machine:
-    name: Charm continuous delivery
+    name: machine charm continuous delivery
     needs: continuous-integration
     if: needs.continuous-integration.outputs.charm-machine-changed == 'true'
     uses: ./.github/workflows/cd-charm-machine.yaml

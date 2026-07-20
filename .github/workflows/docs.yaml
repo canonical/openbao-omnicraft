@@ -34,35 +34,13 @@ jobs:
         run: |
           cd charm/docs && make spelling
 
-  woke:
-    name: Inclusive language check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+      - name: Check for broken links
+        run: |
+          cd charm/docs && make linkcheck
 
-      - name: woke
+      - name: Check for inclusive language
         uses: get-woke/woke-action@v0
         with:
           # Cause the check to fail on any broke rules
           fail-on-error: true
           woke-args: "*.rst **/*.rst -c https://github.com/canonical-web-and-design/Inclusive-naming/raw/main/config.yml"
-
-  linkcheck:
-    name: Link check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Install the doc framework
-        run: |
-          cd charm/docs && make install
-
-      - name: Run linkchecker
-        run: |
-          cd charm/docs && make linkcheck
