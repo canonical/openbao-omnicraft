@@ -6,7 +6,7 @@ on:
     branches: ["main"]
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: ["main"]
+    branches: ["main", "claude/frosty-goldstine-bbf89a"] # temporary, not required once it exists in the main branch
 
 jobs:
   continuous-integration:
