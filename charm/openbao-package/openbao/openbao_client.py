@@ -491,7 +491,7 @@ class OpenBaoClient:
         csr: str,
         common_name: str,
         ttl: str,
-    ) -> Certificate | None:
+    ) -> Certificate:
         """Sign a certificate signing request for the PKI backend.
 
         Args:

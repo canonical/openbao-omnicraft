@@ -1506,7 +1506,7 @@ class PKIManager:
         )
 
     def _report_certificate_request_error(
-        self, requirer_csr: RequirerCertificateRequest, error: OpenBaoClientError
+        self, requirer_csr: RequirerCertificateRequest, error: PKICertificateError
     ) -> None:
         """Set certificate error for a given certificate request."""
         certificate_error = _map_openbao_pki_errors(error)
