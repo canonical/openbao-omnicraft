@@ -41,7 +41,7 @@ test-integration-snap:
     echo "Installing snap $SNAP_NAME"
     sudo snap install --dangerous $SNAP_NAME
 
-    sudo snap start bao
+    sudo snap start openbao.server
     sleep 30
 
     sudo apt-get update

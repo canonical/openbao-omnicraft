@@ -26,7 +26,7 @@ apps:
       - network
       - network-bind
       - home
-  baod:
+  server:
     command: bin/baod-start
     plugs:
       - network
