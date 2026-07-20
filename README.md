@@ -15,5 +15,5 @@ This repo contains a monorepo for the Rock, Snap and the Charm for OpenBao.
 - **Backup integration tests**: `test_backup.py` (LXD minio storage buckets) and
   `test_backup_microceph.py` (microceph with RGW) require host-level services that
   the CI workflows provision on the runner (see
-  `.github/workflows/machine-integration-test.yaml`). They are not run as
+  the machine integration job in `.github/workflows/main.yaml`). They are not run as
   part of local verification.
