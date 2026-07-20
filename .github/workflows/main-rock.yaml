@@ -31,7 +31,7 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: [self-hosted, linux, ARM64, medium, jammy]
-    uses: canonical/identity-credentials-workflows/.github/workflows/rock-build.yaml@v3.1.2
+    uses: canonical/identity-credentials-workflows/.github/workflows/rock-build.yaml@v3.1.3
     with:
       path: rock/2.5.2
       arch: ${{ matrix.arch.arch }}
@@ -39,7 +39,7 @@ jobs:
 
   scan:
     needs: build
-    uses: canonical/identity-credentials-workflows/.github/workflows/rock-scan.yaml@v3.1.2
+    uses: canonical/identity-credentials-workflows/.github/workflows/rock-scan.yaml@v3.1.3
     with:
       artifacts-key: ${{ github.sha }}-build-amd64
       arch: amd64
@@ -52,51 +52,14 @@ jobs:
   publish:
     if: github.ref_name == 'main' || startsWith(github.ref_name, 'release-')
     needs: [scan, build, integration-tests]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Log in to the Container registry
-        uses: docker/login-action@v4.4.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install rockcraft
-        run: |
-          sudo snap install rockcraft --classic --channel edge
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ github.sha }}-build-amd64
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ github.sha }}-build-arm64
-
-      - name: Import and push to github package
-        run: |
-          image_name="$(yq '.name' rock/2.5.2/rockcraft.yaml)"
-          version="$(yq '.version' rock/2.5.2/rockcraft.yaml)"
-
-          for arch in amd64 arm64; do
-            rock_file=$(ls *_${arch}.rock | tail -n 1)
-            sudo rockcraft.skopeo \
-              --insecure-policy \
-              copy \
-              oci-archive:"${rock_file}" \
-              docker-daemon:"ghcr.io/canonical/${image_name}:${version}-${arch}"
-            docker push ghcr.io/canonical/${image_name}:${version}-${arch}
-          done
-
-          docker manifest create ghcr.io/canonical/${image_name}:${version} \
-            ghcr.io/canonical/${image_name}:${version}-amd64 \
-            ghcr.io/canonical/${image_name}:${version}-arm64
-          docker manifest push ghcr.io/canonical/${image_name}:${version}
-
-          docker manifest create ghcr.io/canonical/${image_name}:latest \
-            ghcr.io/canonical/${image_name}:${version}-amd64 \
-            ghcr.io/canonical/${image_name}:${version}-arm64
-          docker manifest push ghcr.io/canonical/${image_name}:latest
+    permissions:
+      contents: read
+      packages: write
+    uses: canonical/identity-credentials-workflows/.github/workflows/rock-publish.yaml@v3.1.3
+    with:
+      # The rock is published as ghcr.io/<repository>/<rock-name>, i.e.
+      # ghcr.io/canonical/openbao-omnicraft/openbao, which must match the
+      # openbao-image upstream-source in charm/k8s/charmcraft.yaml.
+      artifacts-key: ${{ github.sha }}-build-*
+      architectures: '["amd64", "arm64"]'
+      path: rock/2.5.2
