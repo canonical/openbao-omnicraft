@@ -69,6 +69,8 @@ ignore = [
     "lib/charms/operator_libs_linux/",
     "lib/charms/traefik_k8s/",
     "lib/charms/openbao_k8s/",
+    # standalone test charm; its charm-libs are fetched by charmcraft at build time
+    "tests/integration/openbao_kv_requirer_operator/",
 ]
 
 [tool.uv]

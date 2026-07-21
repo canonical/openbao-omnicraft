@@ -14,6 +14,8 @@ dependencies = [
     "pydantic",
     "pytest-interface-tester",  # import interface_tester
     # via tls_certificates
+    "charmlibs-interfaces-tls-certificates",
+    "charmlibs-interfaces-certificate-transfer",
     "cryptography",
 ]
 

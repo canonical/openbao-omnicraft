@@ -776,6 +776,8 @@ source = { editable = ".vendored/openbao-package" }
 dependencies = [
     { name = "boto3" },
     { name = "boto3-stubs", extra = ["s3"] },
+    { name = "charmlibs-interfaces-certificate-transfer" },
+    { name = "charmlibs-interfaces-tls-certificates" },
     { name = "cryptography", version = "43.0.3", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 's390x'" },
     { name = "cryptography", version = "45.0.7", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 's390x'" },
     { name = "hvac" },
@@ -791,6 +793,8 @@ dependencies = [
 requires-dist = [
     { name = "boto3" },
     { name = "boto3-stubs", extras = ["s3"] },
+    { name = "charmlibs-interfaces-certificate-transfer" },
+    { name = "charmlibs-interfaces-tls-certificates" },
     { name = "cryptography" },
     { name = "hvac" },
     { name = "jinja2" },

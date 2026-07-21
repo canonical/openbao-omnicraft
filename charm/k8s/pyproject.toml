@@ -83,7 +83,9 @@ ignore = [
     "lib/charms/prometheus_k8s/",
     "lib/charms/tempo_coordinator_k8s/",
     "lib/charms/traefik_k8s/",
-    "lib/charms/observability_libs"
+    "lib/charms/observability_libs",
+    # standalone test charm; its charm-libs are fetched by charmcraft at build time
+    "tests/integration/openbao_kv_requirer_operator/",
 ]
 
 [tool.uv]

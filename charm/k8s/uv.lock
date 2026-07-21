@@ -974,6 +974,8 @@ source = { editable = ".vendored/openbao-package" }
 dependencies = [
     { name = "boto3" },
     { name = "boto3-stubs", extra = ["s3"] },
+    { name = "charmlibs-interfaces-certificate-transfer" },
+    { name = "charmlibs-interfaces-tls-certificates" },
     { name = "cryptography" },
     { name = "hvac" },
     { name = "jinja2" },
@@ -988,6 +990,8 @@ dependencies = [
 requires-dist = [
     { name = "boto3" },
     { name = "boto3-stubs", extras = ["s3"] },
+    { name = "charmlibs-interfaces-certificate-transfer" },
+    { name = "charmlibs-interfaces-tls-certificates" },
     { name = "cryptography" },
     { name = "hvac" },
     { name = "jinja2" },
