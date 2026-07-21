@@ -7,10 +7,10 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from charms.openbao_k8s.v0.openbao_kv import (
-    OpenBaoKvConnectedEvent,
-    OpenBaoKvReadyEvent,
-    OpenBaoKvRequires,
+from charms.vault_k8s.v0.vault_kv import (
+    VaultKvConnectedEvent,
+    VaultKvReadyEvent,
+    VaultKvRequires,
 )
 from openbao.juju_facade import JujuFacade, NoSuchStorageError
 from openbao_client import OpenBaoClient
@@ -32,7 +32,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
     def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)
-        self.openbao_kv = OpenBaoKvRequires(self, "openbao-kv", mount_suffix="kv")
+        self.openbao_kv = VaultKvRequires(self, "openbao-kv", mount_suffix="kv")
         self.framework.observe(self.on.install, self._configure)
         self.framework.observe(self.openbao_kv.on.connected, self._on_kv_connected)
         self.framework.observe(self.openbao_kv.on.ready, self._on_kv_ready)
@@ -48,14 +48,14 @@ class OpenBaoKVRequirerCharm(CharmBase):
         )
         self.unit.status = ActiveStatus()
 
-    def _on_kv_connected(self, event: OpenBaoKvConnectedEvent):
+    def _on_kv_connected(self, event: VaultKvConnectedEvent):
         """Request credentials from OpenBao KV."""
         egress_subnets = self.juju_facade.get_egress_subnets(
             event.relation_name, relation=event.relation
         )
         self.openbao_kv.request_credentials(event.relation, egress_subnets, self.get_nonce())
 
-    def _on_kv_ready(self, event: OpenBaoKvReadyEvent):
+    def _on_kv_ready(self, event: VaultKvReadyEvent):
         """Store the OpenBao KV credentials in a secret."""
         if not (relation := event.relation):
             return
