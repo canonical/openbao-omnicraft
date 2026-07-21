@@ -17,6 +17,23 @@ lint-grafana:
     "$tmpdir/dashboard-linter" lint "$GRAFANA_DASHBOARD_FILE_PATH" --strict -c grafana.lint
     rm -rf "$tmpdir"
 
+# Override the shared test-integration-charm recipe: our charm integration tests
+# take the built artifact under test (the snap or the rock) via --resource-path.
+[private]
+test-integration-charm: install-python
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "running integration test for $CHARM_FILE_NAME"
+
+    uv tool install tox --with tox-uv
+    args=(--charm_path "$CHARM_FILE_NAME")
+    if [ -n "${SNAP_FILE_NAME:-}" ]; then
+        args+=(--resource-path "$SNAP_FILE_NAME")
+    elif [ -n "${ROCK_FILE_NAME:-}" ]; then
+        args+=(--resource-path "$ROCK_FILE_NAME")
+    fi
+    tox -e integration -- "${args[@]}"
+
 # Run custom tests for the rock
 test-integration-rock:
     #!/usr/bin/env bash

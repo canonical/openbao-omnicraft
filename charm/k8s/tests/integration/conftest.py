@@ -88,6 +88,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Path to the openbao-pki-requirer charm to deploy for testing",
     )
     parser.addoption(
+        "--resource-path",
+        action="store",
+        default=None,
+        help=(
+            "Path to the resource under test (the openbao rock); it must already be imported "
+            "into the cluster under the charm's openbao-image upstream-source"
+        ),
+    )
+    parser.addoption(
         "--no-deploy",
         action="store_true",
         default=False,
@@ -115,6 +124,9 @@ def pytest_configure(config: pytest.Config) -> None:
             pytest.exit(
                 f"The path specified for KV Requirer does not exist: {kv_requirer_charm_path}"
             )
+    resource_path = config.getoption("--resource-path")
+    if resource_path and not os.path.exists(str(resource_path)):
+        pytest.exit(f"The path specified for the rock under test does not exist: {resource_path}")
 
 
 @pytest.fixture(scope="session")

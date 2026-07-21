@@ -90,10 +90,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Path to the KV requirer charm",
     )
     parser.addoption(
-        "--snap_path",
+        "--resource-path",
         action="store",
         required=True,
-        help="Path to the openbao snap to attach as the charm's snap resource",
+        help="Path to the resource under test (the openbao snap) to attach as the charm's snap resource",
     )
     parser.addoption(
         "--no-deploy",
@@ -112,19 +112,19 @@ def pytest_configure(config: pytest.Config) -> None:
       config: The pytest configuration object.
     """
     charm_path = str(config.getoption("--charm_path"))
-    snap_path = str(config.getoption("--snap_path"))
+    resource_path = str(config.getoption("--resource-path"))
     kv_requirer_charm_path = config.getoption("--kv_requirer_charm_path")
     if not charm_path:
         pytest.exit("The --charm_path option is required. Tests aborted.")
     if not os.path.exists(charm_path):
         pytest.exit(f"The path specified does not exist: {charm_path}")
-    if not snap_path:
-        pytest.exit("The --snap_path option is required. Tests aborted.")
-    if not os.path.exists(snap_path):
-        pytest.exit(f"The path specified does not exist: {snap_path}")
+    if not resource_path:
+        pytest.exit("The --resource-path option is required. Tests aborted.")
+    if not os.path.exists(resource_path):
+        pytest.exit(f"The path specified does not exist: {resource_path}")
     import config as test_config
 
-    test_config.OPENBAO_SNAP_PATH = str(Path(snap_path).resolve())
+    test_config.OPENBAO_SNAP_PATH = str(Path(resource_path).resolve())
     if kv_requirer_charm_path and not os.path.exists(str(kv_requirer_charm_path)):
         pytest.exit(f"The path specified does not exist: {kv_requirer_charm_path}")
     config.addinivalue_line("markers", "abort_on_fail: abort remaining tests in module on failure")
