@@ -2,16 +2,16 @@
 # Copyright 2023 Canonical Ltd.
 # Licensed under the Apache2.0. See LICENSE file in charm source for details.
 
-"""Library for the openbao-kv relation.
+"""Library for the vault-kv relation.
 
-This library contains the Requires and Provides classes for handling the openbao-kv
+This library contains the Requires and Provides classes for handling the vault-kv
 interface.
 
 ## Getting Started
 From a charm directory, fetch the library using `charmcraft`:
 
 ```shell
-charmcraft fetch-lib charms.openbao_k8s.v0.openbao_kv
+charmcraft fetch-lib charms.vault_k8s.v0.vault_kv
 ```
 
 ### Requirer charm
@@ -21,7 +21,7 @@ is requiring a secret value store.
 ```python
 import secrets
 
-from charms.openbao_k8s.v0 import openbao_kv
+from charms.vault_k8s.v0 import vault_kv
 from ops.charm import CharmBase, InstallEvent
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus
@@ -32,9 +32,9 @@ NONCE_SECRET_LABEL = "nonce"
 class ExampleRequirerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
-        self.interface = openbao_kv.OpenBaoKvRequires(
+        self.interface = vault_kv.VaultKvRequires(
             self,
-            "openbao-kv",
+            "vault-kv",
             "my-suffix",
         )
 
@@ -48,21 +48,21 @@ class ExampleRequirerCharm(CharmBase):
         self.unit.add_secret(
             {"nonce": secrets.token_hex(16)},
             label=NONCE_SECRET_LABEL,
-            description="Nonce for openbao-kv relation",
+            description="Nonce for vault-kv relation",
         )
-        self.unit.status = BlockedStatus("Waiting for openbao-kv relation")
+        self.unit.status = BlockedStatus("Waiting for vault-kv relation")
 
-    def _on_connected(self, event: openbao_kv.OpenBaoKvConnectedEvent):
+    def _on_connected(self, event: vault_kv.VaultKvConnectedEvent):
         relation = self.model.get_relation(event.relation_name, event.relation_id)
         egress_subnets = [str(subnet) for subnet in self.model.get_binding(relation).network.egress_subnets][0].subnet]
         egress_subnets.append(str(self.model.get_binding(relation).network.interfaces[0].subnet))
         self.interface.request_credentials(relation, egress_subnets, self.get_nonce())
 
-    def _on_ready(self, event: openbao_kv.OpenBaoKvReadyEvent):
+    def _on_ready(self, event: vault_kv.VaultKvReadyEvent):
         relation = self.model.get_relation(event.relation_name, event.relation_id)
         if relation is None:
             return
-        openbao_url = self.interface.get_openbao_url(relation)
+        vault_url = self.interface.get_vault_url(relation)
         ca_certificate = self.interface.get_ca_certificate(relation)
         mount = self.interface.get_mount(relation)
 
@@ -73,16 +73,16 @@ class ExampleRequirerCharm(CharmBase):
         role_id = secret_content["role-id"]
         role_secret_id = secret_content["role-secret-id"]
 
-        self._configure(openbao_url, ca_certificate, mount, role_id, role_secret_id)
+        self._configure(vault_url, ca_certificate, mount, role_id, role_secret_id)
 
         self.unit.status = ActiveStatus()
 
-    def _on_gone_away(self, event: openbao_kv.OpenBaoKvGoneAwayEvent):
-        self.unit.status = BlockedStatus("Waiting for openbao-kv relation")
+    def _on_gone_away(self, event: vault_kv.VaultKvGoneAwayEvent):
+        self.unit.status = BlockedStatus("Waiting for vault-kv relation")
 
     def _configure(
         self,
-        openbao_url: str,
+        vault_url: str,
         ca_certificate: str,
         mount: str,
         role_id: str,
@@ -93,11 +93,11 @@ class ExampleRequirerCharm(CharmBase):
     def _on_update_status(self, event):
         # Check somewhere that egress subnet has not changed i.e. pod has not been rescheduled
         # Update status might not be the best place
-        binding = self.model.get_binding("openbao-kv")
+        binding = self.model.get_binding("vault-kv")
         if binding is not None:
             egress_subnets = [str(subnet) for subnet in self.model.get_binding(relation).network.egress_subnets][0].subnet]
             egress_subnets.append(str(self.model.get_binding(relation).network.interfaces[0].subnet))
-            relation = self.model.get_relation(relation_name="openbao-kv")
+            relation = self.model.get_relation(relation_name="vault-kv")
             self.interface.request_credentials(relation, egress_subnets, self.get_nonce())
 
     def get_nonce(self):
@@ -113,7 +113,7 @@ if __name__ == "__main__":
 You can integrate both charms by running:
 
 ```bash
-juju integrate <openbao provider charm> <openbao requirer charm>
+juju integrate <vault provider charm> <vault requirer charm>
 ```
 """
 
@@ -143,7 +143,7 @@ PYDEPS = ["pydantic", "pytest-interface-tester"]
 class LogAdapter(logging.LoggerAdapter):
     """Adapter for the logger to prepend a prefix to all log lines."""
 
-    prefix = "openbao_kv"
+    prefix = "vault_kv"
 
     def process(self, msg: str, kwargs: MutableMapping) -> tuple[str, MutableMapping]:
         """Decides the format for the prepended text."""
@@ -153,10 +153,10 @@ class LogAdapter(logging.LoggerAdapter):
 logger = LogAdapter(logging.getLogger(__name__), {})
 
 
-class OpenBaoKvProviderSchema(BaseModel):
-    """Provider side of the openbao-kv interface."""
+class VaultKvProviderSchema(BaseModel):
+    """Provider side of the vault-kv interface."""
 
-    openbao_url: str = Field(description="The URL of the OpenBao server to connect to.")
+    vault_url: str = Field(description="The URL of the Vault server to connect to.")
     mount: str = Field(
         description=(
             "The KV mount available for the requirer application, "
@@ -164,7 +164,7 @@ class OpenBaoKvProviderSchema(BaseModel):
         )
     )
     ca_certificate: str = Field(
-        description="The CA certificate to use when validating the OpenBao server's certificate."
+        description="The CA certificate to use when validating the Vault server's certificate."
     )
     credentials: Json[Mapping[str, str]] = Field(
         description=(
@@ -174,16 +174,16 @@ class OpenBaoKvProviderSchema(BaseModel):
     )
 
 
-class AppOpenBaoKvRequirerSchema(BaseModel):
-    """App schema of the requirer side of the openbao-kv interface."""
+class AppVaultKvRequirerSchema(BaseModel):
+    """App schema of the requirer side of the vault-kv interface."""
 
     mount_suffix: str = Field(
         description="Suffix to append to the mount name to get the KV mount."
     )
 
 
-class UnitOpenBaoKvRequirerSchema(BaseModel):
-    """Unit schema of the requirer side of the openbao-kv interface."""
+class UnitVaultKvRequirerSchema(BaseModel):
+    """Unit schema of the requirer side of the vault-kv interface."""
 
     egress_subnet: str = Field(
         description="Egress subnets to use separated by commas, in CIDR notation."
@@ -196,14 +196,14 @@ class UnitOpenBaoKvRequirerSchema(BaseModel):
 class ProviderSchema(DataBagSchema):
     """The schema for the provider side of this interface."""
 
-    app: OpenBaoKvProviderSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
+    app: VaultKvProviderSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
 
 
 class RequirerSchema(DataBagSchema):
     """The schema for the requirer side of this interface."""
 
-    app: AppOpenBaoKvRequirerSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
-    unit: UnitOpenBaoKvRequirerSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
+    app: AppVaultKvRequirerSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
+    unit: UnitVaultKvRequirerSchema  # pyright: ignore[reportIncompatibleVariableOverride, reportGeneralTypeIssues]
 
 
 @dataclass
@@ -233,8 +233,8 @@ def is_requirer_data_valid(app_data: Mapping[str, str], unit_data: Mapping[str, 
     """Return whether the requirer data is valid."""
     try:
         RequirerSchema(
-            app=AppOpenBaoKvRequirerSchema(**app_data),
-            unit=UnitOpenBaoKvRequirerSchema(**unit_data),
+            app=AppVaultKvRequirerSchema(**app_data),
+            unit=UnitVaultKvRequirerSchema(**unit_data),
         )
         return True
     except ValidationError as e:
@@ -245,21 +245,21 @@ def is_requirer_data_valid(app_data: Mapping[str, str], unit_data: Mapping[str, 
 def is_provider_data_valid(data: Mapping[str, str]) -> bool:
     """Return whether the provider data is valid."""
     try:
-        ProviderSchema(app=OpenBaoKvProviderSchema(**data))  # type: ignore https://github.com/pydantic/pydantic/issues/8616
+        ProviderSchema(app=VaultKvProviderSchema(**data))  # type: ignore https://github.com/pydantic/pydantic/issues/8616
         return True
     except ValidationError as e:
         logger.debug("Invalid data: %s", e)
         return False
 
 
-class OpenBaoKvGoneAwayEvent(ops.EventBase):
-    """OpenBaoKvGoneAwayEvent Event."""
+class VaultKvGoneAwayEvent(ops.EventBase):
+    """VaultKvGoneAwayEvent Event."""
 
     pass
 
 
-class OpenBaoKvClientDetachedEvent(ops.EventBase):
-    """OpenBaoKvClientDetachedEvent Event."""
+class VaultKvClientDetachedEvent(ops.EventBase):
+    """VaultKvClientDetachedEvent Event."""
 
     def __init__(self, handle: ops.Handle, unit_name: str):
         super().__init__(handle)
@@ -277,8 +277,8 @@ class OpenBaoKvClientDetachedEvent(ops.EventBase):
         self.unit_name = snapshot["unit_name"]
 
 
-class NewOpenBaoKvClientAttachedEvent(ops.RelationEvent):
-    """New openbao kv client attached event."""
+class NewVaultKvClientAttachedEvent(ops.RelationEvent):
+    """New vault kv client attached event."""
 
     def __init__(
         self,
@@ -322,17 +322,17 @@ class NewOpenBaoKvClientAttachedEvent(ops.RelationEvent):
         self.nonce = snapshot["nonce"]
 
 
-class OpenBaoKvProviderEvents(ops.ObjectEvents):
-    """List of events that the OpenBao Kv provider charm can leverage."""
+class VaultKvProviderEvents(ops.ObjectEvents):
+    """List of events that the Vault Kv provider charm can leverage."""
 
-    new_openbao_kv_client_attached = ops.EventSource(NewOpenBaoKvClientAttachedEvent)
-    openbao_kv_client_detached = ops.EventSource(OpenBaoKvClientDetachedEvent)
+    new_vault_kv_client_attached = ops.EventSource(NewVaultKvClientAttachedEvent)
+    vault_kv_client_detached = ops.EventSource(VaultKvClientDetachedEvent)
 
 
-class OpenBaoKvProvides(ops.Object):
+class VaultKvProvides(ops.Object):
     """Class to be instantiated by the providing side of the relation."""
 
-    on = OpenBaoKvProviderEvents()  # type: ignore
+    on = VaultKvProviderEvents()  # type: ignore
 
     def __init__(
         self,
@@ -348,13 +348,13 @@ class OpenBaoKvProvides(ops.Object):
         )
         self.framework.observe(
             self.charm.on[relation_name].relation_departed,
-            self._on_openbao_kv_relation_departed,
+            self._on_vault_kv_relation_departed,
         )
 
     def _on_relation_changed(self, event: ops.RelationChangedEvent):
         """Handle client changed relation.
 
-        This handler will emit a new_openbao_kv_client_attached event for each requiring unit
+        This handler will emit a new_vault_kv_client_attached event for each requiring unit
         with valid relation data.
         """
         if event.app is None:
@@ -365,7 +365,7 @@ class OpenBaoKvProvides(ops.Object):
             if not is_requirer_data_valid(app_data, event.relation.data[unit]):
                 logger.debug("Invalid data from unit %r", unit.name)
                 continue
-            self.on.new_openbao_kv_client_attached.emit(
+            self.on.new_vault_kv_client_attached.emit(
                 relation=event.relation,
                 app_name=event.app.name,
                 unit_name=unit.name,
@@ -376,10 +376,10 @@ class OpenBaoKvProvides(ops.Object):
                 nonce=event.relation.data[unit]["nonce"],
             )
 
-    def _on_openbao_kv_relation_departed(self, event: ops.RelationDepartedEvent):
+    def _on_vault_kv_relation_departed(self, event: ops.RelationDepartedEvent):
         """Handle relation departed."""
         if event.departing_unit:
-            self.on.openbao_kv_client_detached.emit(unit_name=event.departing_unit.name)
+            self.on.vault_kv_client_detached.emit(unit_name=event.departing_unit.name)
 
     def remove_unit_credentials(self, relation: ops.Relation, nonce: str | Iterable[str]):
         """Remove nonce(s) from the relation."""
@@ -438,7 +438,7 @@ class OpenBaoKvProvides(ops.Object):
         relation: ops.Relation,
         mount: str,
         ca_certificate: str,
-        openbao_url: str,
+        vault_url: str,
         nonce: str,
         credentials_juju_secret_id: str,
     ):
@@ -451,13 +451,13 @@ class OpenBaoKvProvides(ops.Object):
         credentials = self.get_credentials(relation)
         credentials[nonce] = credentials_juju_secret_id
         relation.data[self.charm.app]["credentials"] = json.dumps(credentials, sort_keys=True)
-        relation.data[self.charm.app]["openbao_url"] = openbao_url
+        relation.data[self.charm.app]["vault_url"] = vault_url
         relation.data[self.charm.app]["ca_certificate"] = ca_certificate
         relation.data[self.charm.app]["mount"] = mount
 
 
-class OpenBaoKvBaseEvent(ops.RelationEvent):
-    """Base class for OpenBaoKV requirer events."""
+class VaultKvBaseEvent(ops.RelationEvent):
+    """Base class for VaultKV requirer events."""
 
     def __init__(
         self, handle: ops.Handle, relation_id: int, relation_name: str, relation: ops.Relation
@@ -481,30 +481,30 @@ class OpenBaoKvBaseEvent(ops.RelationEvent):
         self.relation_name = snapshot["relation_name"]
 
 
-class OpenBaoKvConnectedEvent(OpenBaoKvBaseEvent):
-    """OpenBaoKvConnectedEvent Event."""
+class VaultKvConnectedEvent(VaultKvBaseEvent):
+    """VaultKvConnectedEvent Event."""
 
     pass
 
 
-class OpenBaoKvReadyEvent(OpenBaoKvBaseEvent):
-    """OpenBaoKvReadyEvent Event."""
+class VaultKvReadyEvent(VaultKvBaseEvent):
+    """VaultKvReadyEvent Event."""
 
     pass
 
 
-class OpenBaoKvRequireEvents(ops.ObjectEvents):
-    """List of events that the OpenBao Kv requirer charm can leverage."""
+class VaultKvRequireEvents(ops.ObjectEvents):
+    """List of events that the Vault Kv requirer charm can leverage."""
 
-    connected = ops.EventSource(OpenBaoKvConnectedEvent)
-    ready = ops.EventSource(OpenBaoKvReadyEvent)
-    gone_away = ops.EventSource(OpenBaoKvGoneAwayEvent)
+    connected = ops.EventSource(VaultKvConnectedEvent)
+    ready = ops.EventSource(VaultKvReadyEvent)
+    gone_away = ops.EventSource(VaultKvGoneAwayEvent)
 
 
-class OpenBaoKvRequires(ops.Object):
+class VaultKvRequires(ops.Object):
     """Class to be instantiated by the requiring side of the relation."""
 
-    on = OpenBaoKvRequireEvents()  # type: ignore
+    on = VaultKvRequireEvents()  # type: ignore
 
     def __init__(
         self,
@@ -526,11 +526,11 @@ class OpenBaoKvRequires(ops.Object):
         )
         self.framework.observe(
             self.charm.on[relation_name].relation_changed,
-            self._on_openbao_kv_relation_changed,
+            self._on_vault_kv_relation_changed,
         )
         self.framework.observe(
             self.charm.on[relation_name].relation_broken,
-            self._on_openbao_kv_relation_broken,
+            self._on_vault_kv_relation_broken,
         )
 
     def _handle_relation(self, _: ops.EventBase):
@@ -552,7 +552,7 @@ class OpenBaoKvRequires(ops.Object):
                 relation,
             )
 
-    def _on_openbao_kv_relation_changed(self, event: ops.RelationChangedEvent):
+    def _on_vault_kv_relation_changed(self, event: ops.RelationChangedEvent):
         """Handle relation changed."""
         if event.app is None:
             logger.debug("No remote application yet")
@@ -568,14 +568,14 @@ class OpenBaoKvRequires(ops.Object):
                 event.relation,
             )
 
-    def _on_openbao_kv_relation_broken(self, event: ops.RelationBrokenEvent):
+    def _on_vault_kv_relation_broken(self, event: ops.RelationBrokenEvent):
         """Handle relation broken."""
         self.on.gone_away.emit()
 
     def request_credentials(
         self, relation: ops.Relation, egress_subnet: List[str] | str, nonce: str
     ) -> None:
-        """Request credentials from the openbao-kv relation.
+        """Request credentials from the vault-kv relation.
 
         Credentials are tied to the unit egress_subnet, so if the egress_subnet
         changes a new secret id must be generated.
@@ -593,9 +593,9 @@ class OpenBaoKvRequires(ops.Object):
         relation.data[self.charm.unit]["egress_subnet"] = ",".join(egress_subnet)
         relation.data[self.charm.unit]["nonce"] = nonce
 
-    def get_openbao_url(self, relation: ops.Relation) -> str | None:
-        """Return the openbao_url from the relation."""
-        return relation.data[relation.app].get("openbao_url")
+    def get_vault_url(self, relation: ops.Relation) -> str | None:
+        """Return the vault_url from the relation."""
+        return relation.data[relation.app].get("vault_url")
 
     def get_ca_certificate(self, relation: ops.Relation) -> str | None:
         """Return the ca_certificate from the relation."""

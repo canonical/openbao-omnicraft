@@ -22,9 +22,9 @@ from charmlibs.interfaces.tls_certificates import (
 )
 from charms.data_platform_libs.v0.s3 import S3Requirer
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
-from charms.openbao_k8s.v0.openbao_kv import OpenBaoKvClientDetachedEvent, OpenBaoKvProvides
 from charms.operator_libs_linux.v2 import snap
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
 from jinja2 import Environment, FileSystemLoader
 from openbao.juju_facade import (
     JujuFacade,
@@ -178,7 +178,7 @@ class OpenBaoOperatorCharm(CharmBase):
             organizational_unit=self.juju_facade.get_string_config("access_organizational_unit"),
             email_address=self.juju_facade.get_string_config("access_email_address"),
         )
-        self.openbao_kv = OpenBaoKvProvides(self, KV_RELATION_NAME)
+        self.openbao_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.openbao_pki = TLSCertificatesProvidesV4(
             charm=self,
             relationship_name=PKI_RELATION_NAME,
@@ -229,12 +229,12 @@ class OpenBaoOperatorCharm(CharmBase):
             self.tls_certificates_pki.on.certificate_available,
             self.on.tls_certificates_pki_relation_joined,
             self.on.openbao_pki_relation_changed,
-            self.openbao_kv.on.new_openbao_kv_client_attached,
+            self.openbao_kv.on.new_vault_kv_client_attached,
         ]
         for event in configure_events:
             self.framework.observe(event, self._configure)
         self.framework.observe(
-            self.openbao_kv.on.openbao_kv_client_detached, self._on_openbao_kv_client_detached
+            self.openbao_kv.on.vault_kv_client_detached, self._on_openbao_kv_client_detached
         )
 
         # Actions
@@ -244,7 +244,7 @@ class OpenBaoOperatorCharm(CharmBase):
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
 
-    def _on_openbao_kv_client_detached(self, event: OpenBaoKvClientDetachedEvent):
+    def _on_openbao_kv_client_detached(self, event: VaultKvClientDetachedEvent):
         KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
 
     def _get_active_openbao_client(self) -> OpenBaoClient | None:

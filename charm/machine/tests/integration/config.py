@@ -36,7 +36,6 @@ OPENBAO_KV_REQUIRER_APPLICATION_NAME = "openbao-kv-requirer"
 OPENBAO_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
 OPENBAO_PKI_REQUIRER_CHANNEL = "latest/stable"
 
-OPENBAO_KV_LIB_DIR = "lib/charms/openbao_k8s/v0/openbao_kv.py"
 OPENBAO_KV_REQUIRER_CHARM_DIR = "tests/integration/openbao_kv_requirer_operator"
 
 MATCHING_COMMON_NAME = "example.com"

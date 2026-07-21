@@ -10,5 +10,4 @@ vendor-shared-code:
 
 # Copy libs used by test charm
 copy-test-libs:
-	cp lib/charms/openbao_k8s/v0/openbao_kv.py tests/integration/openbao_kv_requirer_operator/lib/charms/openbao_k8s/v0/
 	cp .vendored/openbao-package/openbao/juju_facade.py tests/integration/openbao_kv_requirer_operator/lib/openbao/

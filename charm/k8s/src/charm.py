@@ -27,12 +27,12 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
-from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
 from charms.traefik_k8s.v1.ingress_per_unit import IngressPerUnitRequirer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
 from openbao.juju_facade import (
     JujuFacade,
     NoSuchSecretError,
@@ -241,7 +241,7 @@ class OpenBaoCharm(CharmBase):
             self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_created,
             self.openbao_autounseal_requires.on.openbao_autounseal_provider_relation_broken,
             self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_broken,
-            self.openbao_kv.on.new_openbao_kv_client_attached,
+            self.openbao_kv.on.new_vault_kv_client_attached,
         ]
         for event in configure_events:
             self.framework.observe(event, self._configure)
@@ -254,7 +254,7 @@ class OpenBaoCharm(CharmBase):
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
         self.framework.observe(self.on.bootstrap_raft_action, self._on_bootstrap_raft_action)
         self.framework.observe(
-            self.openbao_kv.on.openbao_kv_client_detached, self._on_openbao_kv_client_detached
+            self.openbao_kv.on.vault_kv_client_detached, self._on_openbao_kv_client_detached
         )
 
     @property
@@ -548,7 +548,7 @@ class OpenBaoCharm(CharmBase):
         if openbao.is_node_in_raft_peers(self._node_id) and openbao.get_num_raft_peers() > 1:
             openbao.remove_raft_node(self._node_id)
 
-    def _on_openbao_kv_client_detached(self, event: OpenBaoKvClientDetachedEvent):
+    def _on_openbao_kv_client_detached(self, event: VaultKvClientDetachedEvent):
         KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
 
     def _configure_pki_secrets_engine(self, openbao: OpenBaoClient) -> None:

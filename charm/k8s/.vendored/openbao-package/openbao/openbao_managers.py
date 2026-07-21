@@ -56,7 +56,7 @@ from charmlibs.interfaces.tls_certificates import (
     generate_private_key,
 )
 from charms.data_platform_libs.v0.s3 import S3Requirer
-from charms.openbao_k8s.v0.openbao_kv import OpenBaoKvProvides
+from charms.vault_k8s.v0.vault_kv import VaultKvProvides
 from ops import CharmBase, EventBase, Object, Relation
 from ops.pebble import PathError
 
@@ -1531,7 +1531,7 @@ class KVManager:
         self,
         charm: CharmBase,
         openbao_client: OpenBaoClient,
-        openbao_kv: OpenBaoKvProvides,
+        openbao_kv: VaultKvProvides,
         ca_cert: str,
     ):
         self._openbao_client = openbao_client
@@ -1583,7 +1583,7 @@ class KVManager:
             relation=relation,
             mount=mount,
             ca_certificate=self._ca_cert,
-            openbao_url=openbao_url,
+            vault_url=openbao_url,
             nonce=nonce,
             credentials_juju_secret_id=secret_id,
         )

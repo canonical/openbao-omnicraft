@@ -55,7 +55,7 @@ extend-exclude = [
     "lib/charms/grafana_agent/",
     "lib/charms/operator_libs_linux/",
     "lib/charms/traefik_k8s/",
-    "lib/charms/openbao_k8s/",
+    "lib/charms/vault_k8s/",
 ]
 
 [tool.pyright]
@@ -68,7 +68,7 @@ ignore = [
     "lib/charms/grafana_agent/",
     "lib/charms/operator_libs_linux/",
     "lib/charms/traefik_k8s/",
-    "lib/charms/openbao_k8s/",
+    "lib/charms/vault_k8s/",
     # standalone test charm; its charm-libs are fetched by charmcraft at build time
     "tests/integration/openbao_kv_requirer_operator/",
 ]

@@ -81,9 +81,9 @@ class OpenBaoCharmFixturesBase:
                 patch("charm.OpenBaoAutounsealRequires.get_details")
             )
             self.mock_kv_provides_get_credentials = stack.enter_context(
-                patch("charm.OpenBaoKvProvides.get_credentials")
+                patch("charm.VaultKvProvides.get_credentials")
             )
             self.mock_kv_provides_set_kv_data = stack.enter_context(
-                patch("charm.OpenBaoKvProvides.set_kv_data")
+                patch("charm.VaultKvProvides.set_kv_data")
             )
             yield
