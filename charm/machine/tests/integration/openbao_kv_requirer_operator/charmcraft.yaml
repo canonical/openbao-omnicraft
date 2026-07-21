@@ -19,6 +19,10 @@ storage:
     type: filesystem
     minimum-size: 5M
 
+charm-libs:
+  - lib: vault_k8s.vault_kv
+    version: "0.16"
+
 type: charm
 platforms:
   ubuntu@24.04:amd64:

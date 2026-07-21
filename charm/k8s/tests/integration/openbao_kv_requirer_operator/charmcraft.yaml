@@ -39,6 +39,10 @@ parts:
       rustup default stable
       craftctl default
 
+charm-libs:
+  - lib: vault_k8s.vault_kv
+    version: "0.16"
+
 actions:
   create-secret:
     description: Creates a secret in OpenBao
