@@ -27,7 +27,7 @@ from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
     ResourceRequirements,
     adjust_resource_requirements,
 )
-from charms.openbao_k8s.v0.openbao_kv import OpenBaoKvClientDetachedEvent, OpenBaoKvProvides
+from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
@@ -133,7 +133,7 @@ class OpenBaoCharm(CharmBase):
         self.juju_facade = JujuFacade(self)
         self._container = Container(container=self.unit.get_container(self._container_name))
         self.unit.set_ports(self.OPENBAO_PORT)
-        self.openbao_kv = OpenBaoKvProvides(self, KV_RELATION_NAME)
+        self.openbao_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.openbao_pki = TLSCertificatesProvidesV4(
             charm=self,
             relationship_name=PKI_RELATION_NAME,
