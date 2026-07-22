@@ -30,3 +30,4 @@ uninitialized
 unsealer
 yq
 configurability
+OpenBao
