@@ -20,7 +20,7 @@ lint-grafana:
 # Override the shared test-integration-charm recipe: our charm integration tests
 # take the built artifact under test (the snap or the rock) via --resource-path.
 [private]
-test-integration-charm: install-python
+test-integration-charm:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "running integration test for $CHARM_FILE_NAME"
@@ -34,6 +34,24 @@ test-integration-charm: install-python
     fi
     if [ -n "${KV_REQUIRER_CHARM_FILE_NAME:-}" ]; then
         args+=(--kv_requirer_charm_path "$KV_REQUIRER_CHARM_FILE_NAME")
+    fi
+    if [ -n "${TEST_MODULES:-}" ]; then
+        # Run only the suites named in TEST_MODULES (space-separated module
+        # names, with or without the .py suffix) by ignoring every other
+        # module under tests/integration. tox always passes the whole
+        # directory to pytest, so restriction must happen via --ignore.
+        for f in tests/integration/test_*.py; do
+            name="$(basename "$f" .py)"
+            keep=false
+            for m in ${TEST_MODULES}; do
+                if [ "${m%.py}" = "$name" ]; then
+                    keep=true
+                fi
+            done
+            if [ "$keep" = false ]; then
+                args+=(--ignore="$f")
+            fi
+        done
     fi
     tox -e integration -- "${args[@]}"
 

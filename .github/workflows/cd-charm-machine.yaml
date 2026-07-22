@@ -5,17 +5,16 @@ on:
   workflow_call:
 
 jobs:
-  machine:
-    name: Machine Charm Continuous Delivery
+  build:
+    name: Machine Charm Build
     runs-on: [self-hosted, linux, X64, large, noble]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
-      - name: Setup toolchains and bootstrap juju on LXD
+      - name: Setup toolchains
         env:
-          TOOLCHAINS: python juju-machine charmcraft
-          JUJU_CHANNEL: 3.6/stable
+          TOOLCHAINS: python charmcraft
         run: just setup
       - name: Build machine charm
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
@@ -29,6 +28,59 @@ jobs:
         with:
           working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-amd64
+          path: charm/machine/*.charm
+          if-no-files-found: error
+      - name: Upload KV requirer charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-kv-requirer-amd64
+          path: charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm
+          if-no-files-found: error
+
+  integration-test:
+    name: Integration Test (${{ matrix.suite }})
+    needs: build
+    runs-on: [self-hosted, linux, X64, large, noble]
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - test_acme
+          - test_autounseal
+          - test_backup
+          - test_backup_microceph
+          - test_core
+          - test_cos_integration
+          - test_deploy_unseal
+          - test_ingress
+          - test_kv
+          - test_pki
+          - test_pki_self_signed
+          - test_upgrade_first
+          - test_upgrade_latest
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on LXD
+        env:
+          TOOLCHAINS: python juju-machine
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-amd64
+          path: charm/machine
+      - name: Download KV requirer charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-kv-requirer-amd64
+          path: charm/machine/tests/integration/openbao_kv_requirer_operator
       - name: Download snap artifact from snap continuous delivery
         uses: actions/download-artifact@v8
         with:
@@ -41,6 +93,7 @@ jobs:
           echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
           echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Install minio binaries and configure storage buckets for backup tests
+        if: matrix.suite == 'test_backup'
         run: |
           minio_binaries_path="/var/snap/lxd/common/minio"
           sudo mkdir -p ${minio_binaries_path}
@@ -57,6 +110,7 @@ jobs:
           sudo lxc storage bucket create default openbao-integration-test
           sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key baointegrationtest --secret-key baointegrationtest
       - name: Install MicroCeph and configure RGW for backup tests
+        if: matrix.suite == 'test_backup_microceph'
         run: |
           echo "Installing MicroCeph snap..."
           sudo snap install microceph
@@ -126,18 +180,9 @@ jobs:
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
           KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          TEST_MODULES: ${{ matrix.suite }}
         with:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
-          snap-enabled: "true"
           snap-file-name: ${{ steps.artifacts.outputs.snap }}
-          snap-service-name: openbao.baod
-          snap-service-port: "8200"
-          snap-executable-name: openbao.bao
-      - name: Upload charm artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: charm-machine-amd64
-          path: charm/machine/*.charm
-          if-no-files-found: error

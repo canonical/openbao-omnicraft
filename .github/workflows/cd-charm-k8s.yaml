@@ -5,17 +5,16 @@ on:
   workflow_call:
 
 jobs:
-  k8s:
-    name: K8s Charm Continuous Delivery
+  build:
+    name: K8s Charm Build
     runs-on: [self-hosted, linux, X64, large, noble]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
         with:
           workflows-ref: v3.1.3
-      - name: Setup toolchains and bootstrap juju on Canonical K8s
+      - name: Setup toolchains
         env:
-          TOOLCHAINS: python juju-k8s charmcraft rockcraft
-          JUJU_CHANNEL: 3.6/stable
+          TOOLCHAINS: python charmcraft
         run: just setup
       - name: Build k8s charm
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
@@ -29,6 +28,57 @@ jobs:
         with:
           working-directory: charm/k8s/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-k8s-amd64
+          path: charm/k8s/*.charm
+          if-no-files-found: error
+      - name: Upload KV requirer charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-k8s-kv-requirer-amd64
+          path: charm/k8s/tests/integration/openbao_kv_requirer_operator/*.charm
+          if-no-files-found: error
+
+  integration-test:
+    name: Integration Test (${{ matrix.suite }})
+    needs: build
+    runs-on: [self-hosted, linux, X64, large, noble]
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - test_acme
+          - test_autounseal
+          - test_backup
+          - test_core
+          - test_cos
+          - test_deploy_unseal
+          - test_kv
+          - test_pki
+          - test_pki_self_signed
+          - test_upgrade_first
+          - test_upgrade_latest
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on Canonical K8s
+        env:
+          TOOLCHAINS: python juju-k8s rockcraft
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-k8s-amd64
+          path: charm/k8s
+      - name: Download KV requirer charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-k8s-kv-requirer-amd64
+          path: charm/k8s/tests/integration/openbao_kv_requirer_operator
       - name: Download rock artifact from rock continuous delivery
         uses: actions/download-artifact@v8
         with:
@@ -54,14 +104,9 @@ jobs:
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
           KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          TEST_MODULES: ${{ matrix.suite }}
         with:
           working-directory: charm/k8s
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
           rock-file-name: ${{ steps.artifacts.outputs.rock }}
-      - name: Upload charm artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: charm-k8s-amd64
-          path: charm/k8s/*.charm
-          if-no-files-found: error
