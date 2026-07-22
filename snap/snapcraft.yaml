@@ -61,8 +61,8 @@ parts:
       install -D -m755 bin/bao $SNAPCRAFT_PART_INSTALL/bin/bao
 
     build-snaps:
-      - go/latest/stable
-      - node/latest/stable
+      - go/1.26/stable
+      - node/26/stable
     build-packages:
       - make
 
