@@ -4,7 +4,7 @@ summary: A ROCK container image for Openbao
 description: |
   A ROCK container image for Openbao, a community-driven fork of Vault managed by the Linux Foundation.
 
-version: "2.5.2"
+version: "v2.6.0"
 base: bare
 build-base: ubuntu@24.04
 source-code: https://github.com/openbao/openbao
@@ -23,26 +23,30 @@ services:
 parts:
   openbao:
     source: https://github.com/openbao/openbao.git
-    source-tag: v2.5.2
+    source-tag: $ROCKCRAFT_PROJECT_VERSION
     source-type: git
     source-depth: 1
 
     plugin: nil
     override-build: |
+      make bootstrap
+      corepack enable pnpm
+
       VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
       GIT_COMMIT="$(git rev-parse HEAD)"
       BUILD_DATE="$(git show --no-show-signature -s --format=%cd --date=format:'%Y-%m-%dT%H:%M:%SZ' HEAD)"
       export LD_FLAGS="-X github.com/openbao/openbao/version.fullVersion=${VERSION} -X github.com/openbao/openbao/version.GitCommit=${GIT_COMMIT} -X github.com/openbao/openbao/version.BuildDate=${BUILD_DATE}"
 
       make static-dist bin
-      cp bin/bao $CRAFT_PART_INSTALL/bao
+      # cp bin/bao $CRAFT_PART_INSTALL/bao
+      install -D -m755 bin/bao $ROCKCRAFT_PART_INSTALL/bin/bao
 
     build-snaps:
-      - go/1.25/stable
+      - go/latest/stable
     build-packages:
+      - make
       - nodejs
       - yarn
-      - make
 
     organize:
       bao: /bin/bao
