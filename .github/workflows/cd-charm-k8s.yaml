@@ -42,6 +42,8 @@ jobs:
           sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
           sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
           rm rock/2.5.2/openbao-rock.tar
+
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images list -q
       - name: Locate artifacts
         id: artifacts
         run: |
