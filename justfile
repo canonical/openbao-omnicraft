@@ -32,6 +32,9 @@ test-integration-charm: install-python
     elif [ -n "${ROCK_FILE_NAME:-}" ]; then
         args+=(--resource-path "$ROCK_FILE_NAME")
     fi
+    if [ -n "${KV_REQUIRER_CHARM_FILE_NAME:-}" ]; then
+        args+=(--kv_requirer_charm_path "$KV_REQUIRER_CHARM_FILE_NAME")
+    fi
     tox -e integration -- "${args[@]}"
 
 # Run custom tests for the rock
