@@ -50,7 +50,7 @@ parts:
     plugin: nil
     override-build: |
       make bootstrap
-      which pnpm
+      corepack enable pnpm
 
       VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
       GIT_COMMIT="$(git rev-parse HEAD)"
