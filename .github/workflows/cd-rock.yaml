@@ -20,28 +20,24 @@ jobs:
         with:
           workflows-ref: v3.1.3
       - name: Setup toolchains
-        if: inputs.build
         env:
           TOOLCHAINS: rockcraft
         run: just setup
       - name: Build rock
-        if: inputs.build
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
           working-directory: rock
           rockcraft-enabled: "true"
       - name: Locate rock artifact
-        if: inputs.build
         id: artifacts
         run: echo "rock=$(ls ${{ github.workspace }}/rock/*.rock | head -1)" >> "$GITHUB_OUTPUT"
       - name: Run integration tests
-        if: inputs.build
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         with:
           working-directory: rock
           rock-enabled: "true"
       - name: Fetch latest rock from the container registry
-        if: ${{ !inputs.build }}
+        if: false
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -51,7 +47,7 @@ jobs:
           image="ghcr.io/${{ github.repository_owner }}/${name}:${version}"
           echo "Fetching ${image}"
           skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin <<< "${GH_TOKEN}"
-          skopeo copy --override-arch amd64 "docker://${image}" "oci-archive:rock/${{ env.ROCK_VERSION }}/${name}_${version}_amd64.rock"
+          skopeo copy --override-arch amd64 "docker://${image}" "oci-archive:rock/${version}/${name}_${version}_amd64.rock"
           ls rock
       - name: Upload rock artifact
         uses: actions/upload-artifact@v7
