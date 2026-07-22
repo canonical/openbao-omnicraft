@@ -24,35 +24,31 @@ jobs:
         env:
           TOOLCHAINS: snapcraft
         run: just setup
-      - name: read snapcraft.yaml version
-        id: snapcraft-version
-        run: |
-          echo "SNAP_VERSION=$(yq '.version' snap/${{ env.SNAP_VERSION }}/snapcraft.yaml)" >> "$GITHUB_ENV"
       - name: Build snap
         if: inputs.build
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          working-directory: snap/${{env.SNAP_VERSION}}
+          working-directory: snap
           snapcraft-enabled: "true"
       - name: Locate snap artifact
         if: inputs.build
         id: artifacts
-        run: echo "snap=$(ls ${{ github.workspace }}/snap/${{env.SNAP_VERSION}}/*.snap | head -1)" >> "$GITHUB_OUTPUT"
+        run: echo "snap=$(ls ${{ github.workspace }}/snap/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Run integration tests
         if: inputs.build
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         with:
-          working-directory: snap/${{env.SNAP_VERSION}}
+          working-directory: snap
           snap-enabled: "true"
       - name: Fetch latest snap from the Snap Store
         if: ${{ !inputs.build }}
         run: |
-          name=$(yq '.name' snap/${{ env.SNAP_VERSION }}/snapcraft.yaml)
-          snap download "${name}" --channel=latest/edge --target-directory=snap/${{ env.SNAP_VERSION }}
-          ls snap/${{ env.SNAP_VERSION }}/*.snap
+          name=$(yq '.name' snap/snapcraft.yaml)
+          snap download "${name}" --channel=latest/edge --target-directory=snap
+          ls snap/*.snap
       - name: Upload snap artifact
         uses: actions/upload-artifact@v7
         with:
           name: snap-amd64
-          path: snap/${{ env.SNAP_VERSION }}/*.snap
+          path: snap/*.snap
           if-no-files-found: error
