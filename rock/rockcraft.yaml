@@ -23,7 +23,7 @@ services:
 parts:
   openbao:
     source: https://github.com/openbao/openbao.git
-    source-tag: $ROCKCRAFT_PROJECT_VERSION
+    source-tag: $CRAFT_PROJECT_VERSION
     source-type: git
     source-depth: 1
 
