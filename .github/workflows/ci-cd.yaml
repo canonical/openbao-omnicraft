@@ -12,14 +12,12 @@ on:
 jobs:
   continuous-delivery-snap:
     name: snap
-    needs: continuous-integration
     if: needs.continuous-integration.outputs.snap-changed == 'true' || needs.continuous-integration.outputs.charm-machine-changed == 'true'
     uses: ./.github/workflows/cd-snap.yaml
     with:
       build: ${{ needs.continuous-integration.outputs.snap-changed == 'true' }}
   continuous-delivery-rock:
     name: rock
-    needs: continuous-integration
     if: needs.continuous-integration.outputs.rock-changed == 'true' || needs.continuous-integration.outputs.charm-k8s-changed == 'true'
     uses: ./.github/workflows/cd-rock.yaml
     with:
