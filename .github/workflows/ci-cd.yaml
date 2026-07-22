@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  continuous-integration:
+    name: code quality and health
+    runs-on: ubuntu-24.04
+    outputs:
+      snap-changed: ${{ steps.changes.outputs.snap }}
+      rock-changed: ${{ steps.changes.outputs.rock }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Detect changed components
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          changed() {
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+              echo "true"
+            elif git diff --quiet "$base" HEAD -- "$@"; then
+              echo "false"
+            else
+              echo "true"
+            fi
+          }
+          echo "snap=$(changed snap/)" >> "$GITHUB_OUTPUT"
+          echo "rock=$(changed rock/)" >> "$GITHUB_OUTPUT"
+
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: python go
+        run: just setup
+
+  continuous-delivery-snap:
+    name: snap
+    needs: continuous-integration
+    if: needs.continuous-integration.outputs.snap-changed == 'true' || needs.continuous-integration.outputs.charm-machine-changed == 'true'
+    uses: ./.github/workflows/cd-snap.yaml
+    with:
+      build: ${{ needs.continuous-integration.outputs.snap-changed == 'true' }}
+  continuous-delivery-rock:
+    name: rock
+    needs: continuous-integration
+    if: needs.continuous-integration.outputs.rock-changed == 'true' || needs.continuous-integration.outputs.charm-k8s-changed == 'true'
+    uses: ./.github/workflows/cd-rock.yaml
+    with:
+      build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
