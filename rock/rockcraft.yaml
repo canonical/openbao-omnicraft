@@ -6,7 +6,7 @@ description: |
 
 version: "v2.6.0"
 base: bare
-build-base: ubuntu@24.04
+build-base: ubuntu@26.04
 source-code: https://github.com/openbao/openbao
 issues: https://github.com/canonical/openbao-omnicraft/issues
 license: MPL-2.0
@@ -47,9 +47,6 @@ parts:
       - make
       - nodejs
       - yarn
-
-    organize:
-      bao: /bin/bao
 
   default-config:
     plugin: dump
