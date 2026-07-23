@@ -39,7 +39,7 @@ parts:
 
       make static-dist bin
       # cp bin/bao $CRAFT_PART_INSTALL/bao
-      install -D -m755 bin/bao $ROCKCRAFT_PART_INSTALL/bin/bao
+      install -D -m755 bin/bao $CRAFT_PART_INSTALL/bin/bao
 
     build-snaps:
       - go/latest/stable
