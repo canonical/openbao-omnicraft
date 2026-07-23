@@ -62,9 +62,9 @@ parts:
 
     build-snaps:
       - go/1.26/stable
-      - node/26/stable
     build-packages:
       - make
+      - nodejs
 
   hooks:
     plugin: dump
