@@ -1,5 +1,5 @@
 name: openbao
-title: Openbao
+title: OpenBao
 summary: A ROCK container image for Openbao
 description: |
   A ROCK container image for Openbao, a community-driven fork of Vault managed by the Linux Foundation.
