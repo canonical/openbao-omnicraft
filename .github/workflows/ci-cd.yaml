@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  continuous-delivery-snap:
+    name: snap
+    uses: ./.github/workflows/cd-snap.yaml
+    with:
+      build: ${{ needs.continuous-integration.outputs.snap-changed == 'true' }}
+  continuous-delivery-rock:
+    name: rock
+    uses: ./.github/workflows/cd-rock.yaml
+    with:
+      build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
+  publish:
+    name: publish
+    if: github.ref == 'refs/heads/main'
+    needs: [continuous-delivery-snap, continuous-delivery-rock]
+    uses: ./.github/workflows/cd-publish.yaml
+    secrets: inherit

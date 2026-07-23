@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Snap CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      build:
+        description: Build and test the snap from source; when false, re-upload the latest previously built snap artifact
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  continuous-delivery-snap:
+    name: Continuous delivery
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        name: Prepare environment
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: snapcraft
+        run: just setup
+      - name: Build snap
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: snap
+          snapcraft-enabled: "true"
+      - name: Locate snap artifact
+        id: artifacts
+        run: echo "snap=$(ls ${{ github.workspace }}/snap/*.snap | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Run integration tests
+        if: inputs.build
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        with:
+          working-directory: snap
+          snap-enabled: "true"
+      - name: Fetch latest snap from the Snap Store
+        if: false
+        run: |
+          name=$(yq '.name' snap/snapcraft.yaml)
+          snap download "${name}" --channel=latest/edge --target-directory=snap
+          ls snap/*.snap
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-amd64
+          path: snap/*.snap
+          if-no-files-found: error
