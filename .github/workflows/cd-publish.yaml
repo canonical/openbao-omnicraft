@@ -16,7 +16,7 @@ jobs:
         uses: actions/download-artifact@v8
         id: download
         with:
-          name: snap
+          name: snap-amd64
 
       - name: Determine snap file name
         id: find-snap
@@ -44,7 +44,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_CREDENTIALS }}
 
       - name: Install rockcraft
         run: |
@@ -56,18 +56,19 @@ jobs:
 
       - name: Import and push to github package
         run: |
-          image_name="$(yq '.name' rockcraft.yaml)"
-          version="$(cat version/VERSION)"
-          amd64_rock_file=$(ls *_amd64.rock | tail -n 1)
+          image_name="$(yq '.name' rock/rockcraft.yaml)"
+          version="$(yq '.version' rock/rockcraft.yaml)"
+          repo="ghcr.io/canonical/${image_name}"
+          amd64_rock_file=$(ls *-amd64.rock | tail -n 1)
+
           sudo rockcraft.skopeo \
             --insecure-policy \
             copy \
             oci-archive:"${amd64_rock_file}" \
-            docker-daemon:"ghcr.io/canonical/${image_name}:${version}-amd64"
-          docker push ghcr.io/canonical/${image_name}:${version}-amd64
-          docker manifest create ghcr.io/canonical/${image_name}:${version} \
-            ghcr.io/canonical/${image_name}:${version}-amd64 \
-          docker manifest push ghcr.io/canonical/${image_name}:${version}
-          docker manifest create ghcr.io/canonical/${image_name}:latest \
-            ghcr.io/canonical/${image_name}:${version}-amd64 \
-          docker manifest push ghcr.io/canonical/${image_name}:latest
+            docker-daemon:"${repo}:${version}-amd64"
+          docker push ${repo}:${version}-amd64
+
+          docker manifest create ${repo}:${version} ${repo}:${version}-amd64
+          docker manifest push ${repo}:${version}
+          docker manifest create ${repo}:latest ${repo}:${version}-amd64
+          docker manifest push ${repo}:latest
