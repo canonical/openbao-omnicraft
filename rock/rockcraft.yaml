@@ -61,14 +61,6 @@ parts:
       - libc6_libs
       - base-files_lib
 
-  # Security manifest for OCI-factory
-  deb-security-manifest:
-    plugin: make
-    source: https://github.com/canonical/rocks-security-manifest
-    source-type: git
-    source-branch: main
-    override-prime: gen_manifest
-
 package-repositories:
  - type: apt
    url: https://deb.nodesource.com/node_20.x
