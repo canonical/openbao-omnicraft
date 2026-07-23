@@ -1,0 +1,73 @@
+name: Publish artifacts
+
+on:
+  workflow_call:
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS:
+        required: true
+
+jobs:
+  publish-snaps:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Downloads locally built snap artifact
+        uses: actions/download-artifact@v8
+        id: download
+        with:
+          name: snap
+
+      - name: Determine snap file name
+        id: find-snap
+        run: |
+          SNAP_FILE=$(ls *.snap)
+          echo "Found snap file: $SNAP_FILE"
+          echo "snap_file=${SNAP_FILE}" >>$GITHUB_OUTPUT
+
+      - name: Publish snap
+        uses: canonical/action-publish@v1.2.0
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.find-snap.outputs.snap_file }}
+          release: 2/edge
+
+  publish-rocks:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install rockcraft
+        run: |
+          sudo snap install rockcraft --classic --channel edge
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: rock-amd64
+
+      - name: Import and push to github package
+        run: |
+          image_name="$(yq '.name' rockcraft.yaml)"
+          version="$(cat version/VERSION)"
+          amd64_rock_file=$(ls *_amd64.rock | tail -n 1)
+          sudo rockcraft.skopeo \
+            --insecure-policy \
+            copy \
+            oci-archive:"${amd64_rock_file}" \
+            docker-daemon:"ghcr.io/canonical/${image_name}:${version}-amd64"
+          docker push ghcr.io/canonical/${image_name}:${version}-amd64
+          docker manifest create ghcr.io/canonical/${image_name}:${version} \
+            ghcr.io/canonical/${image_name}:${version}-amd64 \
+          docker manifest push ghcr.io/canonical/${image_name}:${version}
+          docker manifest create ghcr.io/canonical/${image_name}:latest \
+            ghcr.io/canonical/${image_name}:${version}-amd64 \
+          docker manifest push ghcr.io/canonical/${image_name}:latest
