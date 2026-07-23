@@ -25,5 +25,4 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: [continuous-delivery-snap, continuous-delivery-rock]
     uses: ./.github/workflows/cd-publish.yaml
-    with:
-      secrets: inherit
+    secrets: inherit
