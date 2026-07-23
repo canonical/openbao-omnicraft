@@ -20,3 +20,10 @@ jobs:
     uses: ./.github/workflows/cd-rock.yaml
     with:
       build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
+  publish:
+    name: publish
+    if: github.ref == 'refs/heads/main'
+    needs: [continuous-delivery-snap, continuous-delivery-rock]
+    uses: ./.github/workflows/publish.yaml
+    with:
+      secrets: inherit
