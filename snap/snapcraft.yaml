@@ -82,8 +82,3 @@ package-repositories:
    components: [main]
    suites: [nodistro]
    key-id: 6F71F525282841EEDAF851B42F59B5F99B1BE0B4
- - type: apt
-   url: https://dl.yarnpkg.com/debian/
-   components: [main]
-   suites: [stable]
-   key-id: FF7CB5667B542092084BBDC562D54FD4003F6525
