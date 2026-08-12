@@ -7,6 +7,7 @@
 
 import json
 import logging
+import platform
 import socket
 import subprocess
 from contextlib import contextmanager, suppress
@@ -106,8 +107,6 @@ OPENBAO_CHARM_APPROLE_SECRET_LABEL = "openbao-approle-auth-details"
 OPENBAO_CHARM_POLICY_NAME = "charm-access"
 OPENBAO_CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
 OPENBAO_CLUSTER_PORT = 8201
-# The config file name must match what the snap's baod-start script reads
-# from $SNAP_COMMON.
 OPENBAO_CONFIG_FILE_NAME = "openbao-config.hcl"
 OPENBAO_CONFIG_PATH = "/var/snap/openbao/common"
 OPENBAO_ENV_PATH = f"{OPENBAO_CONFIG_PATH}/openbao.env"
@@ -116,9 +115,15 @@ OPENBAO_PKI_MOUNT = "charm-pki"
 OPENBAO_PKI_ROLE = "charm-pki"
 OPENBAO_PORT = 8200
 OPENBAO_SNAP_NAME = "openbao"
-OPENBAO_SNAP_RESOURCE_NAME = "openbao-snap"
-OPENBAO_SNAP_SERVICE_NAME = "baod"
-# Name of the workload process as it appears in the process table.
+OPENBAO_SNAP_REVISIONS = {
+    "x86_64": "34",
+}
+OPENBAO_SNAP_CHANNELS = {
+    "x86_64": "2/edge",
+}
+OPENBAO_SNAP_REVISION = OPENBAO_SNAP_REVISIONS.get(platform.machine(), "")
+OPENBAO_SNAP_CHANNEL_FOR_ARCH = OPENBAO_SNAP_CHANNELS.get(platform.machine(), "2/stable")
+OPENBAO_SNAP_SERVICE_NAME = "server"
 OPENBAO_PROCESS_NAME = "bao"
 OPENBAO_STORAGE_PATH = "/var/snap/openbao/common/raft"
 
@@ -1222,29 +1227,29 @@ class OpenBaoOperatorCharm(CharmBase):
         return env
 
     def _install_openbao_snap(self) -> None:
-        """Install the OpenBao snap from the charm's snap resource.
-
-        The snap is attached to the charm as a file resource rather than
-        fetched from the snap store.
-        """
+        """Installs the Vault snap in the machine."""
         try:
             snap_cache = snap.SnapCache()
             openbao_snap = snap_cache[OPENBAO_SNAP_NAME]
-            if openbao_snap.state in [
+            if OPENBAO_SNAP_REVISION == openbao_snap.revision and openbao_snap.state in [
                 snap.SnapState.Latest,
                 snap.SnapState.Present,
             ]:
-                logger.debug("OpenBao snap is already installed")
+                logger.debug("Openbao snap revision %s is already installed", OPENBAO_SNAP_REVISION)
                 return
-            snap_path = self.model.resources.fetch(OPENBAO_SNAP_RESOURCE_NAME)
-            with self.temp_maintenance_status("Installing OpenBao"):
-                snap.install_local(str(snap_path), dangerous=True)
-            logger.info("OpenBao snap installed")
+            with self.temp_maintenance_status("Installing Openbao"):
+                openbao_snap.ensure(
+                    snap.SnapState.Latest,
+                    channel=OPENBAO_SNAP_CHANNEL_FOR_ARCH,
+                    revision=OPENBAO_SNAP_REVISION,
+                )
+                openbao_snap.hold()
+            logger.info("Openbao snap installed")
             if self._openbao_service_is_running():
                 self.machine.stop(OPENBAO_SNAP_NAME)
-                logger.debug("Previously running OpenBao service stopped")
+                logger.debug("Previously running Openbao service stopped")
         except snap.SnapError as e:
-            logger.error("An exception occurred when installing OpenBao. Reason: %s", str(e))
+            logger.error("An exception occurred when installing Openbao. Reason: %s", str(e))
             raise e
 
     def _create_backend_directory(self) -> None:

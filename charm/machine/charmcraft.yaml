@@ -25,14 +25,6 @@ links:
 assumes:
   - juju >= 3.1.8
 
-resources:
-  openbao-snap:
-    type: file
-    filename: openbao.snap
-    description: |
-      The OpenBao snap built from this repository. The charm installs the
-      workload from this resource instead of the snap store.
-
 storage:
   openbao:
     type: filesystem
