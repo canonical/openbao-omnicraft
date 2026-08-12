@@ -4,8 +4,8 @@ summary: The Snap for OpenBao
 description: |
   A snap for Openbao, a community-driven fork of Vault managed by the Linux Foundation.
 
-version: "2.5.2"
-base: core24
+version: "v2.6.0"
+base: core26
 source-code: https://github.com/openbao/openbao
 issues: https://github.com/canonical/openbao-omnicraft/issues
 license: MPL-2.0
@@ -43,29 +43,28 @@ apps:
 parts:
   openbao:
     source: https://github.com/openbao/openbao.git
-    source-tag: v2.5.2
+    source-tag: $SNAPCRAFT_PROJECT_VERSION
     source-type: git
     source-depth: 1
 
     plugin: nil
     override-build: |
+      make bootstrap
+      corepack enable pnpm
+
       VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
       GIT_COMMIT="$(git rev-parse HEAD)"
       BUILD_DATE="$(git show --no-show-signature -s --format=%cd --date=format:'%Y-%m-%dT%H:%M:%SZ' HEAD)"
       export LD_FLAGS="-X github.com/openbao/openbao/version.fullVersion=${VERSION} -X github.com/openbao/openbao/version.GitCommit=${GIT_COMMIT} -X github.com/openbao/openbao/version.BuildDate=${BUILD_DATE}"
 
       make static-dist bin
-      cp bin/bao $CRAFT_PART_INSTALL/bao
+      install -D -m755 bin/bao $SNAPCRAFT_PART_INSTALL/bin/bao
 
     build-snaps:
-      - go/1.25/stable
+      - go/1.26/stable
     build-packages:
-      - nodejs
-      - yarn
       - make
-
-    organize:
-      bao: /bin/bao
+      - nodejs
 
   hooks:
     plugin: dump
@@ -83,8 +82,3 @@ package-repositories:
    components: [main]
    suites: [nodistro]
    key-id: 6F71F525282841EEDAF851B42F59B5F99B1BE0B4
- - type: apt
-   url: https://dl.yarnpkg.com/debian/
-   components: [main]
-   suites: [stable]
-   key-id: FF7CB5667B542092084BBDC562D54FD4003F6525
