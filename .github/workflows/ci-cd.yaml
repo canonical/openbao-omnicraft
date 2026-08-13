@@ -20,6 +20,9 @@ jobs:
     uses: ./.github/workflows/cd-rock.yaml
     with:
       build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
+  continuous-delivery-charm-machine:
+    name: ci
+    uses: ./.github/workflows/cd-machine.yaml
   publish:
     name: publish
     if: github.ref == 'refs/heads/main'
