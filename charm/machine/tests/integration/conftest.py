@@ -92,7 +92,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--resource-path",
         action="store",
-        required=True,
+        required=False,
         help="Path to the resource under test (the openbao snap) to attach as the charm's snap resource",
     )
     parser.addoption(
@@ -118,10 +118,6 @@ def pytest_configure(config: pytest.Config) -> None:
         pytest.exit("The --charm_path option is required. Tests aborted.")
     if not os.path.exists(charm_path):
         pytest.exit(f"The path specified does not exist: {charm_path}")
-    if not resource_path:
-        pytest.exit("The --resource-path option is required. Tests aborted.")
-    if not os.path.exists(resource_path):
-        pytest.exit(f"The path specified does not exist: {resource_path}")
     import config as test_config
 
     test_config.OPENBAO_SNAP_PATH = str(Path(resource_path).resolve())

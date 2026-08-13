@@ -21,7 +21,7 @@ jobs:
     with:
       build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
   continuous-delivery-charm-machine:
-    name: ci
+    name: machine charm
     uses: ./.github/workflows/cd-charm-machine.yaml
   publish:
     name: publish
