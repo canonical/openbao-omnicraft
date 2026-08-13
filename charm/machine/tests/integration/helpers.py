@@ -268,9 +268,6 @@ def deploy_openbao(
     revision: int | None = None,
 ) -> None:
     """Ensure the OpenBao charm is deployed."""
-    resources = None
-    if charm_path and config.OPENBAO_SNAP_PATH:
-        resources = {"openbao-snap": config.OPENBAO_SNAP_PATH}
     deploy_if_not_exists(
         juju,
         app_name=APP_NAME,
@@ -279,7 +276,6 @@ def deploy_openbao(
         channel=channel,
         revision=revision,
         constraints={"arch": _get_arch()},
-        resources=resources,
     )
 
 
