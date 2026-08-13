@@ -27,9 +27,7 @@ test-integration-charm:
 
     uv tool install tox --with tox-uv
     args=(--charm_path "$CHARM_FILE_NAME")
-    if [ -n "${SNAP_FILE_NAME:-}" ]; then
-        args+=(--resource-path "$SNAP_FILE_NAME")
-    elif [ -n "${ROCK_FILE_NAME:-}" ]; then
+    if [ -n "${ROCK_FILE_NAME:-}" ]; then
         args+=(--resource-path "$ROCK_FILE_NAME")
     fi
     if [ -n "${KV_REQUIRER_CHARM_FILE_NAME:-}" ]; then

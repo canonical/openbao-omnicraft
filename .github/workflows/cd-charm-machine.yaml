@@ -81,17 +81,11 @@ jobs:
         with:
           name: charm-machine-kv-requirer-amd64
           path: charm/machine/tests/integration/openbao_kv_requirer_operator
-      - name: Download snap artifact from snap continuous delivery
-        uses: actions/download-artifact@v8
-        with:
-          name: snap-amd64
-          path: snap/2.5.2
       - name: Locate artifacts
         id: artifacts
         run: |
           echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
           echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "snap=$(ls ${{ github.workspace }}/snap/2.5.2/*.snap | head -1)" >> "$GITHUB_OUTPUT"
       - name: Install minio binaries and configure storage buckets for backup tests
         if: matrix.suite == 'test_backup'
         run: |
@@ -185,4 +179,3 @@ jobs:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
-          snap-file-name: ${{ steps.artifacts.outputs.snap }}
