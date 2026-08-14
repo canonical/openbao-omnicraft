@@ -6,7 +6,6 @@ requires-python = ">=3.10"
 dependencies = [
     "boto3",
     "boto3-stubs[s3]",
-    "hvac",
     "jinja2",
     "ops",
     "pyhcl",  # import hcl

@@ -15,10 +15,17 @@ from enum import Enum
 from io import IOBase
 from typing import List, MutableMapping, Optional, Protocol
 
-import hvac
 import requests
-from hvac.exceptions import Forbidden, InternalServerError, InvalidPath, InvalidRequest, VaultError
 from requests.exceptions import ConnectionError, RequestException
+
+from openbao.openbao_http import (
+    ForbiddenError,
+    HttpError,
+    InternalServerError,
+    InvalidPathError,
+    InvalidRequestError,
+    OpenBaoHttp,
+)
 
 RAFT_STATE_ENDPOINT = "v1/sys/storage/raft/autopilot/state"
 
@@ -45,7 +52,7 @@ class Token:
 
     token: str
 
-    def login(self, client: hvac.Client):
+    def login(self, client: OpenBaoHttp) -> None:
         """Authenticate a openbao client with a token."""
         client.token = self.token
 
@@ -60,16 +67,20 @@ class AppRole:
     role_id: str
     secret_id: str
 
-    def login(self, client: hvac.Client):
+    def login(self, client: OpenBaoHttp) -> None:
         """Authenticate a openbao client with approle details."""
-        client.auth.approle.login(role_id=self.role_id, secret_id=self.secret_id, use_token=True)
+        response = client.post(
+            "/v1/auth/approle/login",
+            json={"role_id": self.role_id, "secret_id": self.secret_id},
+        )
+        client.token = response.json()["auth"]["client_token"]
 
 
 class AuthMethod(Protocol):
     """Classes that implement a login method are auth methods used to log in to OpenBao."""
 
     @abstractmethod
-    def login(self, client: hvac.Client) -> None:
+    def login(self, client: OpenBaoHttp) -> None:
         """Log in using the given method."""
         raise NotImplementedError
 
@@ -120,7 +131,7 @@ class OpenBaoClient:
     """Class to interact with OpenBao through its API."""
 
     def __init__(self, url: str, ca_cert_path: str | None, timeout: int = 30):
-        self._client = hvac.Client(
+        self._client = OpenBaoHttp(
             url=url, verify=ca_cert_path if ca_cert_path else False, timeout=timeout
         )
 
@@ -138,11 +149,11 @@ class OpenBaoClient:
         """
         try:
             auth_details.login(self._client)
-            self._client.auth.token.lookup_self()
-        except (Forbidden, InvalidRequest) as e:
+            self._client.get("/v1/auth/token/lookup-self")
+        except (ForbiddenError, InvalidRequestError) as e:
             logger.warning("OpenBao rejected authentication credentials: %s", e)
             raise OpenBaoAuthenticationError(str(e)) from e
-        except (VaultError, ConnectionError) as e:
+        except (HttpError, ConnectionError) as e:
             logger.warning("Failed login to OpenBao: %s", e)
             return False
         return True
@@ -155,32 +166,41 @@ class OpenBaoClient:
     def is_api_available(self) -> bool:
         """Return whether OpenBao is available."""
         try:
-            self._client.sys.read_health_status(standby_ok=True)
+            self._client.request(
+                "head",
+                "/v1/sys/health",
+                params={"standbyok": "true"},
+                raise_on_error=False,
+            )
             return True
-        except (VaultError, RequestException) as e:
+        except (HttpError, RequestException) as e:
             logger.error("Error while checking OpenBao health status: %s", e)
             return False
 
     def is_initialized(self) -> bool:
         """Return whether OpenBao is initialized."""
-        return self._client.sys.is_initialized()
+        return self._client.get("/v1/sys/init").json()["initialized"]
 
     def is_sealed(self) -> bool:
         """Return whether OpenBao is sealed."""
         try:
-            return self._client.sys.is_sealed()
-        except VaultError as e:
+            return self._read_seal_status()["sealed"]
+        except HttpError as e:
             # This seems to happen if the seal status is checked immediately
             # after initializing the openbao when autounseal is enabled.
             # There is a short period of time where the openbao is initialized,
             # but hasn't finished setting up the autounseal configuration yet,
             # and the server will return an internal server error during this
-            # period.
+            # period:
             #
-            # hvac.exceptions.InternalServerError:
+            # InternalServerError (HTTP 500):
             # core: barrier reports initialized but no seal configuration found
             logger.error("Error while checking OpenBao seal status: %s", e)
             raise OpenBaoClientError(e) from e
+
+    def _read_seal_status(self) -> dict:
+        """Read the seal status of OpenBao."""
+        return self._client.get("/v1/sys/seal-status").json()
 
     def is_available_initialized_and_unsealed(self) -> bool:
         """Return whether OpenBao is available, initialized and unsealed.
@@ -196,21 +216,23 @@ class OpenBaoClient:
     def read(self, path: str) -> dict:
         """Read the data at the given path."""
         try:
-            data = self._client.read(path)
-        except VaultError as e:
-            logger.error("Error while writing data to %s: %s", path, e)
+            response = self._client.get(f"/v1/{path}")
+        except InvalidPathError:
             return {}
-        if data is None:
+        except HttpError as e:
+            logger.error("Error while reading data from %s: %s", path, e)
             return {}
-        if isinstance(data, requests.Response):
-            data = data.json()
+        try:
+            data = response.json()
+        except ValueError:
+            return {}
         return data.get("data", {})
 
     def write(self, path: str, data: dict) -> bool:
         """Write the data at the given path."""
         try:
-            response = self._client.write_data(path, data=data)
-        except VaultError as e:
+            response = self._client.post(f"/v1/{path}", json=data)
+        except HttpError as e:
             logger.error("Error while writing data to %s: %s", path, e)
             return False
         logger.info("Wrote data to %s: %s", path, response)
@@ -219,14 +241,16 @@ class OpenBaoClient:
     def list(self, path: str) -> List[str]:
         """List the keys at the given path."""
         try:
-            data = self._client.list(path)
-        except VaultError as e:
+            response = self._client.list_get_fallback(f"/v1/{path}")
+        except InvalidPathError:
+            return []
+        except HttpError as e:
             logger.error("Error while listing keys at %s: %s", path, e)
             return []
-        if data is None:
+        try:
+            data = response.json()
+        except ValueError:
             return []
-        if isinstance(data, requests.Response):
-            data = data.json()
         try:
             return data["data"]["keys"]
         except KeyError:
@@ -234,15 +258,23 @@ class OpenBaoClient:
 
     def needs_migration(self) -> bool:
         """Return true if the openbao needs to be migrated, false otherwise."""
-        return self._client.seal_status["migration"]  # type: ignore -- bad type hint in stubs
+        return self._read_seal_status()["migration"]
 
     def get_seal_type(self) -> str:
         """Return the seal type of the OpenBao."""
-        return self._client.seal_status["type"]  # type: ignore -- bad type hint in stubs
+        return self._read_seal_status()["type"]
 
     def is_seal_type_transit(self) -> bool:
         """Return whether OpenBao is sealed by the transit backend."""
         return "transit" == self.get_seal_type()
+
+    def _health_status_code(self, standby_ok: bool = False) -> int:
+        """Return the HTTP status code of the OpenBao health endpoint."""
+        params = {"standbyok": "true"} if standby_ok else None
+        response = self._client.request(
+            "head", "/v1/sys/health", params=params, raise_on_error=False
+        )
+        return response.status_code
 
     def is_active(self) -> bool:
         """Return whether the OpenBao node is active or not.
@@ -251,9 +283,8 @@ class OpenBaoClient:
             True if initialized, unsealed and active, False otherwise.
         """
         try:
-            health_status = self._client.sys.read_health_status()
-            return health_status.status_code == 200
-        except (VaultError, RequestException) as e:
+            return self._health_status_code() == 200
+        except (HttpError, RequestException) as e:
             logger.error("Error while checking OpenBao health status: %s", e)
             return False
 
@@ -264,9 +295,8 @@ class OpenBaoClient:
             True if initialized, unsealed and active or standby, False otherwise.
         """
         try:
-            health_status = self._client.sys.read_health_status()
-            return health_status.status_code == 200 or health_status.status_code == 429
-        except (VaultError, RequestException) as e:
+            return self._health_status_code() in (200, 429)
+        except (HttpError, RequestException) as e:
             logger.error("Error while checking OpenBao health status: %s", e)
             return False
 
@@ -278,12 +308,12 @@ class OpenBaoClient:
             path: The path that will receive audit logs
         """
         try:
-            self._client.sys.enable_audit_device(
-                device_type=device_type.value,
-                options={"file_path": path},
+            self._client.post(
+                f"/v1/sys/audit/{device_type.value}",
+                json={"type": device_type.value, "options": {"file_path": path}},
             )
             logger.info("Enabled audit device `%s` for path `%s`", device_type.value, path)
-        except InvalidRequest as e:
+        except InvalidRequestError as e:
             if not e.json or not isinstance(e.json, dict):
                 raise OpenBaoClientError(e) from e
             errors = e.json.get("errors", [])
@@ -291,15 +321,15 @@ class OpenBaoClient:
                 logger.info("Audit device already enabled.")
             else:
                 raise OpenBaoClientError(e) from e
-        except VaultError as e:
+        except HttpError as e:
             raise OpenBaoClientError(e) from e
 
     def enable_approle_auth_method(self) -> None:
         """Enable approle auth method if it isn't already enabled."""
         try:
-            self._client.sys.enable_auth_method("approle")
+            self._client.post("/v1/sys/auth/approle", json={"type": "approle"})
             logger.info("Enabled approle auth method.")
-        except InvalidRequest as e:
+        except InvalidRequestError as e:
             if not e.json or not isinstance(e.json, dict):
                 raise OpenBaoClientError(e) from e
             errors = e.json.get("errors", [])
@@ -307,7 +337,7 @@ class OpenBaoClient:
                 logger.info("Approle already enabled.")
             else:
                 raise OpenBaoClientError(e) from e
-        except VaultError as e:
+        except HttpError as e:
             raise OpenBaoClientError(e) from e
 
     def create_or_update_policy_from_file(
@@ -323,14 +353,9 @@ class OpenBaoClient:
         # TODO: Remove this method when it is no longer needed. Prefer create_or_update_policy.
         with open(path, "r") as f:
             policy = f.read()
-        try:
-            self._client.sys.create_or_update_policy(
-                name=name,
-                policy=policy if not formatting_args else policy.format(**formatting_args),
-            )
-        except VaultError as e:
-            raise OpenBaoClientError(e) from e
-        logger.debug("Created or updated charm policy: %s", name)
+        self.create_or_update_policy(
+            name, policy if not formatting_args else policy.format(**formatting_args)
+        )
 
     def create_or_update_policy(self, name: str, content: str) -> None:
         """Create/update a policy within openbao.
@@ -340,8 +365,8 @@ class OpenBaoClient:
             content: The policy content
         """
         try:
-            self._client.sys.create_or_update_policy(name=name, policy=content)
-        except VaultError as e:
+            self._client.put(f"/v1/sys/policy/{name}", json={"policy": content})
+        except HttpError as e:
             raise OpenBaoClientError(e) from e
         logger.debug("Created or updated charm policy: %s", name)
 
@@ -364,42 +389,51 @@ class OpenBaoClient:
             token_period: The period within which the token must be renewed. See OpenBao documentation for more information.
             cidrs: The list of IP networks that are allowed to authenticate
         """
-        self._client.auth.approle.create_or_update_approle(
-            name,
-            bind_secret_id="true",
-            token_ttl=token_ttl,
-            token_max_ttl=token_max_ttl,
-            token_policies=policies,
-            token_bound_cidrs=cidrs,
-            token_period=token_period,
-        )
-        response = self._client.auth.approle.read_role_id(name)
+        params: dict = {"bind_secret_id": "true"}
+        if token_ttl is not None:
+            params["token_ttl"] = token_ttl
+        if token_max_ttl is not None:
+            params["token_max_ttl"] = token_max_ttl
+        if policies is not None:
+            params["token_policies"] = ",".join(policies)
+        if cidrs is not None:
+            params["token_bound_cidrs"] = ",".join(cidrs)
+        if token_period is not None:
+            params["token_period"] = token_period
+        self._client.post(f"/v1/auth/approle/role/{name}", json=params)
+        response = self._client.get(f"/v1/auth/approle/role/{name}/role-id").json()
         return response["data"]["role_id"]
 
     def generate_role_secret_id(self, name: str, cidrs: List[str] | None = None) -> str:
         """Generate a new secret tied to an AppRole."""
-        response = self._client.auth.approle.generate_secret_id(name, cidr_list=cidrs)
+        params: dict = {}
+        if cidrs is not None:
+            params["cidr_list"] = ",".join(cidrs)
+        response = self._client.post(f"/v1/auth/approle/role/{name}/secret-id", json=params).json()
         return response["data"]["secret_id"]
 
     def read_role_secret(self, name: str, id: str) -> dict:
         """Get definition of a secret tied to an AppRole."""
         try:
-            response = self._client.auth.approle.read_secret_id(name, id)
-        except (VaultError, KeyError) as e:
+            response = self._client.post(
+                f"/v1/auth/approle/role/{name}/secret-id/lookup", json={"secret_id": id}
+            ).json()
+        except (HttpError, KeyError) as e:
             raise OpenBaoClientError(e) from e
         return response["data"]
 
     def enable_secrets_engine(self, backend_type: SecretsBackend, path: str) -> None:
         """Enable given secret engine on the given path."""
         try:
-            self._client.sys.enable_secrets_engine(
-                backend_type=backend_type.value,
-                description=f"Charm created '{backend_type.value}' backend",
-                path=path,
+            self._client.post(
+                f"/v1/sys/mounts/{path}",
+                json={
+                    "type": backend_type.value,
+                    "description": f"Charm created '{backend_type.value}' backend",
+                },
             )
             logger.info("Enabled %s backend", backend_type.value)
-        except InvalidRequest as e:
-            # TODO: Fix the type stubs for hvac to properly identify the json attribute
+        except InvalidRequestError as e:
             if not e.json or not isinstance(e.json, dict):
                 raise OpenBaoClientError(e) from e
             errors = e.json.get("errors", [])
@@ -411,14 +445,14 @@ class OpenBaoClient:
     def disable_secrets_engine(self, path: str) -> None:
         """Disable the secret engine at the given path."""
         try:
-            self._client.sys.disable_secrets_engine(path)
+            self._client.delete(f"/v1/sys/mounts/{path}")
             logger.info("Disabled secret engine at %s", path)
-        except InvalidPath:
+        except InvalidPathError:
             logger.info("Secret engine at `%s` is already disabled", path)
 
     def get_intermediate_ca(self, mount: str) -> str:
         """Get the intermediate CA for the PKI backend."""
-        return self._client.secrets.pki.read_ca_certificate(mount_point=mount)
+        return self._client.get(f"/v1/{mount}/ca/pem").text
 
     def generate_self_signed_ca(
         self,
@@ -465,24 +499,19 @@ class OpenBaoClient:
         if organizational_unit:
             extra_params["organizational_unit"] = organizational_unit
         try:
-            response = self._client.secrets.pki.generate_root(
-                type="exported",
-                common_name=common_name,
-                mount_point=mount,
-                extra_params=extra_params,
-            )
+            response = self._client.post(
+                f"/v1/{mount}/root/generate/exported",
+                json={"common_name": common_name, **extra_params},
+            ).json()
             data = response["data"]
             return str(data["certificate"]), str(data["private_key"])
-        except (InvalidRequest, VaultError) as e:
+        except HttpError as e:
             raise OpenBaoClientError(e) from e
 
     def import_ca_certificate_and_key(self, mount: str, certificate: str, private_key: str):
         """Import the CA certificate and private key for the PKI backend."""
         pem_bundle = generate_pem_bundle(certificate=certificate, private_key=private_key)
-        self._client.secrets.pki.submit_ca_information(
-            pem_bundle=pem_bundle,
-            mount_point=mount,
-        )
+        self._client.post(f"/v1/{mount}/config/ca", json={"pem_bundle": pem_bundle})
 
     def sign_pki_certificate_signing_request(
         self,
@@ -510,13 +539,10 @@ class OpenBaoClient:
             PKICertificateError: If the PKI engine fails to sign the certificate request.
         """
         try:
-            response = self._client.secrets.pki.sign_certificate(
-                csr=csr,
-                mount_point=mount,
-                common_name=common_name,
-                name=role,
-                extra_params={"ttl": ttl},
-            )
+            response = self._client.post(
+                f"/v1/{mount}/sign/{role}",
+                json={"csr": csr, "common_name": common_name, "ttl": ttl},
+            ).json()
             logger.info("Signed a PKI certificate for %s", common_name)
             return Certificate(
                 certificate=response["data"]["certificate"],
@@ -524,8 +550,8 @@ class OpenBaoClient:
                 chain=response["data"]["ca_chain"],
             )
         except (
-            InvalidRequest,
-            Forbidden,
+            InvalidRequestError,
+            ForbiddenError,
             InternalServerError,
             ConnectionError,
             RequestException,
@@ -598,11 +624,7 @@ class OpenBaoClient:
         if locality:
             extra_params["locality"] = locality
 
-        self._client.secrets.pki.create_or_update_role(
-            name=role,
-            mount_point=mount,
-            extra_params=extra_params,
-        )
+        self._client.post(f"/v1/{mount}/roles/{role}", json=extra_params)
 
         log_params = ", ".join(f"{key}={value}" for key, value in extra_params.items())
         logger.info(
@@ -669,14 +691,14 @@ class OpenBaoClient:
     def is_pki_role_created(self, role: str, mount: str) -> bool:
         """Check if the role is created for the PKI backend."""
         try:
-            existing_roles = self._client.secrets.pki.list_roles(mount_point=mount)
+            existing_roles = self._client.list(f"/v1/{mount}/roles").json()
             return role in existing_roles["data"]["keys"]
-        except InvalidPath:
+        except InvalidPathError:
             return False
 
     def create_snapshot(self) -> requests.Response:
         """Create a snapshot of the OpenBao data."""
-        return self._client.sys.take_raft_snapshot()
+        return self._client.get("/v1/sys/storage/raft/snapshot", stream=True)
 
     def restore_snapshot(self, snapshot: IOBase) -> None:
         """Restore a snapshot of the OpenBao data.
@@ -684,15 +706,17 @@ class OpenBaoClient:
         Uses force_restore_raft_snapshot to restore the snapshot
         even if the unseal key used at backup time is different from the current one.
         """
-        response = self._client.sys.force_restore_raft_snapshot(snapshot)
+        response = self._client.post(
+            "/v1/sys/storage/raft/snapshot-force", data=snapshot, raise_on_error=False
+        )
         if not 200 <= response.status_code < 300:
             logger.warning("Error while restoring snapshot: %s", response.text)
             raise OpenBaoClientError(f"Error while restoring snapshot: {response.text}")
 
     def get_raft_cluster_state(self) -> dict:
         """Get raft cluster state."""
-        response = self._client.adapter.get(RAFT_STATE_ENDPOINT)
-        return response["data"]
+        response = self._client.get(RAFT_STATE_ENDPOINT)
+        return response.json()["data"]
 
     def is_raft_cluster_healthy(self) -> bool:
         """Check if raft cluster is healthy."""
@@ -701,7 +725,7 @@ class OpenBaoClient:
     def remove_raft_node(self, id: str) -> None:
         """Remove raft peer."""
         try:
-            self._client.sys.remove_raft_node(server_id=id)
+            self._client.post("/v1/sys/storage/raft/remove-peer", json={"server_id": id})
         except (InternalServerError, ConnectionError) as e:
             logger.warning("Error while removing raft node: %s", e)
             return
@@ -710,7 +734,7 @@ class OpenBaoClient:
     def is_node_in_raft_peers(self, id: str) -> bool:
         """Check if node is in raft peers."""
         try:
-            raft_config = self._client.sys.read_raft_config()
+            raft_config = self._client.get("/v1/sys/storage/raft/configuration").json()
         except (InternalServerError, ConnectionError) as e:
             logger.warning("Error while reading raft config: %s", e)
             return False
@@ -722,7 +746,7 @@ class OpenBaoClient:
     def get_num_raft_peers(self) -> int:
         """Return the number of raft peers."""
         try:
-            raft_config = self._client.sys.read_raft_config()
+            raft_config = self._client.get("/v1/sys/storage/raft/configuration").json()
         except (InternalServerError, ConnectionError) as e:
             logger.warning("Error while reading raft config: %s", e)
             return 0
@@ -731,10 +755,9 @@ class OpenBaoClient:
     def is_common_name_allowed_in_pki_role(self, role: str, mount: str, common_name: str) -> bool:
         """Return whether the provided common name is in the list of domains allowed by the specified PKI role."""
         try:
-            return common_name in self._client.secrets.pki.read_role(
-                name=role, mount_point=mount
-            ).get("data", {}).get("allowed_domains", [])
-        except InvalidPath:
+            role_data = self._client.get(f"/v1/{mount}/roles/{role}").json().get("data", {})
+            return common_name in role_data.get("allowed_domains", [])
+        except InvalidPathError:
             logger.warning("Role does not exist on the specified path.")
             return False
 
@@ -756,9 +779,7 @@ class OpenBaoClient:
     ) -> bool:
         """Return whether the role config matches the charm config."""
         try:
-            role_data = self._client.secrets.pki.read_role(name=role, mount_point=mount).get(
-                "data", {}
-            )
+            role_data = self._client.get(f"/v1/{mount}/roles/{role}").json().get("data", {})
 
             if not all(
                 common_name in role_data.get("allowed_domains", [])
@@ -784,7 +805,7 @@ class OpenBaoClient:
                     return False
 
             return True
-        except InvalidPath:
+        except InvalidPathError:
             logger.warning("Role does not exist on the specified path.")
             return False
 
@@ -792,11 +813,9 @@ class OpenBaoClient:
         """Get the max ttl for the specified PKI role in seconds."""
         try:
             return (
-                self._client.secrets.pki.read_role(name=role, mount_point=mount)
-                .get("data", {})
-                .get("max_ttl")
+                self._client.get(f"/v1/{mount}/roles/{role}").json().get("data", {}).get("max_ttl")
             )
-        except InvalidPath:
+        except InvalidPathError:
             logger.warning("Role does not exist on the specified path.")
             return None
 
@@ -810,31 +829,31 @@ class OpenBaoClient:
             The list of issuers (i.e. ["issuer1", "issuer2"]).
         """
         try:
-            return self._client.secrets.pki.list_issuers(mount_point=mount)["data"]["keys"]
-        except (InvalidPath, KeyError) as e:
+            return self._client.list(f"/v1/{mount}/issuers").json()["data"]["keys"]
+        except (InvalidPathError, KeyError) as e:
             logger.error("No issuers found on the specified path: %s", e)
             raise OpenBaoClientError("No issuers found on the specified path.")
 
     def create_transit_key(self, mount_point: str, key_name: str) -> None:
         """Create a new key in the transit backend."""
-        response = self._client.secrets.transit.create_key(mount_point=mount_point, name=key_name)
+        response = self._client.post(f"/v1/{mount_point}/keys/{key_name}", json={})
         logger.debug("Created a new transit key. response=%s", response)
 
     def delete_role(self, name: str) -> None:
         """Delete the approle with the given name."""
-        return self._client.auth.approle.delete_role(name)
+        self._client.delete(f"/v1/auth/approle/role/{name}")
 
     def delete_policy(self, name: str) -> None:
         """Delete the policy with the given name."""
-        return self._client.sys.delete_policy(name)
+        self._client.delete(f"/v1/sys/policy/{name}")
 
     def set_urls(
         self, mount: str, issuing_certificates: List[str], crl_distribution_points: List[str]
     ) -> None:
         """Set the URLs for the ACME backend."""
-        self._client.secrets.pki.set_urls(
-            mount_point=mount,
-            params={
+        self._client.post(
+            f"/v1/{mount}/config/urls",
+            json={
                 "issuing_certificates": issuing_certificates,
                 "crl_distribution_points": crl_distribution_points,
             },
@@ -842,8 +861,9 @@ class OpenBaoClient:
 
     def allow_acme_headers(self, mount: str) -> None:
         """Allow the ACME headers to be returned by the OpenBao server."""
-        self._client.sys.tune_mount_configuration(
-            path=mount, **{"allowed_response_headers": ["Location", "Replay-Nonce", "Link"]}
+        self._client.post(
+            f"/v1/sys/mounts/{mount}/tune",
+            json={"allowed_response_headers": ["Location", "Replay-Nonce", "Link"]},
         )
 
 

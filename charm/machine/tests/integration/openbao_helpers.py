@@ -15,11 +15,8 @@ from hvac.exceptions import InvalidRequest
 
 logger = logging.getLogger(__name__)
 
-# OpenBao status codes, see
-# https://openbao.org/api-docs/system/health for more details
 OPENBAO_STATUS_ACTIVE = 200
 OPENBAO_STATUS_NOT_INITIALIZED = 501
-
 
 class OpenBao:
     def __init__(self, url: str, ca_file_location: str | None = None, token: str | None = None):
@@ -49,6 +46,7 @@ class OpenBao:
     def is_initialized(self) -> bool:
         """Check if the openbao unit is initialized."""
         response = self.client.sys.read_health_status()
+        print(response)
         return response.status_code != OPENBAO_STATUS_NOT_INITIALIZED
 
     def is_sealed(self) -> bool:
