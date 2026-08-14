@@ -75,8 +75,6 @@ def test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounsea
             "openbao-b",
             trust=True,
             num_units=1,
-            if config.OPENBAO_SNAP_PATH
-            else None,
         )
         juju.wait(
             lambda s: (
