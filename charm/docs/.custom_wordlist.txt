@@ -31,3 +31,5 @@ unsealer
 yq
 configurability
 OpenBao
+OpenBao's
+openbao
