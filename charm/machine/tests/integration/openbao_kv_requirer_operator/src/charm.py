@@ -62,7 +62,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
         if not (ca_certificate := self.openbao_kv.get_ca_certificate(relation)):
             logger.error("CA certificate not found")
             return
-        if not (openbao_url := self.openbao_kv.get_openbao_url(relation)):
+        if not (openbao_url := self.openbao_kv.get_vault_url(relation)):
             logger.error("OpenBao URL not found")
             return
         if not (mount := self.openbao_kv.get_mount(relation)):
@@ -70,7 +70,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             return
         unit_credentials = self.openbao_kv.get_unit_credentials(relation)
         juju_secret_content = {
-            "openbao-url": openbao_url,
+            "vault-url": openbao_url,
             "mount": mount,
             "credentials-secret-id": unit_credentials,
         }
@@ -107,7 +107,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             id=kv_secret_content["credentials-secret-id"]
         )
         openbao = OpenBaoClient(
-            url=kv_secret_content["openbao-url"],
+            url=kv_secret_content["vault-url"],
             approle_role_id=credentials_secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{OPENBAO_CA_CERT_FILENAME}",
             approle_secret_id=credentials_secret_content["role-secret-id"],
@@ -136,7 +136,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             event.fail("Missing key or value")
             return
         openbao = OpenBaoClient(
-            url=kv_secret_content["openbao-url"],
+            url=kv_secret_content["vault-url"],
             approle_role_id=credentials_secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{OPENBAO_CA_CERT_FILENAME}",
             approle_secret_id=credentials_secret_content["role-secret-id"],
