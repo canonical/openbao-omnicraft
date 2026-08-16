@@ -116,10 +116,10 @@ OPENBAO_PKI_ROLE = "charm-pki"
 OPENBAO_PORT = 8200
 OPENBAO_SNAP_NAME = "openbao"
 OPENBAO_SNAP_REVISIONS = {
-    "x86_64": "34",
+    "x86_64": "35",
 }
 OPENBAO_SNAP_CHANNELS = {
-    "x86_64": "2/edge",
+    "x86_64": "2/beta",
 }
 OPENBAO_SNAP_REVISION = OPENBAO_SNAP_REVISIONS.get(platform.machine(), "")
 OPENBAO_SNAP_CHANNEL_FOR_ARCH = OPENBAO_SNAP_CHANNELS.get(platform.machine(), "2/stable")
@@ -1227,7 +1227,7 @@ class OpenBaoOperatorCharm(CharmBase):
         return env
 
     def _install_openbao_snap(self) -> None:
-        """Installs the Vault snap in the machine."""
+        """Installs the OpenBao snap in the machine."""
         try:
             snap_cache = snap.SnapCache()
             openbao_snap = snap_cache[OPENBAO_SNAP_NAME]
