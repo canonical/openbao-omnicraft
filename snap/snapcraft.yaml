@@ -37,6 +37,7 @@ apps:
     refresh-mode: endure
 
     reload-command: bin/baod-reload
+    stop-command: bin/baod-stop
     restart-condition: on-failure
     stop-mode: sigterm
 
