@@ -1,19 +1,27 @@
 # OpenBao Omnicraft
 
-This repo contains a monorepo for the Rock, Snap and the Charm for OpenBao.
+This repo contains a monorepo for the Rock, Snap and the Charms for OpenBao.
 
-## Known issues
+# OpenBao Operators (Kubernetes and Machine)
 
-- **openbao-k8s on juju 4.0.10+**: juju's kubernetes secret backend fails to save
-  charm-owned secrets ("cannot patch resource \"secrets\" ... juju-secret-consumer"),
-  which prevents the openbao-k8s charm from storing its CA and approle secrets, and
-  blocks the k8s integration tests. Tracked upstream as
-  [juju/juju#22724](https://github.com/juju/juju/issues/22724) and
-  [juju/juju#22485](https://github.com/juju/juju/issues/22485). juju 3.6 (and 4.0.5)
-  are unaffected.
+[![CharmHub Badge](https://charmhub.io/openbao-k8s/badge.svg)](https://charmhub.io/openbao-k8s)
+[![CharmHub Badge](https://charmhub.io/openbao/badge.svg)](https://charmhub.io/openbao)
 
-- **Backup integration tests**: `test_backup.py` (LXD minio storage buckets) and
-  `test_backup_microceph.py` (microceph with RGW) require host-level services that
-  the CI workflows provision on the runner (see
-  the machine integration job in `.github/workflows/main.yaml`). They are not run as
-  part of local verification.
+OpenBao is a tool for securely managing secrets used in modern computing (e.g. passwords, certificates, API keys).
+
+The OpenBao Operators deploy and initialize OpenBao on Kubernetes and Machine models. They run in high availability mode using the Raft backend.
+
+For more information, including guides, integrations, and configuration options, read the [OpenBao Charms documentation](https://canonical-openbao-charms.readthedocs-hosted.com).
+
+## Workloads
+
+- OCI Image: [ghcr.io/canonical/openbao](https://github.com/canonical/openbao-rock)
+- Snap: <https://snapcraft.io/openbao>
+
+## Project & Community
+
+OpenBao Operators are open source projects that warmly welcomes community contributions, suggestions, fixes, and constructive feedback.
+
+- To contribute to the code Please see [CONTRIBUTING.md](/CONTRIBUTING.md) and the [Juju SDK docs](https://juju.is/docs/sdk) for guidelines and best practices.
+- Raise software issues or feature requests in [GitHub](https://github.com/canonical/openbao-omnicraft/issues)
+- Meet the community and chat with us on [Matrix](https://matrix.to/#/#tls:ubuntu.com)

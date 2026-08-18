@@ -28,15 +28,15 @@ jobs:
 
       - name: Install the doc framework
         run: |
-          cd charm/docs && make install
+          cd docs && make install
 
       - name: Build docs and run spelling checker
         run: |
-          cd charm/docs && make spelling
+          cd docs && make spelling
 
       - name: Check for broken links
         run: |
-          cd charm/docs && make linkcheck
+          cd docs && make linkcheck
 
       - name: Check for inclusive language
         uses: get-woke/woke-action@v0
