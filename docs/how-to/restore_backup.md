@@ -16,7 +16,7 @@ Once the prerequisites are in place you can run the `restore-backup` action on t
 
 `juju run openbao/leader restore-backup backup-id=<backup-id> `
 
-The restored OpenBao will be sealed and it will require to be [unsealed](https://charmhub.io/openbao-k8s/docs/h-unseal) and authorised using the root token and unseal keys that were in use at the time of creating the backup.
+The restored OpenBao will be sealed and it will require to be [unsealed](https://charmhub.io/openbao/docs/h-unseal) and authorised using the root token and unseal keys that were in use at the time of creating the backup.
 
 ## List backups
 

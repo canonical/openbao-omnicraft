@@ -4,7 +4,7 @@ The OpenBao charm offers some of the OpenBao's functionality through charm relat
 
 ## Key-Value
 
-The OpenBao charm is a provider of the [openbao-kv](https://charmhub.io/integrations/openbao-kv) charm relation interface, allowing requirer to request key-value type secrets.
+The OpenBao charm is a provider of the [openbao-kv](https://charmhub.io/integrations/vault-kv) charm relation interface, allowing requirer to request key-value type secrets.
 
 ## PKI
 

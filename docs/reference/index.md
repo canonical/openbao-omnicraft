@@ -25,7 +25,7 @@ In the Charm's Charmhub page, you can find additional reference material, includ
 
 | Page                                                         | Description                                             |
 | ------------------------------------------------------------ | ------------------------------------------------------- |
-| [Integrations](https://charmhub.io/openbao-k8s/integrations)   | Integration/relation interfaces supported by this charm |
-| [Libraries](https://charmhub.io/openbao-k8s/libraries)         | Libraries offered to integrate with the OpenBao charm     |
-| [Configuration](https://charmhub.io/openbao-k8s/configuration) | Application configuration parameters                    |
-| [Actions](https://charmhub.io/openbao-k8s/actions)             | Juju actions supported by this charm                    |
+| [Integrations](https://charmhub.io/openbao/integrations)   | Integration/relation interfaces supported by this charm |
+| [Libraries](https://charmhub.io/openbao/libraries)         | Libraries offered to integrate with the OpenBao charm     |
+| [Configuration](https://charmhub.io/openbao/configuration) | Application configuration parameters                    |
+| [Actions](https://charmhub.io/openbao/actions)             | Juju actions supported by this charm                    |
