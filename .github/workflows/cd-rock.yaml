@@ -55,3 +55,46 @@ jobs:
           name: rock-amd64
           path: rock/*.rock
           if-no-files-found: error
+
+  publish:
+    name: Publish rock
+    needs: continuous-delivery-rock
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_CREDENTIALS }}
+
+      - name: Install rockcraft
+        run: |
+          sudo snap install rockcraft --classic --channel edge
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: rock-amd64
+
+      - name: Import and push to github package
+        run: |
+          image_name="$(yq '.name' rock/rockcraft.yaml)"
+          version="$(yq '.version' rock/rockcraft.yaml)"
+          repo="ghcr.io/canonical/${image_name}"
+          amd64_rock_file=$(ls *-amd64.rock | tail -n 1)
+
+          sudo rockcraft.skopeo \
+            --insecure-policy \
+            copy \
+            oci-archive:"${amd64_rock_file}" \
+            docker-daemon:"${repo}:${version}-amd64"
+          docker push ${repo}:${version}-amd64
+
+          docker manifest create ${repo}:${version} ${repo}:${version}-amd64
+          docker manifest push ${repo}:${version}
+          docker manifest create ${repo}:latest ${repo}:${version}-amd64
+          docker manifest push ${repo}:latest

@@ -179,3 +179,37 @@ jobs:
           working-directory: charm/machine
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
+
+  publish-charm:
+    name: Publish Charm
+    needs: integration-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, X64, large, noble]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-amd64
+          path: charm/machine
+
+      - name: Upload charm to Charmhub
+        uses: canonical/charming-actions/upload-charm@2.7.0
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_AUTH }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          channel: latest/edge
+          destructive-mode: false
+          built-charm-path: charm/machine
+          tag-prefix: machine
+
+      - name: Archive charmcraft logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: charmcraft-logs-machine-${{ inputs.tag-prefix }}
+          path: /home/runner/.local/state/charmcraft/log/*.log

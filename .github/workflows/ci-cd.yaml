@@ -10,22 +10,46 @@ on:
       - main
 
 jobs:
+  continuous-integration:
+    name: Detect changes
+    runs-on: ubuntu-26.04
+    outputs:
+      snap-changed: ${{ steps.changes.outputs.snap }}
+      rock-changed: ${{ steps.changes.outputs.rock }}
+      charm-machine-changed: ${{ steps.changes.outputs.charm-machine }}
+      charm-k8s-changed: ${{ steps.changes.outputs.charm-k8s }}
+    steps:
+      - name: Detect modified subfolders
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            snap:
+              - 'snap/**'
+            rock:
+              - 'rock/**'
+            charm-machine:
+              - 'charm/machine/**'
+            charm-k8s:
+              - 'charm/k8s/**'
   continuous-delivery-snap:
     name: snap
+    needs: continuous-integration
+    if: needs.continuous-integration.outputs.snap-changed == 'true'
     uses: ./.github/workflows/cd-snap.yaml
+    secrets: inherit
     with:
       build: ${{ needs.continuous-integration.outputs.snap-changed == 'true' }}
   continuous-delivery-rock:
     name: rock
+    needs: continuous-integration
+    if: needs.continuous-integration.outputs.rock-changed == 'true'
     uses: ./.github/workflows/cd-rock.yaml
+    secrets: inherit
     with:
       build: ${{ needs.continuous-integration.outputs.rock-changed == 'true' }}
   continuous-delivery-charm-machine:
     name: machine charm
+    needs: continuous-integration
+    if: needs.continuous-integration.outputs.charm-machine-changed == 'true'
     uses: ./.github/workflows/cd-charm-machine.yaml
-  publish:
-    name: publish
-    if: github.ref == 'refs/heads/main'
-    needs: [continuous-delivery-snap, continuous-delivery-rock]
-    uses: ./.github/workflows/cd-publish.yaml
-    secrets: inherit
