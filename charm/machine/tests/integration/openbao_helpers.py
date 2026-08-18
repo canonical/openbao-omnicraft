@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 OPENBAO_STATUS_ACTIVE = 200
 OPENBAO_STATUS_NOT_INITIALIZED = 501
 
+
 class OpenBao:
     def __init__(self, url: str, ca_file_location: str | None = None, token: str | None = None):
         self.url = url

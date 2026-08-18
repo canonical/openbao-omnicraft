@@ -1235,7 +1235,9 @@ class OpenBaoOperatorCharm(CharmBase):
                 snap.SnapState.Latest,
                 snap.SnapState.Present,
             ]:
-                logger.debug("Openbao snap revision %s is already installed", OPENBAO_SNAP_REVISION)
+                logger.debug(
+                    "Openbao snap revision %s is already installed", OPENBAO_SNAP_REVISION
+                )
                 return
             with self.temp_maintenance_status("Installing Openbao"):
                 openbao_snap.ensure(

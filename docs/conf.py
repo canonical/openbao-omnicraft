@@ -137,11 +137,9 @@ html_context = {
     # Docs branch in the repo; used in links for viewing the source files
     #
     # TODO: To customise the branch, uncomment and update as needed.
-    'repo_default_branch': 'main',
+    "repo_default_branch": "main",
     # Docs location in the repo; used in links for viewing the source files
     #
-
-
     # TODO: To customise the directory, uncomment and update as needed.
     "repo_folder": "/docs/",
     # TODO: To enable or disable the Previous / Next buttons at the bottom of pages
@@ -149,9 +147,8 @@ html_context = {
     # "sequential_nav": "both",
     # TODO: To enable listing contributors on individual pages, set to True
     "display_contributors": False,
-
-    # Required for feedback button    
-    'github_issues': 'enabled',
+    # Required for feedback button
+    "github_issues": "enabled",
 }
 
 # TODO: To enable the edit button on pages, uncomment and change the link to a
@@ -178,16 +175,16 @@ html_context = {
 
 # Base URL of RTD hosted project
 
-html_baseurl = 'https://canonical-openbao-charms.readthedocs-hosted.com/'
+html_baseurl = "https://canonical-openbao-charms.readthedocs-hosted.com/"
 
 # URL scheme. Add language and version scheme elements.
 # When configured with RTD variables, check for RTD environment so manual runs succeed:
 
-if 'READTHEDOCS_VERSION' in os.environ:
+if "READTHEDOCS_VERSION" in os.environ:
     version = os.environ["READTHEDOCS_VERSION"]
-    sitemap_url_scheme = '{version}{link}'
+    sitemap_url_scheme = "{version}{link}"
 else:
-    sitemap_url_scheme = 'MANUAL/{link}'
+    sitemap_url_scheme = "MANUAL/{link}"
 
 # Include `lastmod` dates in the sitemap:
 
@@ -197,8 +194,8 @@ sitemap_show_lastmod = True
 # Template and asset locations
 #######################
 
-#html_static_path = ["_static"]
-#templates_path = ["_templates"]
+# html_static_path = ["_static"]
+# templates_path = ["_templates"]
 
 
 #############
@@ -344,8 +341,8 @@ if "discourse_prefix" not in html_context and "discourse" in html_context:
 
 # Workaround for substitutions.yaml
 
-if os.path.exists('./reuse/substitutions.yaml'):
-    with open('./reuse/substitutions.yaml', 'r') as fd:
+if os.path.exists("./reuse/substitutions.yaml"):
+    with open("./reuse/substitutions.yaml", "r") as fd:
         myst_substitutions = yaml.safe_load(fd.read())
 
 # Add configuration for intersphinx mapping
