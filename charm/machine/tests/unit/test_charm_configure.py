@@ -115,7 +115,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        openbao_snap.start.assert_called_with(services=["baod"])
+        openbao_snap.start.assert_called_with(services=["server"])
 
     # PKI
 

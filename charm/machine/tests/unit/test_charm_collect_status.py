@@ -29,7 +29,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -364,7 +364,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -400,7 +400,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -438,7 +438,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -478,7 +478,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -518,7 +518,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -558,7 +558,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -598,7 +598,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -640,7 +640,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
@@ -682,7 +682,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     ):
         self.mock_snap_cache.return_value = {
             "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"baod": {"active": True}}
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
             )
         }
         self.mock_tls.configure_mock(
