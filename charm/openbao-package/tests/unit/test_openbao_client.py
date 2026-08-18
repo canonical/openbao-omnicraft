@@ -2,13 +2,13 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import json
 from contextlib import nullcontext as does_not_raise
 from typing import ContextManager
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from hvac.exceptions import Forbidden, InternalServerError, InvalidRequest
 
 from openbao.openbao_client import (
     AppRole,
@@ -19,116 +19,145 @@ from openbao.openbao_client import (
     SecretsBackend,
     Token,
 )
+from openbao.openbao_http import (
+    ForbiddenError,
+    InternalServerError,
+    InvalidRequestError,
+)
 
 TEST_PATH = "./tests/unit"
 
 
-@patch("hvac.api.auth_methods.token.Token.lookup_self")
-def test_given_token_as_auth_details_when_authenticate_then_token_is_set(_):
+def make_response(
+    status_code: int = 200,
+    json_body: dict | None = None,
+    text: str = "",
+) -> requests.Response:
+    """Build a requests.Response with the given status code and JSON body."""
+    response = requests.Response()
+    response.status_code = status_code
+    if json_body is not None:
+        response._content = json.dumps(json_body).encode("utf-8")
+        response.headers["Content-Type"] = "application/json"
+    elif text:
+        response._content = text.encode("utf-8")
+    return response
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+def test_given_token_as_auth_details_when_authenticate_then_token_is_set(patch_get: MagicMock):
+    patch_get.return_value = make_response(json_body={"data": "random data"})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.authenticate(Token("some token"))
 
     assert openbao._client.token == "some token"
 
 
-@patch("hvac.api.auth_methods.token.Token.lookup_self")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_valid_token_as_auth_details_when_authenticate_then_authentication_succeeds(
-    patch_lookup: MagicMock,
+    patch_get: MagicMock,
 ):
-    patch_lookup.return_value = {"data": "random data"}
+    patch_get.return_value = make_response(json_body={"data": "random data"})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert openbao.authenticate(Token("some token"))
 
 
-@patch("hvac.api.auth_methods.token.Token.lookup_self")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_invalid_token_as_auth_details_when_authenticate_then_authentication_fails(
-    patch_lookup: MagicMock,
+    patch_get: MagicMock,
 ):
-    patch_lookup.side_effect = Forbidden()
+    patch_get.side_effect = ForbiddenError("permission denied")
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     with pytest.raises(OpenBaoAuthenticationError):
         openbao.authenticate(Token("some token"))
 
 
-@patch("hvac.api.auth_methods.token.Token.lookup_self")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_transient_error_when_authenticate_then_returns_false(
-    patch_lookup: MagicMock,
+    patch_get: MagicMock,
 ):
-    patch_lookup.side_effect = requests.exceptions.ConnectionError()
+    patch_get.side_effect = requests.exceptions.ConnectionError()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert not openbao.authenticate(Token("some token"))
 
 
-@patch("hvac.api.auth_methods.token.Token.lookup_self")
-@patch("hvac.api.auth_methods.approle.AppRole.login")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_approle_as_auth_details_when_authenticate_then_approle_login_is_called(
-    patch_approle_login: MagicMock, _
+    patch_post: MagicMock, patch_get: MagicMock
 ):
+    patch_post.return_value = make_response(json_body={"auth": {"client_token": "some token"}})
+    patch_get.return_value = make_response(json_body={"data": "random data"})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.authenticate(AppRole(role_id="some role id", secret_id="some secret id"))
 
-    patch_approle_login.assert_called_with(
-        role_id="some role id", secret_id="some secret id", use_token=True
+    patch_post.assert_called_with(
+        "/v1/auth/approle/login",
+        json={"role_id": "some role id", "secret_id": "some secret id"},
     )
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
+@patch("openbao.openbao_http.OpenBaoHttp.request")
 def test_given_connection_error_when_is_api_available_then_return_false(
-    patch_health_status: MagicMock,
+    patch_request: MagicMock,
 ):
-    patch_health_status.side_effect = requests.exceptions.ConnectionError()
+    patch_request.side_effect = requests.exceptions.ConnectionError()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     assert not openbao.is_api_available()
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
-def test_given_api_returns_when_is_api_available_then_return_true(patch_health_status: MagicMock):
-    patch_health_status.return_value = requests.Response()
+@patch("openbao.openbao_http.OpenBaoHttp.request")
+def test_given_api_returns_when_is_api_available_then_return_true(patch_request: MagicMock):
+    patch_request.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     assert openbao.is_api_available()
 
 
-@patch("hvac.api.system_backend.raft.Raft.read_raft_config")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_node_in_peer_list_when_is_node_in_raft_peers_then_returns_true(
-    patch_health_status: MagicMock,
+    patch_get: MagicMock,
 ):
     node_id = "whatever node id"
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
-    patch_health_status.return_value = {"data": {"config": {"servers": [{"node_id": node_id}]}}}
+    patch_get.return_value = make_response(
+        json_body={"data": {"config": {"servers": [{"node_id": node_id}]}}}
+    )
 
     assert openbao.is_node_in_raft_peers(node_id)
 
 
-@patch("hvac.api.system_backend.raft.Raft.read_raft_config")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_node_not_in_peer_list_when_is_node_in_raft_peers_then_returns_false(
-    patch_health_status: MagicMock,
+    patch_get: MagicMock,
 ):
     node_id = "whatever node id"
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
-    patch_health_status.return_value = {
-        "data": {"config": {"servers": [{"node_id": "not our node"}]}}
-    }
+    patch_get.return_value = make_response(
+        json_body={"data": {"config": {"servers": [{"node_id": "not our node"}]}}}
+    )
 
     assert not openbao.is_node_in_raft_peers(node_id)
 
 
-@patch("hvac.api.system_backend.raft.Raft.read_raft_config")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_1_node_in_raft_cluster_when_get_num_raft_peers_then_returns_1(
-    patch_health_status: MagicMock,
+    patch_get: MagicMock,
 ):
-    patch_health_status.return_value = {
-        "data": {
-            "config": {
-                "servers": [
-                    {"node_id": "node 1"},
-                    {"node_id": "node 2"},
-                    {"node_id": "node 3"},
-                ]
+    patch_get.return_value = make_response(
+        json_body={
+            "data": {
+                "config": {
+                    "servers": [
+                        {"node_id": "node 1"},
+                        {"node_id": "node 2"},
+                        {"node_id": "node 3"},
+                    ]
+                }
             }
         }
-    }
+    )
 
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
@@ -137,75 +166,84 @@ def test_given_1_node_in_raft_cluster_when_get_num_raft_peers_then_returns_1(
     assert openbao.get_num_raft_peers() == 3
 
 
-@patch("hvac.api.system_backend.auth.Auth.enable_auth_method")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_approle_not_in_auth_methods_when_enable_approle_auth_then_approle_is_added_to_auth_methods(
-    patch_enable_auth_method: MagicMock,
+    patch_post: MagicMock,
 ):
+    patch_post.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     openbao.enable_approle_auth_method()
 
-    patch_enable_auth_method.assert_called_once()
+    patch_post.assert_called_once_with("/v1/sys/auth/approle", json={"type": "approle"})
 
 
-@patch("hvac.api.system_backend.audit.Audit.enable_audit_device")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_audit_device_is_not_yet_enabled_when_enable_audit_device_then_device_is_enabled(
-    patch_enable_audit_device: MagicMock,
+    patch_post: MagicMock,
 ):
+    patch_post.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
-    patch_enable_audit_device.assert_called_once_with(
-        device_type="file", options={"file_path": "stdout"}
+    patch_post.assert_called_once_with(
+        "/v1/sys/audit/file", json={"type": "file", "options": {"file_path": "stdout"}}
     )
 
 
-@patch("hvac.api.system_backend.audit.Audit.enable_audit_device")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_audit_device_is_enabled_when_enable_audit_device_then_nothing_happens(
-    patch_enable_audit_device: MagicMock,
+    patch_post: MagicMock,
 ):
+    patch_post.side_effect = InvalidRequestError(
+        errors=["path already in use"],
+        json={"errors": ["path already in use"]},
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.enable_audit_device(device_type=AuditDeviceType.FILE, path="stdout")
-    patch_enable_audit_device.assert_called_once_with(
-        device_type="file", options={"file_path": "stdout"}
+    patch_post.assert_called_once_with(
+        "/v1/sys/audit/file", json={"type": "file", "options": {"file_path": "stdout"}}
     )
 
 
-@patch("hvac.api.system_backend.policy.Policy.create_or_update_policy")
+@patch("openbao.openbao_http.OpenBaoHttp.put")
 def test_given_policy_with_mount_when_configure_policy_then_policy_is_formatted_properly(
-    patch_create_policy: MagicMock,
+    patch_put: MagicMock,
 ):
+    patch_put.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.create_or_update_policy_from_file(
         "test-policy", path=f"{TEST_PATH}/kv_with_mount.hcl", mount="example"
     )
     with open(f"{TEST_PATH}/kv_mounted.hcl", "r") as f:
         policy = f.read()
-        patch_create_policy.assert_called_with(
-            name="test-policy",
-            policy=policy,
+        patch_put.assert_called_with(
+            "/v1/sys/policy/test-policy",
+            json={"policy": policy},
         )
 
 
-@patch("hvac.api.system_backend.policy.Policy.create_or_update_policy")
+@patch("openbao.openbao_http.OpenBaoHttp.put")
 def test_given_policy_without_mount_when_configure_policy_then_policy_created_correctly(
-    patch_create_policy: MagicMock,
+    patch_put: MagicMock,
 ):
+    patch_put.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.create_or_update_policy_from_file("test-policy", path=f"{TEST_PATH}/kv_mounted.hcl")
     with open(f"{TEST_PATH}/kv_mounted.hcl", "r") as f:
         policy = f.read()
-        patch_create_policy.assert_called_with(
-            name="test-policy",
-            policy=policy,
+        patch_put.assert_called_with(
+            "/v1/sys/policy/test-policy",
+            json={"policy": policy},
         )
 
 
-@patch("hvac.api.auth_methods.approle.AppRole.read_role_id")
-@patch("hvac.api.auth_methods.approle.AppRole.create_or_update_approle")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_approle_with_valid_params_when_configure_approle_then_approle_created(
-    patch_create_approle: MagicMock, patch_read_role_id: MagicMock
+    patch_post: MagicMock, patch_get: MagicMock
 ):
-    patch_read_role_id.return_value = {"data": {"role_id": "1234"}}
+    patch_post.return_value = make_response()
+    patch_get.return_value = make_response(json_body={"data": {"role_id": "1234"}})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert "1234" == openbao.create_or_update_approle(
         "test-approle",
@@ -215,79 +253,78 @@ def test_given_approle_with_valid_params_when_configure_approle_then_approle_cre
         token_ttl="1h",
     )
 
-    patch_create_approle.assert_called_with(
-        "test-approle",
-        bind_secret_id="true",
-        token_ttl="1h",
-        token_max_ttl="1h",
-        token_policies=["root", "default"],
-        token_bound_cidrs=["192.168.1.0/24"],
-        token_period=None,
+    patch_post.assert_called_with(
+        "/v1/auth/approle/role/test-approle",
+        json={
+            "bind_secret_id": "true",
+            "token_ttl": "1h",
+            "token_max_ttl": "1h",
+            "token_policies": "root,default",
+            "token_bound_cidrs": "192.168.1.0/24",
+        },
     )
-    patch_read_role_id.assert_called_once()
+    patch_get.assert_called_once_with("/v1/auth/approle/role/test-approle/role-id")
 
 
-@patch("hvac.api.system_backend.mount.Mount.enable_secrets_engine")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_given_secrets_engine_with_valid_params_when_enable_secrets_engine_then_secrets_engine_enabled(
-    patch_enable_secrets_engine: MagicMock,
+    patch_post: MagicMock,
 ):
+    patch_post.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.enable_secrets_engine(SecretsBackend.KV_V2, "some/path")
 
-    patch_enable_secrets_engine.assert_called_with(
-        backend_type=SecretsBackend.KV_V2.value,
-        description=f"Charm created '{SecretsBackend.KV_V2.value}' backend",
-        path="some/path",
+    patch_post.assert_called_with(
+        "/v1/sys/mounts/some/path",
+        json={
+            "type": SecretsBackend.KV_V2.value,
+            "description": f"Charm created '{SecretsBackend.KV_V2.value}' backend",
+        },
     )
 
 
-@patch("hvac.api.system_backend.mount.Mount.disable_secrets_engine")
+@patch("openbao.openbao_http.OpenBaoHttp.delete")
 def test_when_disable_secrets_engine_then_secrets_engine_disabled(
-    mock_disable_secrets_engine: MagicMock,
+    mock_delete: MagicMock,
 ):
+    mock_delete.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     openbao.disable_secrets_engine("some/path")
 
-    mock_disable_secrets_engine.assert_called_with("some/path")
+    mock_delete.assert_called_with("/v1/sys/mounts/some/path")
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
+@patch("openbao.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_200_when_is_active_then_return_true(
-    patch_health_status: MagicMock,
+    patch_request: MagicMock,
 ):
-    response = requests.Response()
-    response.status_code = 200
-    patch_health_status.return_value = response
+    patch_request.return_value = make_response(status_code=200)
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert openbao.is_active_or_standby()
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
+@patch("openbao.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_standby_when_is_active_then_return_false(
-    patch_health_status: MagicMock,
+    patch_request: MagicMock,
 ):
-    response = requests.Response()
-    response.status_code = 429
-    patch_health_status.return_value = response
+    patch_request.return_value = make_response(status_code=429)
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert openbao.is_active_or_standby()
     assert not openbao.is_active()
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
+@patch("openbao.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_5xx_when_is_active_then_return_false(
-    patch_health_status: MagicMock,
+    patch_request: MagicMock,
 ):
-    response = requests.Response()
-    response.status_code = 501
-    patch_health_status.return_value = response
+    patch_request.return_value = make_response(status_code=501)
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert not openbao.is_active_or_standby()
 
 
-@patch("hvac.api.system_backend.health.Health.read_health_status")
-def test_given_connection_error_when_is_active_then_return_false(patch_health_status: MagicMock):
-    patch_health_status.side_effect = requests.exceptions.ConnectionError()
+@patch("openbao.openbao_http.OpenBaoHttp.request")
+def test_given_connection_error_when_is_active_then_return_false(patch_request: MagicMock):
+    patch_request.side_effect = requests.exceptions.ConnectionError()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert not openbao.is_active_or_standby()
 
@@ -295,7 +332,7 @@ def test_given_connection_error_when_is_active_then_return_false(patch_health_st
 @pytest.mark.parametrize(
     "exception_raised, expectation",
     [
-        (InternalServerError(), does_not_raise()),
+        (InternalServerError("internal error"), does_not_raise()),
         (requests.exceptions.ConnectionError(), does_not_raise()),
         (ValueError(), pytest.raises(ValueError)),
         (TypeError(), pytest.raises(TypeError)),
@@ -305,7 +342,7 @@ def test_when_remove_raft_node_is_called_and_exception_raised_then_exception_is_
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "hvac.api.system_backend.raft.Raft.remove_raft_node",
+        "openbao.openbao_http.OpenBaoHttp.post",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -316,7 +353,7 @@ def test_when_remove_raft_node_is_called_and_exception_raised_then_exception_is_
 @pytest.mark.parametrize(
     "exception_raised, expectation",
     [
-        (InternalServerError(), does_not_raise()),
+        (InternalServerError("internal error"), does_not_raise()),
         (requests.exceptions.ConnectionError(), does_not_raise()),
         (ValueError(), pytest.raises(ValueError)),
         (TypeError(), pytest.raises(TypeError)),
@@ -326,7 +363,7 @@ def test_when_is_node_in_raft_peers_called_and_exception_raised_then_exception_i
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "hvac.api.system_backend.raft.Raft.read_raft_config",
+        "openbao.openbao_http.OpenBaoHttp.get",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -337,7 +374,7 @@ def test_when_is_node_in_raft_peers_called_and_exception_raised_then_exception_i
 @pytest.mark.parametrize(
     "exception_raised, expectation",
     [
-        (InternalServerError(), does_not_raise()),
+        (InternalServerError("internal error"), does_not_raise()),
         (requests.exceptions.ConnectionError(), does_not_raise()),
         (ValueError(), pytest.raises(ValueError)),
         (TypeError(), pytest.raises(TypeError)),
@@ -347,7 +384,7 @@ def test_when_get_num_raft_peers_called_andexception_raised_then_exception_is_su
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "hvac.api.system_backend.raft.Raft.read_raft_config",
+        "openbao.openbao_http.OpenBaoHttp.get",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -355,43 +392,47 @@ def test_when_get_num_raft_peers_called_andexception_raised_then_exception_is_su
         openbao.get_num_raft_peers()
 
 
-@patch("hvac.Client.read")
-def test_read(patch_read: MagicMock):
-    patch_read.return_value = {"data": {"key": "value"}}
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+def test_read(patch_get: MagicMock):
+    patch_get.return_value = make_response(json_body={"data": {"key": "value"}})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     result = openbao.read("some/path")
     assert result == {"key": "value"}
-    patch_read.assert_called_once_with("some/path")
+    patch_get.assert_called_once_with("/v1/some/path")
 
 
-@patch("hvac.Client.list")
-def test_list(patch_list: MagicMock):
-    patch_list.return_value = {"data": {"keys": ["key1", "key2"]}}
+@patch("openbao.openbao_http.OpenBaoHttp.list_get_fallback")
+def test_list(patch_list_get_fallback: MagicMock):
+    patch_list_get_fallback.return_value = make_response(
+        json_body={"data": {"keys": ["key1", "key2"]}}
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     result = openbao.list("some/path")
     assert result == ["key1", "key2"]
-    patch_list.assert_called_once_with("some/path")
+    patch_list_get_fallback.assert_called_once_with("/v1/some/path")
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.read_role")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 def test_given_role_config_matches_given_config_when_role_config_matches_given_config_then_returns_true(
-    patch_read_role: MagicMock,
+    patch_get: MagicMock,
 ):
-    patch_read_role.return_value = {
-        "data": {
-            "allowed_domains": ["example.com"],
-            "allow_bare_domains": True,
-            "allow_subdomains": True,
-            "allow_wildcard_certificates": True,
-            "allow_any_name": True,
-            "allow_ip_sans": True,
-            "organization": "test-organization",
-            "organizational_unit": "test-organizational-unit",
-            "country": "test-country",
-            "province": "test-province",
-            "locality": "test-locality",
+    patch_get.return_value = make_response(
+        json_body={
+            "data": {
+                "allowed_domains": ["example.com"],
+                "allow_bare_domains": True,
+                "allow_subdomains": True,
+                "allow_wildcard_certificates": True,
+                "allow_any_name": True,
+                "allow_ip_sans": True,
+                "organization": "test-organization",
+                "organizational_unit": "test-organizational-unit",
+                "country": "test-country",
+                "province": "test-province",
+                "locality": "test-locality",
+            }
         }
-    }
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert openbao.role_config_matches_given_config(
         role="test-role",
@@ -410,7 +451,7 @@ def test_given_role_config_matches_given_config_when_role_config_matches_given_c
     )
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.read_role")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
 @pytest.mark.parametrize(
     "allowed_domains,allow_subdomains, allow_wildcard_certificates, allow_any_name, allow_ip_sans, organization, organizational_unit, country, province, locality",
     [
@@ -553,7 +594,7 @@ def test_given_role_config_matches_given_config_when_role_config_matches_given_c
     ],
 )
 def test_given_role_config_does_not_match_given_config_when_role_config_matches_given_config_then_returns_false(
-    patch_read_role: MagicMock,
+    patch_get: MagicMock,
     allowed_domains: list[str],
     allow_subdomains: bool,
     allow_wildcard_certificates: bool,
@@ -565,14 +606,16 @@ def test_given_role_config_does_not_match_given_config_when_role_config_matches_
     province: str,
     locality: str,
 ):
-    patch_read_role.return_value = {
-        "data": {
-            "allowed_domains": ["example.com"],
-            "allow_subdomains": True,
-            "allow_wildcard_certificates": True,
-            "allow_any_name": True,
+    patch_get.return_value = make_response(
+        json_body={
+            "data": {
+                "allowed_domains": ["example.com"],
+                "allow_subdomains": True,
+                "allow_wildcard_certificates": True,
+                "allow_any_name": True,
+            }
         }
-    }
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
     assert not openbao.role_config_matches_given_config(
         role="test-role",
@@ -591,15 +634,17 @@ def test_given_role_config_does_not_match_given_config_when_role_config_matches_
     )
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.sign_certificate")
-def test_when_sign_pki_csr_succeeds_then_certificate_object_returned(patch_sign: MagicMock):
-    patch_sign.return_value = {
-        "data": {
-            "certificate": "cert-pem",
-            "issuing_ca": "ca-pem",
-            "ca_chain": ["chain-pem"],
+@patch("openbao.openbao_http.OpenBaoHttp.post")
+def test_when_sign_pki_csr_succeeds_then_certificate_object_returned(patch_post: MagicMock):
+    patch_post.return_value = make_response(
+        json_body={
+            "data": {
+                "certificate": "cert-pem",
+                "issuing_ca": "ca-pem",
+                "ca_chain": ["chain-pem"],
+            }
         }
-    }
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     certificate = openbao.sign_pki_certificate_signing_request(
@@ -615,16 +660,18 @@ def test_when_sign_pki_csr_succeeds_then_certificate_object_returned(patch_sign:
     assert certificate.chain == ["chain-pem"]
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.generate_root")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_then_returns_certificate_and_key(
-    patch_generate_root: MagicMock,
+    patch_post: MagicMock,
 ):
-    patch_generate_root.return_value = {
-        "data": {
-            "certificate": "cert-pem",
-            "private_key": "key-pem",
+    patch_post.return_value = make_response(
+        json_body={
+            "data": {
+                "certificate": "cert-pem",
+                "private_key": "key-pem",
+            }
         }
-    }
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     cert, key = openbao.generate_self_signed_ca(
@@ -635,24 +682,24 @@ def test_when_generate_self_signed_ca_then_returns_certificate_and_key(
 
     assert cert == "cert-pem"
     assert key == "key-pem"
-    patch_generate_root.assert_called_once_with(
-        type="exported",
-        common_name="my-ca",
-        mount_point="pki",
-        extra_params={"ttl": "8760h"},
+    patch_post.assert_called_once_with(
+        "/v1/pki/root/generate/exported",
+        json={"common_name": "my-ca", "ttl": "8760h"},
     )
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.generate_root")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_passed(
-    patch_generate_root: MagicMock,
+    patch_post: MagicMock,
 ):
-    patch_generate_root.return_value = {
-        "data": {
-            "certificate": "cert-pem",
-            "private_key": "key-pem",
+    patch_post.return_value = make_response(
+        json_body={
+            "data": {
+                "certificate": "cert-pem",
+                "private_key": "key-pem",
+            }
         }
-    }
+    )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     openbao.generate_self_signed_ca(
@@ -667,11 +714,10 @@ def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_pas
         organizational_unit="Test Unit",
     )
 
-    patch_generate_root.assert_called_once_with(
-        type="exported",
-        common_name="my-ca",
-        mount_point="pki",
-        extra_params={
+    patch_post.assert_called_once_with(
+        "/v1/pki/root/generate/exported",
+        json={
+            "common_name": "my-ca",
             "ttl": "8760h",
             "alt_names": "example.com,www.example.com",
             "country": "US",
@@ -683,11 +729,11 @@ def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_pas
     )
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.generate_root")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_fails_then_openbao_client_error_raised(
-    patch_generate_root: MagicMock,
+    patch_post: MagicMock,
 ):
-    patch_generate_root.side_effect = InvalidRequest("some error")
+    patch_post.side_effect = InvalidRequestError("some error")
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     with pytest.raises(OpenBaoClientError):
@@ -698,11 +744,11 @@ def test_when_generate_self_signed_ca_fails_then_openbao_client_error_raised(
         )
 
 
-@patch("hvac.api.secrets_engines.pki.Pki.sign_certificate")
+@patch("openbao.openbao_http.OpenBaoHttp.post")
 def test_when_sign_pki_csr_denied_by_openbao_then_openbao_client_error_raised(
-    patch_sign: MagicMock,
+    patch_post: MagicMock,
 ):
-    patch_sign.side_effect = InvalidRequest()
+    patch_post.side_effect = InvalidRequestError("some error")
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     with pytest.raises(OpenBaoClientError):
