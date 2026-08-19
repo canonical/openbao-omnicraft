@@ -200,7 +200,7 @@ jobs:
       - name: Upload charm to Charmhub
         uses: canonical/charming-actions/upload-charm@2.7.0
         with:
-          credentials: ${{ secrets.CHARMCRAFT_AUTH }}
+          credentials: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           channel: latest/edge
           destructive-mode: false

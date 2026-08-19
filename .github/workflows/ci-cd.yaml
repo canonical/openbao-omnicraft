@@ -99,8 +99,3 @@ jobs:
     needs: continuous-integration
     if: needs.continuous-integration.outputs.charm-machine-changed == 'true'
     uses: ./.github/workflows/cd-charm-machine.yaml
-  continuous-delivery-charm-k8s:
-    name: k8s charm
-    needs: continuous-integration
-    if: needs.continuous-integration.outputs.charm-k8s-changed == 'true'
-    uses: ./.github/workflows/cd-charm-k8s.yaml

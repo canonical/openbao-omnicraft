@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
-
-"""Test charm for openbao-kv."""
 
 import logging
 import secrets
@@ -15,12 +13,11 @@ from charms.vault_k8s.v0.vault_kv import (
     VaultKvRequires,
 )
 from openbao.juju_facade import JujuFacade, NoSuchStorageError
-from ops import main
+from openbao_client import OpenBaoClient
 from ops.charm import ActionEvent, CharmBase
 from ops.framework import EventBase
+from ops.main import main
 from ops.model import ActiveStatus
-
-from openbao_client import OpenBaoClient
 
 NONCE_SECRET_LABEL = "openbao-kv-nonce"
 OPENBAO_KV_SECRET_LABEL = "openbao-kv"
@@ -32,25 +29,22 @@ logger = logging.getLogger(__name__)
 
 
 class OpenBaoKVRequirerCharm(CharmBase):
-    """Charm requiring openbao-kv for testing."""
-
     def __init__(self, *args: Any):
         super().__init__(*args)
-        self.openbao_kv = VaultKvRequires(self, "openbao-kv", mount_suffix="kv")
         self.juju_facade = JujuFacade(self)
+        self.openbao_kv = VaultKvRequires(self, "openbao-kv", mount_suffix="kv")
         self.framework.observe(self.on.install, self._configure)
-        self.framework.observe(self.on.update_status, self._configure)
-        self.framework.observe(self.on.config_changed, self._configure)
         self.framework.observe(self.openbao_kv.on.connected, self._on_kv_connected)
         self.framework.observe(self.openbao_kv.on.ready, self._on_kv_ready)
         self.framework.observe(self.on.create_secret_action, self._on_create_secret_action)
         self.framework.observe(self.on.get_secret_action, self._on_get_secret_action)
 
-    def _configure(self, _: EventBase):
+    def _configure(self, event: EventBase):
         """Create a secret to store the nonce."""
         self.juju_facade.set_app_secret_content(
             label=NONCE_SECRET_LABEL,
             content={"nonce": secrets.token_hex(16)},
+            description="Nonce for vault-kv relation",
         )
         self.unit.status = ActiveStatus()
 
@@ -68,7 +62,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
         if not (ca_certificate := self.openbao_kv.get_ca_certificate(relation)):
             logger.error("CA certificate not found")
             return
-        if not (openbao_url := self.openbao_kv.get_openbao_url(relation)):
+        if not (openbao_url := self.openbao_kv.get_vault_url(relation)):
             logger.error("OpenBao URL not found")
             return
         if not (mount := self.openbao_kv.get_mount(relation)):
@@ -76,7 +70,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             return
         unit_credentials = self.openbao_kv.get_unit_credentials(relation)
         juju_secret_content = {
-            "openbao-url": openbao_url,
+            "vault-url": openbao_url,
             "mount": mount,
             "credentials-secret-id": unit_credentials,
         }
@@ -113,7 +107,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             id=kv_secret_content["credentials-secret-id"]
         )
         openbao = OpenBaoClient(
-            url=kv_secret_content["openbao-url"],
+            url=kv_secret_content["vault-url"],
             approle_role_id=credentials_secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{OPENBAO_CA_CERT_FILENAME}",
             approle_secret_id=credentials_secret_content["role-secret-id"],
@@ -142,7 +136,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
             event.fail("Missing key or value")
             return
         openbao = OpenBaoClient(
-            url=kv_secret_content["openbao-url"],
+            url=kv_secret_content["vault-url"],
             approle_role_id=credentials_secret_content["role-id"],
             ca_certificate=f"{ca_certificate_path}/{OPENBAO_CA_CERT_FILENAME}",
             approle_secret_id=credentials_secret_content["role-secret-id"],
