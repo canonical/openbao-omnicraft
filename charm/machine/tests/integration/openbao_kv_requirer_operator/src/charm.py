@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2024 Canonical Ltd.
+"""An example charm to test kv relation with OpenBao KV."""
+# Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import logging
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 class OpenBaoKVRequirerCharm(CharmBase):
+    """A charm that requires OpenBao KV."""
+
     def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)

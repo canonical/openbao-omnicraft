@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2024 Canonical Ltd.
+"""An example charm to test kv relation with OpenBao KV."""
+# Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import logging
@@ -13,11 +14,12 @@ from charms.vault_k8s.v0.vault_kv import (
     VaultKvRequires,
 )
 from openbao.juju_facade import JujuFacade, NoSuchStorageError
-from openbao_client import OpenBaoClient
 from ops.charm import ActionEvent, CharmBase
 from ops.framework import EventBase
 from ops.main import main
 from ops.model import ActiveStatus
+
+from openbao_client import OpenBaoClient
 
 NONCE_SECRET_LABEL = "openbao-kv-nonce"
 OPENBAO_KV_SECRET_LABEL = "openbao-kv"
@@ -29,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 class OpenBaoKVRequirerCharm(CharmBase):
+    """A charm that requires OpenBao KV."""
+
     def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)
