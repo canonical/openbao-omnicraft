@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao CI
+
+# Build and test on pull requests. Artifacts are keyed to the PR branch head SHA
+# (github.event.pull_request.head.sha). After squash merge, publish.yaml resolves
+# CI by that head SHA — not by the new commit SHA on main.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-26.04
+    outputs:
+      snap: ${{ steps.changes.outputs.snap }}
+      rock: ${{ steps.changes.outputs.rock }}
+      charm-machine: ${{ steps.changes.outputs.charm-machine }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Detect modified subfolders
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            snap:
+              - 'snap/**'
+            rock:
+              - 'rock/**'
+            charm-machine:
+              - 'charm/machine/**'
+              - 'charm/openbao-package/**'
+              - 'snap/**'
+              - 'justfile'
+              - '.github/workflows/**'
+
+  continuous-integration:
+    name: code quality and health checks
+    needs: changes
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: python go
+        run: just setup
+      - name: Ensure vendored shared code is in sync
+        run: |
+          make -C charm/k8s vendor-shared-code
+          make -C charm/machine vendor-shared-code
+      - name: Shared package code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: K8s charm code quality
+        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
+        with:
+          working-directory: charm/k8s
+          python-enabled: "true"
+          grafana-enabled: "true"
+          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
+      - name: Shared package unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/openbao-package
+          python-enabled: "true"
+      - name: Machine charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/machine
+          python-enabled: "true"
+      - name: K8s charm unit tests
+        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
+        with:
+          working-directory: charm/k8s
+          python-enabled: "true"
+
+  continuous-delivery-snap:
+    name: snap
+    needs: [changes, continuous-integration]
+    if: needs.changes.outputs.snap == 'true'
+    uses: ./.github/workflows/cd-snap.yaml
+    secrets: inherit
+    with:
+      build: true
+
+  continuous-delivery-rock:
+    name: rock
+    needs: [changes, continuous-integration]
+    if: needs.changes.outputs.rock == 'true'
+    uses: ./.github/workflows/cd-rock.yaml
+    secrets: inherit
+    with:
+      build: true
+
+  continuous-delivery-charm-machine:
+    name: machine charm
+    needs: [changes, continuous-integration]
+    if: needs.changes.outputs.charm-machine == 'true'
+    uses: ./.github/workflows/cd-charm-machine.yaml
+    secrets: inherit
+
+  release-manifest:
+    name: Record release manifest
+    needs:
+      - changes
+      - continuous-integration
+      - continuous-delivery-snap
+      - continuous-delivery-rock
+      - continuous-delivery-charm-machine
+    if: |
+      always() &&
+      needs.continuous-integration.result == 'success' &&
+      (needs.continuous-delivery-snap.result == 'success' || needs.continuous-delivery-snap.result == 'skipped') &&
+      (needs.continuous-delivery-rock.result == 'success' || needs.continuous-delivery-rock.result == 'skipped') &&
+      (needs.continuous-delivery-charm-machine.result == 'success' || needs.continuous-delivery-charm-machine.result == 'skipped')
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Write release manifest
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SNAP: ${{ needs.changes.outputs.snap }}
+          ROCK: ${{ needs.changes.outputs.rock }}
+          CHARM_MACHINE: ${{ needs.changes.outputs.charm-machine }}
+        run: |
+          jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --argjson pr "$PR_NUMBER" \
+            --argjson snap "$([ "$SNAP" = "true" ] && echo true || echo false)" \
+            --argjson rock "$([ "$ROCK" = "true" ] && echo true || echo false)" \
+            --argjson charm_machine "$([ "$CHARM_MACHINE" = "true" ] && echo true || echo false)" \
+            '{
+              head_sha: $head_sha,
+              pr: $pr,
+              merge_strategy: "squash",
+              components: {
+                snap: $snap,
+                rock: $rock,
+                "charm-machine": $charm_machine
+              }
+            }' > release-manifest.json
+          cat release-manifest.json
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-manifest
+          path: release-manifest.json
+          retention-days: 14
