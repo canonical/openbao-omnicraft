@@ -19,8 +19,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to the repo root so charm lib/ directories can be tracked
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -210,3 +211,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+*.charm
+
+*.pem
+charm/k8s/tests/integration/openbao_kv_requirer_operator/lib/*
+charm/machine/tests/integration/openbao_kv_requirer_operator/lib/*
+charm/.charm_tracing_buffer.raw
+
+# Ignore allure report and results if running locally
+charm/allure-report/
+charm/allure-results/

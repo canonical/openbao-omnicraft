@@ -10,7 +10,6 @@ import time
 
 import pytest
 import requests
-
 from openbao import OpenBao
 
 logger = logging.getLogger(__name__)
@@ -46,12 +45,14 @@ def test_given_vault_container_running_when_ui_is_enabled_then_ui_is_available(r
     response = requests.get("http://localhost:8200/ui/vault/init")
 
     assert response.status_code == 200
-    assert "OpenBao UI is not available in this binary." not in response.text  # This is the message when UI is disabled  # noqa: E501
+    assert (
+        "OpenBao UI is not available in this binary." not in response.text
+    )  # This is the message when UI is disabled  # noqa: E501
     assert "vault/config/environment" in response.text  # This is a common element in the UI
 
 
 def test_given_vault_container_running_when_initialize_then_properly_responds_to_commands(
-    run_container
+    run_container,
 ):
     """Runs basic CLI commands to initialize and unseal OpenBao."""
     vault = OpenBao("http://localhost:8200")

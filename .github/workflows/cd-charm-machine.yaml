@@ -1,0 +1,215 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Charm CI/CD
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Machine Charm Build
+    runs-on: [self-hosted, linux, X64, large, noble]
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains
+        env:
+          TOOLCHAINS: python charmcraft
+        run: just setup
+      - name: Build machine charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/machine
+          charmcraft-enabled: "true"
+      - name: Copy test libs into the KV requirer charm
+        run: make -C charm/machine copy-test-libs
+      - name: Build KV requirer test charm
+        uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
+        with:
+          working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
+          charmcraft-enabled: "true"
+      - name: Upload charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-amd64
+          path: charm/machine/*.charm
+          if-no-files-found: error
+      - name: Upload KV requirer charm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: charm-machine-kv-requirer-amd64
+          path: charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm
+          if-no-files-found: error
+
+  integration-test:
+    name: Integration Test (${{ matrix.suite }})
+    needs: build
+    runs-on: [self-hosted, linux, X64, large, noble]
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - test_acme
+          - test_autounseal
+          - test_backup
+          - test_backup_microceph
+          - test_core
+          - test_cos_integration
+          - test_deploy_unseal
+          - test_ingress
+          - test_kv
+          - test_pki
+          - test_pki_self_signed
+          - test_upgrade_first
+          - test_upgrade_latest
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on LXD
+        env:
+          TOOLCHAINS: python juju-machine
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-amd64
+          path: charm/machine
+      - name: Download KV requirer charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-kv-requirer-amd64
+          path: charm/machine/tests/integration/openbao_kv_requirer_operator
+      - name: Locate artifacts
+        id: artifacts
+        run: |
+          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Install minio binaries and configure storage buckets for backup tests
+        if: matrix.suite == 'test_backup'
+        run: |
+          minio_binaries_path="/var/snap/lxd/common/minio"
+          sudo mkdir -p ${minio_binaries_path}
+          echo "Downloading and installing MinIO binaries to ${minio_binaries_path}"
+          sudo wget --quiet --no-clobber https://dl.min.io/server/minio/release/linux-amd64/minio -O ${minio_binaries_path}/minio && sudo chmod +x ${minio_binaries_path}/minio
+          sudo wget --quiet --no-clobber https://dl.min.io/client/mc/release/linux-amd64/mc -O ${minio_binaries_path}/mc && sudo chmod +x ${minio_binaries_path}/mc
+          sudo snap set lxd minio.path=${minio_binaries_path}
+          sudo snap restart lxd
+          lxd_bridge_addr=$(sudo lxc network list --format yaml | yq -r '.[] | select(.name == "lxdbr0") | .config["ipv4.address"]' | cut -d'/' -f1)
+          echo "Restricting bucket access to the lxd bridge. lxd_bridge_addr=${lxd_bridge_addr}"
+          sudo lxc config set core.storage_buckets_address ${lxd_bridge_addr}:8555
+          echo "Waiting for Juju to react to the buckets restriction..."
+          sleep 30 # For some reason, the Juju controller needs some time to make itself available after restricting the storage buckets address
+          sudo lxc storage bucket create default openbao-integration-test
+          sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key baointegrationtest --secret-key baointegrationtest
+      - name: Install MicroCeph and configure RGW for backup tests
+        if: matrix.suite == 'test_backup_microceph'
+        run: |
+          echo "Installing MicroCeph snap..."
+          sudo snap install microceph
+          sudo snap refresh --hold microceph
+
+          echo "Bootstrapping MicroCeph cluster..."
+          sudo microceph cluster bootstrap
+
+          echo "Adding loop-file backed OSDs..."
+          sudo microceph disk add loop,4G,3
+
+          echo "Waiting for MicroCeph cluster to be healthy..."
+          sudo microceph.ceph status
+          health=""
+          for i in $(seq 1 30); do
+            health=$(sudo microceph.ceph health --format json | jq -r '.status')
+            if [ "$health" = "HEALTH_OK" ]; then
+              echo "Cluster is healthy."
+              break
+            fi
+            echo "Waiting for cluster health... (attempt $i/30, current: $health)"
+            sleep 10
+          done
+          if [ "$health" != "HEALTH_OK" ]; then
+            echo "ERROR: Cluster did not become healthy after 300 seconds"
+            exit 1
+          fi
+
+          echo "Enabling RGW (S3-compatible gateway) on port 7480..."
+          sudo microceph enable rgw --port 7480
+
+          echo "Waiting for RGW to be ready..."
+          rgw_ready=false
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7480 | grep -q "200\|403"; then
+              echo "RGW is responding."
+              rgw_ready=true
+              break
+            fi
+            echo "Waiting for RGW... (attempt $i/30)"
+            sleep 5
+          done
+          if [ "$rgw_ready" != "true" ]; then
+            echo "ERROR: RGW did not become ready after 150 seconds"
+            exit 1
+          fi
+
+          echo "Creating S3 user for OpenBao integration tests..."
+          sudo microceph.radosgw-admin user create \
+            --uid=openbaomicrocephtest \
+            --display-name="OpenBao MicroCeph Test" \
+            --access-key=openbaomicrocephtest \
+            --secret-key=openbaomicrocephtest
+
+          echo "Creating S3 bucket..."
+          sudo apt-get install -y -qq s3cmd > /dev/null
+          s3cmd --access_key=openbaomicrocephtest \
+            --secret_key=openbaomicrocephtest \
+            --host=127.0.0.1:7480 \
+            --host-bucket="127.0.0.1:7480/%(bucket)" \
+            --no-ssl \
+            mb s3://openbao-microceph-test
+
+          echo "MicroCeph RGW setup complete."
+          sudo microceph status
+      - name: Run integration tests
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        env:
+          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          TEST_MODULES: ${{ matrix.suite }}
+        with:
+          working-directory: charm/machine
+          charm-enabled: "true"
+          charm-file-name: ${{ steps.artifacts.outputs.charm }}
+
+  publish-charm:
+    name: Publish Charm
+    needs: integration-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, X64, large, noble]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-amd64
+          path: charm/machine
+
+      - name: Upload charm to Charmhub
+        uses: canonical/charming-actions/upload-charm@2.7.0
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          channel: latest/edge
+          destructive-mode: false
+          built-charm-path: charm/machine
+          tag-prefix: machine
+
+      - name: Archive charmcraft logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: charmcraft-logs-machine-${{ inputs.tag-prefix }}
+          path: /home/runner/.local/state/charmcraft/log/*.log

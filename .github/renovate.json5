@@ -1,0 +1,15 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["github>canonical/identity-credentials-workflows//renovate.json5"],
+  baseBranchPatterns: ["main", "release-*"],
+  useBaseBranchConfig: "merge",
+  packageRules: [
+    // Minor/patch updates on release branches are not worth the noise;
+    // only security/major bumps matter there.
+    {
+      matchBaseBranches: ["/^release-/"],
+      matchUpdateTypes: ["minor", "patch"],
+      enabled: false,
+    },
+  ],
+}

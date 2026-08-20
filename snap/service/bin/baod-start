@@ -3,5 +3,7 @@
 
 set -ex
 
-. "$SNAP_COMMON"/openbao.env
-"$SNAP"/bin/bao server -config "$SNAP_COMMON"/openbao-config.hcl
+if [ -f "$SNAP_COMMON"/openbao.env ]; then
+    . "$SNAP_COMMON"/openbao.env
+fi
+exec "$SNAP"/bin/bao server -config "$SNAP_COMMON"/openbao-config.hcl

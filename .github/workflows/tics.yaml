@@ -1,0 +1,23 @@
+name: TiCS Static Analysis
+
+on:
+  schedule:
+    - cron: '0 3 * * 0' # Every Sunday at 3 am
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  analyze-k8s:
+    uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.3
+    with:
+      project: openbao-k8s-operator
+      dir: charm/k8s
+    secrets:
+      TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}
+
+  analyze-machine:
+    uses: canonical/identity-credentials-workflows/.github/workflows/tics-tox.yaml@v3.1.3
+    with:
+      project: openbao-operator
+      dir: charm/machine
+    secrets:
+      TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}

@@ -1,0 +1,1 @@
+"""OpenBao charm common code."""

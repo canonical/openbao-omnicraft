@@ -1,0 +1,50 @@
+import platform
+from pathlib import Path
+
+import yaml
+
+# Juju architecture name for the host running the tests. Charm revisions are
+# published per-architecture, so revision pins must be selected accordingly.
+_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), "amd64")
+
+# There is a dependency here on the `idle_period` we use in `wait_for_idle()`.
+# This value should be greater than the `idle_period` used, otherwise the
+# `wait_for_idle` function may catch the charm executing the `update-status`
+# hook and reset the timer. `idle_period` default is 15s.
+JUJU_FAST_INTERVAL = "20s"
+
+# TIMEOUTS
+SHORT_TIMEOUT = (
+    60 * 2
+)  # How long to wait for apps to settle after integrating them, or configuring them. These events should be quick.
+DEPLOY_TIMEOUT = 60 * 10  # How long to wait for apps to settle after deploying them
+
+APPLICATION_NAME = "openbao-k8s"
+AUTOUNSEAL_TOKEN_SECRET_LABEL = "openbao-autounseal-token"
+LOKI_APPLICATION_NAME = "loki-k8s"
+LOKI_CHANNEL = "1/stable"
+LOKI_REVISION = 199
+METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
+MINIO_APPLICATION_NAME = "minio"
+MINIO_REVISION = 383
+MINIO_S3_ACCESS_KEY = "minio_access_key"
+MINIO_S3_SECRET_KEY = "minio_secret_key"
+NUM_OPENBAO_UNITS = 3
+PROMETHEUS_APPLICATION_NAME = "prometheus-k8s"
+PROMETHEUS_CHANNEL = "1/stable"
+PROMETHEUS_REVISION = 247
+S3_INTEGRATOR_APPLICATION_NAME = "s3-integrator"
+S3_INTEGRATOR_REVISION = 146
+SELF_SIGNED_CERTIFICATES_APPLICATION_NAME = "self-signed-certificates"
+SELF_SIGNED_CERTIFICATES_CHANNEL = "1/stable"
+SELF_SIGNED_CERTIFICATES_REVISION = {"amd64": 586, "arm64": 585}[_ARCH]
+OPENBAO_KV_REQUIRER_1_APPLICATION_NAME = "openbao-kv-requirer-a"
+OPENBAO_KV_REQUIRER_2_APPLICATION_NAME = "openbao-kv-requirer-b"
+MATCHING_COMMON_NAME = "example.com"
+UNMATCHING_COMMON_NAME = "unmatching-the-requirer.com"
+OPENBAO_PKI_REQUIRER_APPLICATION_NAME = "tls-certificates-requirer"
+OPENBAO_PKI_REQUIRER_CHANNEL = "latest/stable"
+OPENBAO_PKI_REQUIRER_REVISION = 93
+
+
+OPENBAO_RESOURCES = {"openbao-image": METADATA["resources"]["openbao-image"]["upstream-source"]}

@@ -49,3 +49,32 @@ jobs:
           name: snap-amd64
           path: snap/*.snap
           if-no-files-found: error
+
+  publish:
+    name: Publish snap
+    needs: continuous-delivery-snap
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Downloads locally built snap artifact
+        uses: actions/download-artifact@v8
+        id: download
+        with:
+          name: snap-amd64
+
+      - name: Determine snap file name
+        id: find-snap
+        run: |
+          SNAP_FILE=$(ls *.snap)
+          echo "Found snap file: $SNAP_FILE"
+          echo "snap_file=${SNAP_FILE}" >>$GITHUB_OUTPUT
+
+      - name: Publish snap
+        uses: canonical/action-publish@v1.2.0
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.find-snap.outputs.snap_file }}
+          release: 2/edge
