@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Publish
+
+# Publishes artifacts built during PR CI. This repo squash-merges only. The squash
+# commit subject ends with "(#123)"; we parse that PR number and match CI by the
+# PR branch head SHA — not by the squash commit SHA on main.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      source-run-id:
+        description: CI workflow run ID to publish artifacts from (skips PR lookup)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  resolve-source:
+    name: Resolve CI run and release manifest
+    runs-on: ubuntu-26.04
+    outputs:
+      run-id: ${{ steps.resolve.outputs.run-id }}
+      snap: ${{ steps.manifest.outputs.snap }}
+      rock: ${{ steps.manifest.outputs.rock }}
+      charm-machine: ${{ steps.manifest.outputs.charm-machine }}
+    steps:
+      - name: Checkout squash commit
+        uses: actions/checkout@v6
+
+      - name: Resolve source CI workflow run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_SOURCE_RUN_ID:-}" ]; then
+            RUN_ID="$INPUT_SOURCE_RUN_ID"
+            echo "Using provided source run ID: ${RUN_ID}"
+          else
+            SUBJECT="$(git log -1 --format=%s)"
+            if [[ ! "$SUBJECT" =~ \(\#([0-9]+)\)$ ]]; then
+              echo "::error::Squash commit subject must end with '(#PR_NUMBER)': ${SUBJECT}"
+              exit 1
+            fi
+
+            PR_NUMBER="${BASH_REMATCH[1]}"
+            HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "${GITHUB_REPOSITORY}" --json headRefOid --jq .headRefOid)"
+            echo "Resolved PR #${PR_NUMBER} from squash commit subject"
+            echo "  squash commit on main: ${GITHUB_SHA}"
+            echo "  PR branch head (CI key): ${HEAD_SHA}"
+
+            RUN_ID="$(gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow="OpenBao CI" \
+              --event=pull_request \
+              --json databaseId,headSha,conclusion \
+              --jq ".[] | select(.headSha==\"${HEAD_SHA}\" and .conclusion==\"success\") | .databaseId" \
+              | head -1)"
+
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::No successful CI run found for PR #${PR_NUMBER} (head ${HEAD_SHA})."
+              exit 1
+            fi
+          fi
+
+          CONCLUSION="$(gh run view "$RUN_ID" --repo "${GITHUB_REPOSITORY}" --json conclusion --jq .conclusion)"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Source CI run ${RUN_ID} did not succeed (conclusion: ${CONCLUSION})"
+            exit 1
+          fi
+
+          echo "run-id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ steps.resolve.outputs.run-id }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            -n release-manifest
+
+      - name: Read release manifest
+        id: manifest
+        run: |
+          SNAP="$(jq -r '.components.snap' release-manifest.json)"
+          ROCK="$(jq -r '.components.rock' release-manifest.json)"
+          CHARM_MACHINE="$(jq -r '.components["charm-machine"]' release-manifest.json)"
+          echo "snap=${SNAP}" >> "$GITHUB_OUTPUT"
+          echo "rock=${ROCK}" >> "$GITHUB_OUTPUT"
+          echo "charm-machine=${CHARM_MACHINE}" >> "$GITHUB_OUTPUT"
+          cat release-manifest.json
+
+  publish-snap:
+    name: snap
+    needs: resolve-source
+    if: needs.resolve-source.outputs.snap == 'true'
+    uses: ./.github/workflows/publish-snap.yaml
+    secrets: inherit
+    with:
+      source-run-id: ${{ needs.resolve-source.outputs.run-id }}
+
+  publish-rock:
+    name: rock
+    needs: resolve-source
+    if: needs.resolve-source.outputs.rock == 'true'
+    uses: ./.github/workflows/publish-rock.yaml
+    secrets: inherit
+    with:
+      source-run-id: ${{ needs.resolve-source.outputs.run-id }}
+
+  publish-charm-machine:
+    name: machine charm
+    needs: resolve-source
+    if: needs.resolve-source.outputs.charm-machine == 'true'
+    uses: ./.github/workflows/publish-charm-machine.yaml
+    secrets: inherit
+    with:
+      source-run-id: ${{ needs.resolve-source.outputs.run-id }}

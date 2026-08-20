@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Rock Publish
+
+on:
+  workflow_call:
+    inputs:
+      source-run-id:
+        description: CI workflow run ID containing the rock artifact
+        type: string
+        required: true
+
+jobs:
+  publish:
+    name: Publish rock
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download rock artifact from CI run
+        uses: actions/download-artifact@v8
+        with:
+          name: rock-amd64
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_CREDENTIALS }}
+
+      - name: Install rockcraft
+        run: |
+          sudo snap install rockcraft --classic --channel edge
+
+      - name: Import and push to github package
+        run: |
+          image_name="$(yq '.name' rock/rockcraft.yaml)"
+          version="$(yq '.version' rock/rockcraft.yaml)"
+          repo="ghcr.io/canonical/${image_name}"
+          amd64_rock_file=$(ls *-amd64.rock | tail -n 1)
+
+          sudo rockcraft.skopeo \
+            --insecure-policy \
+            copy \
+            oci-archive:"${amd64_rock_file}" \
+            docker-daemon:"${repo}:${version}-amd64"
+          docker push ${repo}:${version}-amd64
+
+          docker manifest create ${repo}:${version} ${repo}:${version}-amd64
+          docker manifest push ${repo}:${version}
+          docker manifest create ${repo}:latest ${repo}:${version}-amd64
+          docker manifest push ${repo}:latest

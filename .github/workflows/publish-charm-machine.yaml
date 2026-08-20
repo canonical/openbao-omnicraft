@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Machine Charm Publish
+
+on:
+  workflow_call:
+    inputs:
+      source-run-id:
+        description: CI workflow run ID containing the machine charm artifact
+        type: string
+        required: true
+
+jobs:
+  publish:
+    name: Publish machine charm
+    runs-on: [self-hosted, linux, X64, large, noble]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download charm artifact from CI run
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-machine-amd64
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: charm/machine
+
+      - name: Upload charm to Charmhub
+        uses: canonical/charming-actions/upload-charm@2.7.0
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          channel: latest/edge
+          destructive-mode: false
+          built-charm-path: charm/machine
+          tag-prefix: machine
+
+      - name: Archive charmcraft logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: charmcraft-logs-machine
+          path: /home/runner/.local/state/charmcraft/log/*.log
