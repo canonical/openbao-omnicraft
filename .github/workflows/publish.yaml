@@ -114,6 +114,10 @@ jobs:
     if: needs.resolve-source.outputs.rock == 'true'
     uses: ./.github/workflows/publish-rock.yaml
     secrets: inherit
+    permissions:
+      actions: read
+      contents: read
+      packages: write
     with:
       source-run-id: ${{ needs.resolve-source.outputs.run-id }}
 

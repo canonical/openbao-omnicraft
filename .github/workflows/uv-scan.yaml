@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Trivy Vulnerability Scanner
+
+# Local copy of canonical/identity-credentials-workflows uv-scan, with Trivy
+# bumped off v0.58.0. That release's binaries were removed after Aqua's 2026
+# supply-chain incident, so the shared v3.1.3 workflow fails to install.
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: Path to the directory containing uv.lock
+        required: false
+        type: string
+        default: .
+      uv-lock-path:
+        description: Path to uv.lock file relative to the path input
+        required: false
+        type: string
+        default: "uv.lock"
+      severity:
+        description: Comma-separated severity levels to report
+        required: false
+        type: string
+        default: "CRITICAL,HIGH,MEDIUM"
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run Trivy vulnerability scanner (table format)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: ${{ inputs.path }}/${{ inputs.uv-lock-path }}
+          version: "v0.71.1"
+          format: "table"
+          severity: ${{ inputs.severity }}
+          scanners: "vuln"
+
+      - name: Run Trivy vulnerability scanner (SARIF format)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: ${{ inputs.path }}/${{ inputs.uv-lock-path }}
+          version: "v0.71.1"
+          format: "sarif"
+          severity: ${{ inputs.severity }}
+          scanners: "vuln"
+          output: "trivy-results.sarif"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "Trivy Vulnerability Scan"

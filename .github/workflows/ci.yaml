@@ -34,7 +34,6 @@ jobs:
               - 'charm/openbao-package/**'
               - 'snap/**'
               - 'justfile'
-              - '.github/workflows/**'
 
   continuous-integration:
     name: code quality and health checks
