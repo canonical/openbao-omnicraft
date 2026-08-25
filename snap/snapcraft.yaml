@@ -31,6 +31,9 @@ apps:
     plugs:
       - network
       - network-bind
+      # Required for PKCS#11 KMS plugin to access HSMs via USB
+      - hardware-observe
+      - raw-usb
 
     daemon: simple
     install-mode: disable
@@ -67,6 +70,56 @@ parts:
       - make
       - nodejs
 
+  # Shared libraries commonly required by vendor PKCS#11 modules under strict confinement
+  pkcs11-runtime-libs:
+    plugin: nil
+    stage-packages:
+      - libcurl4t64
+      - libusb-1.0-0
+    stage:
+      - usr/lib
+    prime:
+      - usr/lib
+
+  # External PKCS#11 KMS plugin
+  openbao-kms-pkcs11:
+    source: https://github.com/openbao/openbao-plugins.git
+    source-tag: kms-pkcs11-v0.1.0
+    source-type: git
+    source-depth: 1
+    plugin: nil
+    build-snaps:
+      - go/1.26/stable
+    build-packages:
+      - gcc
+      - libc6-dev
+      - make
+    override-build: |
+      set -e
+      PLUGIN_VERSION="v0.1.0"
+      PLUGIN_NAME="openbao-plugin-kms-pkcs11"
+      DEST_DIR="$SNAPCRAFT_PART_INSTALL/plugins"
+      mkdir -p "$DEST_DIR"
+
+      case "${CRAFT_ARCH_BUILD_FOR:-}" in
+        amd64|arm64)
+          make build PLUGIN=kms-pkcs11
+          BUILT="$(find bin -maxdepth 1 -type f -name "${PLUGIN_NAME}_linux_*" | head -n1)"
+          if [ -z "$BUILT" ]; then
+            echo "ERROR: PKCS#11 KMS plugin binary not found under bin/" >&2
+            ls -la bin || true
+            exit 1
+          fi
+          install -D -m755 "$BUILT" "$DEST_DIR/$PLUGIN_NAME"
+          printf '%s\n' "$PLUGIN_VERSION" > "$DEST_DIR/pkcs11.version"
+          ;;
+        *)
+          echo "Skipping PKCS#11 KMS plugin build for arch ${CRAFT_ARCH_BUILD_FOR:-unknown}"
+          printf '%s\n' "unsupported" > "$DEST_DIR/pkcs11.version"
+          ;;
+      esac
+
+
   hooks:
     plugin: dump
     source: hooks
@@ -74,8 +127,32 @@ parts:
       install: snap/hooks/install
 
   service-files:
+    after: [openbao-kms-pkcs11]
     plugin: dump
     source: service
+    override-build: |
+      set -e
+      craftctl default
+      CONFIG="$SNAPCRAFT_PART_INSTALL/openbao-config.hcl"
+      PLUGIN="$SNAPCRAFT_STAGE/plugins/openbao-plugin-kms-pkcs11"
+      if [ -f "$PLUGIN" ]; then
+        SHA="$(sha256sum "$PLUGIN" | cut -d' ' -f1)"
+        sed -i "s/__OPENBAO_PKCS11_PLUGIN_SHA256__/${SHA}/" "$CONFIG"
+      else
+        # Strip the PKCS#11 plugin stanza on arches that do not ship the binary.
+        awk '
+          /^# PKCS#11 KMS plugin/ { skip=1; next }
+          skip && /^plugin_directory / { next }
+          skip && /^plugin_auto_register / { next }
+          skip && /^$/ { next }
+          skip && /^plugin "kms" "pkcs11"/ { in_plugin=1; next }
+          skip && in_plugin && /^}/ { skip=0; in_plugin=0; next }
+          skip && in_plugin { next }
+          skip { next }
+          { print }
+        ' "$CONFIG" > "$CONFIG.tmp"
+        mv "$CONFIG.tmp" "$CONFIG"
+      fi
 
 package-repositories:
  - type: apt

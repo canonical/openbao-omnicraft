@@ -3,6 +3,20 @@
 
 set -ex
 
+# Add PKCS#11 libs copied into SNAP_COMMON to LD_LIBRARY_PATH.
+SNAP_LIB_PATH=""
+for d in \
+  "$SNAP/usr/lib/x86_64-linux-gnu" \
+  "$SNAP/usr/lib/aarch64-linux-gnu" \
+  "$SNAP/lib/x86_64-linux-gnu" \
+  "$SNAP/lib/aarch64-linux-gnu" \
+  "$SNAP/usr/lib"; do
+  if [ -d "$d" ]; then
+    SNAP_LIB_PATH="${SNAP_LIB_PATH:+$SNAP_LIB_PATH:}$d"
+  fi
+done
+export LD_LIBRARY_PATH="${SNAP_COMMON}/hsm:${SNAP_COMMON}${SNAP_LIB_PATH:+:$SNAP_LIB_PATH}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 if [ -f "$SNAP_COMMON"/openbao.env ]; then
     . "$SNAP_COMMON"/openbao.env
 fi
