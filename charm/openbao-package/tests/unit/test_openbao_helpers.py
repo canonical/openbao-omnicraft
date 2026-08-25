@@ -4,10 +4,12 @@
 
 
 from openbao.openbao_helpers import (
+    Pkcs11SealConfiguration,
     allowed_domains_config_is_valid,
     config_file_content_matches,
     hsm_config_secret_validation_error,
     pkcs11_seal_config_from_secret,
+    render_openbao_config_file,
     sans_dns_config_is_valid,
     seal_type_has_changed,
 )
@@ -154,3 +156,72 @@ class TestHsmConfigSecret:
     def test_given_empty_lib_when_pkcs11_config_from_secret_then_none(self):
         content = {"pin": "1234", "slot": "0", "key-label": "bao-root-key"}
         assert pkcs11_seal_config_from_secret(content, "") is None
+
+    def test_given_plugin_metadata_when_pkcs11_config_from_secret_then_fields_are_set(self):
+        content = {"pin": "1234", "slot": "0", "key-label": "bao-root-key"}
+        config = pkcs11_seal_config_from_secret(
+            content,
+            "/var/snap/openbao/common/hsm/pkcs11.so",
+            plugin_directory="/snap/openbao/current/plugins",
+            plugin_command="openbao-plugin-kms-pkcs11",
+            plugin_version="v0.1.0",
+            plugin_sha256sum="abc123",
+        )
+        assert config is not None
+        assert config.plugin_directory == "/snap/openbao/current/plugins"
+        assert config.plugin_command == "openbao-plugin-kms-pkcs11"
+        assert config.plugin_version == "v0.1.0"
+        assert config.plugin_sha256sum == "abc123"
+
+    def test_given_pkcs11_plugin_config_when_render_then_plugin_and_seal_present(
+        self, tmp_path
+    ):
+        template = tmp_path / "openbao.hcl.j2"
+        template.write_text(
+            '{% if pkcs11_lib %}\n'
+            '{% if pkcs11_plugin_directory %}\n'
+            'plugin_directory = "{{ pkcs11_plugin_directory }}"\n'
+            "plugin_auto_register = true\n"
+            '\n'
+            'plugin "kms" "pkcs11" {\n'
+            '  command   = "{{ pkcs11_plugin_command }}"\n'
+            '  version   = "{{ pkcs11_plugin_version }}"\n'
+            '  sha256sum = "{{ pkcs11_plugin_sha256sum }}"\n'
+            "}\n"
+            "{% endif %}\n"
+            'seal "pkcs11" {\n'
+            '  lib = "{{ pkcs11_lib }}"\n'
+            '  pin = "{{ pkcs11_pin }}"\n'
+            "}\n"
+            "{% endif %}\n"
+        )
+        rendered = render_openbao_config_file(
+            config_template_path=str(tmp_path),
+            config_template_name="openbao.hcl.j2",
+            default_lease_ttl="168h",
+            max_lease_ttl="720h",
+            cluster_address="https://1.2.3.4:8201",
+            api_address="https://1.2.3.4:8200",
+            tls_cert_file="/certs/cert.pem",
+            tls_key_file="/certs/key.pem",
+            tcp_address="[::]:8200",
+            raft_storage_path="/raft",
+            node_id="unit-0",
+            retry_joins=[],
+            log_level="info",
+            pkcs11_config=Pkcs11SealConfiguration(
+                lib="/var/snap/openbao/common/hsm/pkcs11.so",
+                pin="1234",
+                plugin_directory="/snap/openbao/current/plugins",
+                plugin_command="openbao-plugin-kms-pkcs11",
+                plugin_version="v0.1.0",
+                plugin_sha256sum="deadbeef",
+            ),
+        )
+        assert 'plugin_directory = "/snap/openbao/current/plugins"' in rendered
+        assert "plugin_auto_register = true" in rendered
+        assert 'plugin "kms" "pkcs11"' in rendered
+        assert 'command   = "openbao-plugin-kms-pkcs11"' in rendered
+        assert 'version   = "v0.1.0"' in rendered
+        assert 'sha256sum = "deadbeef"' in rendered
+        assert 'seal "pkcs11"' in rendered

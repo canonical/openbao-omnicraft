@@ -31,7 +31,11 @@ class AutounsealConfiguration:
 
 @dataclass(frozen=True)
 class Pkcs11SealConfiguration:
-    """Details required for configuring PKCS#11 auto-unseal on OpenBao."""
+    """Details required for configuring PKCS#11 auto-unseal on OpenBao.
+
+    Plugin fields register the external openbao-plugin-kms-pkcs11 binary shipped
+    in the OpenBao snap (required for static bao builds and for OpenBao 2.7+).
+    """
 
     lib: str
     pin: str
@@ -39,6 +43,10 @@ class Pkcs11SealConfiguration:
     token_label: str | None = None
     key_label: str | None = None
     key_id: str | None = None
+    plugin_directory: str | None = None
+    plugin_command: str | None = None
+    plugin_version: str | None = None
+    plugin_sha256sum: str | None = None
 
 
 def common_name_config_is_valid(common_name: str) -> bool:
@@ -118,7 +126,13 @@ def hsm_config_secret_validation_error(content: dict[str, str]) -> str | None:
 
 
 def pkcs11_seal_config_from_secret(
-    content: dict[str, str], lib: str
+    content: dict[str, str],
+    lib: str,
+    *,
+    plugin_directory: str | None = None,
+    plugin_command: str | None = None,
+    plugin_version: str | None = None,
+    plugin_sha256sum: str | None = None,
 ) -> Pkcs11SealConfiguration | None:
     """Build a PKCS#11 seal configuration from a Juju secret and library path."""
     if not lib or hsm_config_secret_validation_error(content):
@@ -130,6 +144,10 @@ def pkcs11_seal_config_from_secret(
         token_label=_secret_field(content, HSM_CONFIG_SECRET_TOKEN_LABEL_KEY) or None,
         key_label=_secret_field(content, HSM_CONFIG_SECRET_KEY_LABEL_KEY) or None,
         key_id=_secret_field(content, HSM_CONFIG_SECRET_KEY_ID_KEY) or None,
+        plugin_directory=plugin_directory,
+        plugin_command=plugin_command,
+        plugin_version=plugin_version,
+        plugin_sha256sum=plugin_sha256sum,
     )
 
 
@@ -191,6 +209,26 @@ def render_openbao_config_file(
         ),
         pkcs11_key_id=(
             _hcl_escape(pkcs11_config.key_id) if pkcs11_config and pkcs11_config.key_id else None
+        ),
+        pkcs11_plugin_directory=(
+            _hcl_escape(pkcs11_config.plugin_directory)
+            if pkcs11_config and pkcs11_config.plugin_directory
+            else None
+        ),
+        pkcs11_plugin_command=(
+            _hcl_escape(pkcs11_config.plugin_command)
+            if pkcs11_config and pkcs11_config.plugin_command
+            else None
+        ),
+        pkcs11_plugin_version=(
+            _hcl_escape(pkcs11_config.plugin_version)
+            if pkcs11_config and pkcs11_config.plugin_version
+            else None
+        ),
+        pkcs11_plugin_sha256sum=(
+            _hcl_escape(pkcs11_config.plugin_sha256sum)
+            if pkcs11_config and pkcs11_config.plugin_sha256sum
+            else None
         ),
     )
     return content

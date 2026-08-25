@@ -4,6 +4,7 @@
 
 
 from datetime import timedelta
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,6 +18,22 @@ from openbao.openbao_client import AppRole
 
 from certificates import generate_example_provider_certificate
 from fixtures import OpenBaoCharmFixtures
+
+
+def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Install a fake snap PKCS#11 KMS plugin and point charm constants at it."""
+    plugin_dir = tmp_path / "plugins"
+    plugin_dir.mkdir(exist_ok=True)
+    plugin_bin = plugin_dir / "openbao-plugin-kms-pkcs11"
+    plugin_bytes = b"fake-kms-plugin"
+    plugin_bin.write_bytes(plugin_bytes)
+    (plugin_dir / "pkcs11.version").write_text("v0.1.0\n")
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(plugin_dir))
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
+    monkeypatch.setattr(
+        "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version")
+    )
+    return sha256(plugin_bytes).hexdigest()
 
 
 class MockRelation:
@@ -595,17 +612,21 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
     # PKCS#11 HSM
 
-    def _pushed_openbao_hcl(self) -> dict:
+    def _pushed_openbao_hcl_raw(self) -> str:
         for call in self.mock_machine.push.call_args_list:
             if call.kwargs.get("path") == "/var/snap/openbao/common/openbao-config.hcl":
-                return hcl.loads(call.kwargs["source"])
+                return call.kwargs["source"]
         raise AssertionError("openbao-config.hcl was not pushed")
 
+    def _pushed_openbao_hcl(self) -> dict:
+        return hcl.loads(self._pushed_openbao_hcl_raw())
+
     def test_given_hsm_secret_and_lib_when_configure_then_pkcs11_stanza_is_generated(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
+        plugin_sha = _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
         hsm_lib = tmp_path / "libykcs11.so"
         hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
         hsm_secret = testing.Secret(
@@ -641,6 +662,8 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
             str(hsm_lib), "/var/snap/openbao/common/hsm/pkcs11.so"
         )
         actual_config_hcl = self._pushed_openbao_hcl()
+        assert actual_config_hcl["plugin_directory"] == str(tmp_path / "plugins")
+        assert actual_config_hcl["plugin_auto_register"] is True
         pkcs11 = actual_config_hcl["seal"]["pkcs11"]
         assert pkcs11["lib"] == "/var/snap/openbao/common/hsm/pkcs11.so"
         assert pkcs11["slot"] == "0"
@@ -648,6 +671,56 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         assert pkcs11["pin"] == "1234"
         assert pkcs11["key_label"] == "bao-root-key"
         assert pkcs11["key_id"] == "0x01"
+        raw_config = self._pushed_openbao_hcl_raw()
+        assert 'plugin "kms" "pkcs11"' in raw_config
+        assert 'command   = "openbao-plugin-kms-pkcs11"' in raw_config
+        assert 'version   = "v0.1.0"' in raw_config
+        assert f'sha256sum = "{plugin_sha}"' in raw_config
+
+    def test_given_hsm_ready_but_kms_plugin_missing_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        missing_dir = tmp_path / "missing-plugins"
+        monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
+        )
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
+        )
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
 
     def test_given_hsm_secret_without_lib_when_configure_then_pkcs11_stanza_is_not_generated(
         self, tmp_path: Path
