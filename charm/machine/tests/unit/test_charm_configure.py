@@ -5,6 +5,7 @@
 
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import hcl
@@ -591,3 +592,165 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         assert kwargs["egress_subnets"] == ["2.2.2.0/24"]
         assert kwargs["nonce"] == "123123"
         assert kwargs["openbao_url"] == "https://192.0.2.0:8200"
+
+    # PKCS#11 HSM
+
+    def _pushed_openbao_hcl(self) -> dict:
+        for call in self.mock_machine.push.call_args_list:
+            if call.kwargs.get("path") == "/var/snap/openbao/common/openbao-config.hcl":
+                return hcl.loads(call.kwargs["source"])
+        raise AssertionError("openbao-config.hcl was not pushed")
+
+    def test_given_hsm_secret_and_lib_when_configure_then_pkcs11_stanza_is_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "token-label": "OpenBao",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+                "key-id": "0x01",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        self.mock_machine.copy_file.assert_called_with(
+            str(hsm_lib), "/var/snap/openbao/common/hsm/pkcs11.so"
+        )
+        actual_config_hcl = self._pushed_openbao_hcl()
+        pkcs11 = actual_config_hcl["seal"]["pkcs11"]
+        assert pkcs11["lib"] == "/var/snap/openbao/common/hsm/pkcs11.so"
+        assert pkcs11["slot"] == "0"
+        assert pkcs11["token_label"] == "OpenBao"
+        assert pkcs11["pin"] == "1234"
+        assert pkcs11["key_label"] == "bao-root-key"
+        assert pkcs11["key_id"] == "0x01"
+
+    def test_given_hsm_secret_without_lib_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        placeholder = tmp_path / "placeholder.so"
+        placeholder.write_text("placeholder")
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=placeholder)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
+        self.mock_machine.copy_file.assert_not_called()
+
+    def test_given_hsm_lib_without_secret_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
+        self.mock_machine.copy_file.assert_not_called()
+
+    def test_given_hsm_and_transit_autounseal_when_configure_then_neither_seal_is_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
+        )
+        self.mock_machine.pull.return_value = StringIO("")
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl

@@ -30,6 +30,7 @@ from jinja2 import Environment, FileSystemLoader
 from openbao.juju_facade import (
     JujuFacade,
     NoSuchSecretError,
+    SecretAccessDeniedError,
     SecretRemovedError,
     TransientJujuError,
 )
@@ -44,13 +45,17 @@ from openbao.openbao_client import (
 )
 from openbao.openbao_helpers import (
     AutounsealConfiguration,
+    Pkcs11SealConfiguration,
     allowed_domains_config_is_valid,
     common_name_config_is_valid,
     config_file_content_matches,
     get_env_var,
+    hsm_config_secret_validation_error,
+    pkcs11_seal_config_from_secret,
     render_openbao_config_file,
     sans_dns_config_is_valid,
     sans_ip_config_is_valid,
+    seal_type_has_changed,
 )
 from openbao.openbao_managers import (
     TLS_CERTIFICATE_ACCESS_RELATION_NAME,
@@ -125,6 +130,11 @@ OPENBAO_SNAP_REVISION = OPENBAO_SNAP_REVISIONS.get(platform.machine(), "")
 OPENBAO_SNAP_CHANNEL_FOR_ARCH = OPENBAO_SNAP_CHANNELS.get(platform.machine(), "2/stable")
 OPENBAO_SNAP_SERVICE_NAME = "server"
 OPENBAO_PROCESS_NAME = "bao"
+HSM_CONFIG_SECRET_ID_CONFIG_KEY = "hsm-config-secret-id"
+HSM_LIB_RESOURCE_NAME = "hsm-lib"
+HSM_LIB_DIR = "/var/snap/openbao/common/hsm"
+HSM_LIB_FILENAME = "pkcs11.so"
+HSM_LIB_WORKLOAD_PATH = f"{HSM_LIB_DIR}/{HSM_LIB_FILENAME}"
 OPENBAO_STORAGE_PATH = "/var/snap/openbao/common/raft"
 
 
@@ -226,7 +236,9 @@ class OpenBaoOperatorCharm(CharmBase):
             self.on[PEER_RELATION_NAME].relation_created,
             self.on[PEER_RELATION_NAME].relation_changed,
             self.on.install,
+            self.on.upgrade_charm,
             self.on.update_status,
+            self.on.secret_changed,
             self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_broken,
             self.openbao_autounseal_requires.on.openbao_autounseal_details_ready,
             self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_created,
@@ -558,6 +570,9 @@ class OpenBaoOperatorCharm(CharmBase):
         if not self._log_level_is_valid(self._get_log_level()):
             event.add_status(BlockedStatus("log_level config is not valid"))
             return
+        if hsm_status := self._get_hsm_blocked_status():
+            event.add_status(hsm_status)
+            return
         if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
             event.add_status(WaitingStatus("Waiting for peer relation"))
             return
@@ -587,7 +602,7 @@ class OpenBaoOperatorCharm(CharmBase):
             event.add_status(WaitingStatus("OpenBao API is not yet available"))
             return
         if not openbao.is_initialized():
-            if openbao.is_seal_type_transit():
+            if openbao.is_seal_type_transit() or openbao.get_seal_type() == "pkcs11":
                 event.add_status(BlockedStatus("Please initialize OpenBao"))
                 return
 
@@ -604,6 +619,9 @@ class OpenBaoOperatorCharm(CharmBase):
                     return
                 if openbao.is_seal_type_transit():
                     event.add_status(WaitingStatus("Waiting for transit auto-unseal"))
+                    return
+                if openbao.get_seal_type() == "pkcs11":
+                    event.add_status(WaitingStatus("Waiting for PKCS#11 auto-unseal"))
                     return
                 event.add_status(BlockedStatus("Please unseal OpenBao"))
                 return
@@ -657,14 +675,18 @@ class OpenBaoOperatorCharm(CharmBase):
                 return
         if not self._log_level_is_valid(self._get_log_level()):
             return
-        config_changed = self._generate_openbao_config_file()
+        config_changed, seal_changed = self._generate_openbao_config_file()
         env_changed = self._sync_openbao_environment()
 
         # A raft node completes its join to the cluster using the retry_join
         # targets read at startup, so restart an uninitialized node when the
         # config changes to pick up the current active node. Restarting is
-        # harmless at that point since the node holds no data.
-        restart_needed = env_changed or (config_changed and self._openbao_is_uninitialized())
+        # harmless at that point since the node holds no data. A seal type
+        # change also requires a restart so OpenBao can pick up PKCS#11 or
+        # transit auto-unseal.
+        restart_needed = (
+            env_changed or seal_changed or (config_changed and self._openbao_is_uninitialized())
+        )
         if restart_needed and self._openbao_service_is_running():
             self._restart_openbao_service()
         else:
@@ -682,10 +704,13 @@ class OpenBaoOperatorCharm(CharmBase):
                     unauthenticated_openbao.is_api_available()
                     and unauthenticated_openbao.is_initialized()
                     and unauthenticated_openbao.is_sealed()
-                    and unauthenticated_openbao.is_seal_type_transit()
+                    and (
+                        unauthenticated_openbao.is_seal_type_transit()
+                        or unauthenticated_openbao.get_seal_type() == "pkcs11"
+                    )
                 ):
                     logger.info(
-                        "OpenBao is sealed with transit seal type, restarting to trigger auto-unseal"
+                        "OpenBao is sealed with an auto-unseal type, restarting to trigger unseal"
                     )
                     self._restart_openbao_service()
                     return
@@ -1412,11 +1437,11 @@ class OpenBaoOperatorCharm(CharmBase):
         except OpenBaoClientError:
             return False
 
-    def _generate_openbao_config_file(self) -> bool:
+    def _generate_openbao_config_file(self) -> tuple[bool, bool]:
         """Create the OpenBao config file and push it to the Machine.
 
         Returns:
-            True if the config file content changed, False otherwise.
+            A tuple of (content_changed, seal_changed).
         """
         assert self._cluster_address
         assert self._api_address
@@ -1431,6 +1456,7 @@ class OpenBaoOperatorCharm(CharmBase):
         ]
 
         autounseal_configuration_details = self._get_openbao_autounseal_configuration()
+        pkcs11_configuration_details = self._get_pkcs11_seal_configuration()
 
         content = render_openbao_config_file(
             config_template_path=TEMPLATE_PATH,
@@ -1446,6 +1472,7 @@ class OpenBaoOperatorCharm(CharmBase):
             node_id=self._node_id,
             retry_joins=retry_joins,
             autounseal_config=autounseal_configuration_details,
+            pkcs11_config=pkcs11_configuration_details,
             log_level=self._get_log_level(),
         )
         existing_content = ""
@@ -1454,15 +1481,14 @@ class OpenBaoOperatorCharm(CharmBase):
             existing_content_stringio = self.machine.pull(path=openbao_config_file_path)
             existing_content = existing_content_stringio.read()
 
+        seal_changed = seal_type_has_changed(existing_content, content)
         if not config_file_content_matches(existing_content=existing_content, new_content=content):
             self.machine.push(
                 path=openbao_config_file_path,
                 source=content,
             )
-            # If the seal type has changed, openbao will be restarted by _sync_openbao_environment()
-            # in configure to pick up both config and environment changes together.
-            return True
-        return False
+            return True, seal_changed
+        return False, seal_changed
 
     def _restart_openbao_service(self) -> None:
         """Restart the OpenBao service."""
@@ -1486,6 +1512,12 @@ class OpenBaoOperatorCharm(CharmBase):
         autounseal_relation_details = self.openbao_autounseal_requires.get_details()
         if not autounseal_relation_details:
             return None
+        if self._hsm_config_requested():
+            logger.warning(
+                "Ignoring transit auto-unseal because %s is set",
+                HSM_CONFIG_SECRET_ID_CONFIG_KEY,
+            )
+            return None
         self.tls.push_autounseal_ca_cert(autounseal_relation_details.ca_certificate)
         return AutounsealConfiguration(
             autounseal_relation_details.address,
@@ -1493,6 +1525,98 @@ class OpenBaoOperatorCharm(CharmBase):
             autounseal_relation_details.key_name,
             self.tls.get_tls_file_path_in_workload(File.AUTOUNSEAL_CA),
         )
+
+    def _hsm_config_requested(self) -> bool:
+        """Return whether the operator has set the HSM secret config option."""
+        return bool(self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY))
+
+    def _transit_autounseal_requested(self) -> bool:
+        """Return whether a transit auto-unseal provider relation is ready."""
+        return self.openbao_autounseal_requires.get_details() is not None
+
+    def _get_hsm_lib_resource_path(self) -> str | None:
+        """Return the attached PKCS#11 library path, or None if it is missing or a placeholder.
+
+        A zero-length file or a non-ELF file is treated as unattached so that a
+        dummy resource can be provided at deploy time.
+        """
+        try:
+            path = self.model.resources.fetch(HSM_LIB_RESOURCE_NAME)
+        except (ModelError, NameError, RuntimeError):
+            return None
+        if not path:
+            return None
+        lib_path = Path(path)
+        try:
+            if not lib_path.is_file() or lib_path.stat().st_size == 0:
+                return None
+            with lib_path.open("rb") as lib_file:
+                if lib_file.read(4) != b"\x7fELF":
+                    return None
+        except OSError:
+            return None
+        return str(lib_path)
+
+    def _install_hsm_lib(self) -> str | None:
+        """Copy the attached PKCS#11 library into snap-common and return its path."""
+        source = self._get_hsm_lib_resource_path()
+        if not source:
+            return None
+        self.machine.make_dir(path=HSM_LIB_DIR)
+        self.machine.copy_file(source, HSM_LIB_WORKLOAD_PATH)
+        return HSM_LIB_WORKLOAD_PATH
+
+    def _get_hsm_secret_content(self) -> dict[str, str] | None:
+        """Return the HSM secret content, or None if it cannot be read."""
+        secret_id = self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
+        if not secret_id:
+            return None
+        try:
+            return self.juju_facade.get_latest_secret_content(id=secret_id)
+        except (
+            NoSuchSecretError,
+            SecretRemovedError,
+            SecretAccessDeniedError,
+            TransientJujuError,
+        ):
+            return None
+
+    def _get_hsm_blocked_status(self) -> BlockedStatus | None:
+        """Return a blocked status if PKCS#11 HSM configuration is incomplete or conflicting."""
+        if not self._hsm_config_requested():
+            return None
+        if self._transit_autounseal_requested():
+            return BlockedStatus(
+                "PKCS#11 HSM seal cannot be used together with transit auto-unseal"
+            )
+        secret_id = self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
+        try:
+            content = self.juju_facade.get_latest_secret_content(id=secret_id)
+        except (NoSuchSecretError, SecretRemovedError, SecretAccessDeniedError):
+            return BlockedStatus(
+                "hsm-config secret is not accessible; grant it to the charm with `juju grant-secret`"
+            )
+        except TransientJujuError:
+            return None
+        if error := hsm_config_secret_validation_error(content):
+            return BlockedStatus(error)
+        if not self._get_hsm_lib_resource_path():
+            return BlockedStatus(
+                "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
+            )
+        return None
+
+    def _get_pkcs11_seal_configuration(self) -> Pkcs11SealConfiguration | None:
+        """Return PKCS#11 seal configuration when the secret and library are both ready."""
+        if not self._hsm_config_requested() or self._transit_autounseal_requested():
+            return None
+        lib_path = self._install_hsm_lib()
+        if not lib_path:
+            return None
+        content = self._get_hsm_secret_content()
+        if not content:
+            return None
+        return pkcs11_seal_config_from_secret(content, lib_path)
 
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""

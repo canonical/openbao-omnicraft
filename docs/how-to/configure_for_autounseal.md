@@ -2,6 +2,8 @@
 
 **WARNING: There is currently no way to remove the auto-unseal configuration once it has been set on OpenBao Charms. Removing the integration may put OpenBao Charms in a bad state which requires manual intervention.**
 
+Transit auto-unseal cannot be combined with [PKCS#11 HSM auto-unseal](configure_pkcs11_hsm.md) on the machine charm.
+
 
 ## Prerequisites
 

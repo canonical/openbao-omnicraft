@@ -451,6 +451,24 @@ config:
         This value specifies the L (Locality) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an L value in the Subject field.
 
+    hsm-config-secret-id:
+      type: string
+      description: >-
+        Juju secret ID containing PKCS#11 HSM auto-unseal settings. Leave unset to keep
+        Shamir seal. The secret must be granted to this application and should include:
+        `pin` (required); `slot` and/or `token-label`; `key-label` and/or `key-id`.
+        Also attach the `hsm-lib` resource with the PKCS#11 shared library.
+        Enabling PKCS#11 is one-way: after OpenBao is initialized with this seal, you
+        cannot go back to Shamir by unsetting this option.
+
+resources:
+  hsm-lib:
+    type: file
+    filename: pkcs11.so
+    description: >-
+      PKCS#11 shared library used for HSM auto-unseal (for example libykcs11.so).
+      Attach with `juju attach-resource openbao hsm-lib=./some-lib.so`.
+
 actions:
   authorize-charm:
     description: >-

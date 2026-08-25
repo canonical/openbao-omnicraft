@@ -3,10 +3,12 @@
 # See LICENSE file for licensing details.
 
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import ops.testing as testing
 from charms.operator_libs_linux.v2.snap import Snap
+from openbao.openbao_autounseal import AutounsealDetails
 from openbao.openbao_client import OpenBaoClientError
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
@@ -722,3 +724,115 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == ActiveStatus()
+
+    def test_given_hsm_secret_id_without_granted_secret_when_collect_unit_status_then_blocked(
+        self,
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        state_in = testing.State(
+            config={"hsm-config-secret-id": "secret:cqgj49fmp25c7796r0pg"},
+        )
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == BlockedStatus(
+            "hsm-config secret is not accessible; grant it to the charm with `juju grant-secret`"
+        )
+
+    def test_given_hsm_secret_missing_fields_when_collect_unit_status_then_blocked(self):
+        self.mock_autounseal_requires_get_details.return_value = None
+        hsm_secret = testing.Secret(tracked_content={"pin": "1234"})
+        state_in = testing.State(
+            config={"hsm-config-secret-id": hsm_secret.id},
+            secrets=[hsm_secret],
+        )
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == BlockedStatus(
+            "hsm-config secret is missing required fields: slot or token-label, key-label or key-id"
+        )
+
+    def test_given_hsm_secret_without_lib_when_collect_unit_status_then_blocked(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        placeholder = tmp_path / "placeholder.so"
+        placeholder.write_text("placeholder")
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        state_in = testing.State(
+            config={"hsm-config-secret-id": hsm_secret.id},
+            secrets=[hsm_secret],
+            resources=[testing.Resource(name="hsm-lib", path=placeholder)],
+        )
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == BlockedStatus(
+            "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
+        )
+
+    def test_given_hsm_and_transit_autounseal_when_collect_unit_status_then_blocked(self):
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
+        )
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        state_in = testing.State(
+            config={"hsm-config-secret-id": hsm_secret.id},
+            secrets=[hsm_secret],
+        )
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == BlockedStatus(
+            "PKCS#11 HSM seal cannot be used together with transit auto-unseal"
+        )
+
+    def test_given_openbao_sealed_with_pkcs11_seal_when_collect_unit_status_then_status_is_waiting(
+        self,
+    ):
+        self.mock_snap_cache.return_value = {
+            "openbao": MagicMock(
+                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
+            )
+        }
+        self.mock_tls.configure_mock(
+            **{
+                "tls_file_pushed_to_workload.return_value": True,
+                "tls_file_available_in_charm.return_value": True,
+            },
+        )
+        self.mock_openbao.configure_mock(
+            **{
+                "is_api_available.return_value": True,
+                "is_initialized.return_value": True,
+                "is_seal_type_transit.return_value": False,
+                "get_seal_type.return_value": "pkcs11",
+                "is_sealed.return_value": True,
+                "needs_migration.return_value": False,
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+            peers_data={
+                1: {"node_api_address": "1.2.3.4"},
+                2: {"node_api_address": "1.2.3.5"},
+                3: {"node_api_address": "1.2.3.6"},
+            },
+        )
+        state_in = testing.State(
+            relations=[peer_relation],
+            planned_units=3,
+        )
+
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == WaitingStatus("Waiting for PKCS#11 auto-unseal")
