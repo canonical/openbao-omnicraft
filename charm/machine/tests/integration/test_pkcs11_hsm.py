@@ -1,21 +1,25 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-"""PKCS#11 HSM auto-unseal integration tests (YubiKey).
+"""PKCS#11 HSM auto-unseal integration tests.
 
-This suite needs a physically attached YubiKey (or USB passthrough into the
-Juju machine), ``pcscd``, and the vendor PKCS#11 library. It is skipped unless
-``OPENBAO_HSM_YUBIKEY=1``.
+Manual suites (skipped unless the matching env flag is set):
 
-Required environment:
+- SoftHSM smoke (preferred for CI-ish validation): set ``OPENBAO_HSM_SOFTHSM=1``
+  and the same ``OPENBAO_HSM_*`` variables as below, pointing ``OPENBAO_HSM_LIB``
+  at SoftHSM's ``libsofthsm2.so``. No USB or ``pcscd`` required.
+- YubiKey: set ``OPENBAO_HSM_YUBIKEY=1``, attach a YubiKey (or USB passthrough),
+  install ``pcscd`` and the vendor PKCS#11 library.
 
-- ``OPENBAO_HSM_YUBIKEY=1`` — enable the suite
-- ``OPENBAO_HSM_LIB`` — path to the PKCS#11 library (for example ``libykcs11.so``)
+Required environment (either flag):
+
+- ``OPENBAO_HSM_LIB`` — path to the PKCS#11 library
 - ``OPENBAO_HSM_PIN`` — token PIN
 - ``OPENBAO_HSM_SLOT`` and/or ``OPENBAO_HSM_TOKEN_LABEL``
 - ``OPENBAO_HSM_KEY_LABEL`` and/or ``OPENBAO_HSM_KEY_ID``
 
 The AES/RSA key must already exist on the token. OpenBao will not create it.
+The OpenBao snap must ship ``plugins/openbao-plugin-kms-pkcs11``.
 """
 
 from __future__ import annotations
@@ -41,15 +45,17 @@ from helpers import (
 logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("OPENBAO_HSM_YUBIKEY"),
-    reason="Set OPENBAO_HSM_YUBIKEY=1 and attach a YubiKey to run this suite.",
+    not (os.environ.get("OPENBAO_HSM_YUBIKEY") or os.environ.get("OPENBAO_HSM_SOFTHSM")),
+    reason="Set OPENBAO_HSM_SOFTHSM=1 or OPENBAO_HSM_YUBIKEY=1 to run this suite.",
 )
 
 
 def _required_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        pytest.fail(f"{name} must be set when OPENBAO_HSM_YUBIKEY=1")
+        pytest.fail(
+            f"{name} must be set when OPENBAO_HSM_SOFTHSM=1 or OPENBAO_HSM_YUBIKEY=1"
+        )
     return value
 
 
@@ -76,15 +82,14 @@ def _hsm_secret_content() -> dict[str, str]:
 
 
 @pytest.mark.abort_on_fail
-def test_given_yubikey_when_pkcs11_configured_then_openbao_auto_unseals(
+def test_given_hsm_when_pkcs11_configured_then_openbao_auto_unseals(
     juju: jubilant.Juju, openbao_charm_path: Path
 ):
     """Deploy OpenBao with PKCS#11 seal, initialize, and confirm auto-unseal.
 
-    Manual setup before running:
-    1. Pass the YubiKey into the machine (USB passthrough for LXD/VMs).
-    2. Install pcscd and the vendor PKCS#11 library on that machine.
-    3. Create the unseal key on the token (pkcs11-tool / yubico-piv-tool).
+    SoftHSM: install SoftHSM, create token+key, point OPENBAO_HSM_LIB at libsofthsm2.so.
+    YubiKey: pass the token into the machine, install pcscd and the vendor library,
+    create the unseal key (pkcs11-tool / yubico-piv-tool).
     """
     hsm_lib = Path(_required_env("OPENBAO_HSM_LIB"))
     if not hsm_lib.is_file():

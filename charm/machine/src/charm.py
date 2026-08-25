@@ -5,6 +5,7 @@
 
 """A machine charm for OpenBao."""
 
+import hashlib
 import json
 import logging
 import platform
@@ -120,6 +121,8 @@ OPENBAO_PKI_MOUNT = "charm-pki"
 OPENBAO_PKI_ROLE = "charm-pki"
 OPENBAO_PORT = 8200
 OPENBAO_SNAP_NAME = "openbao"
+# Bump OPENBAO_SNAP_REVISIONS after publishing a snap that ships
+# plugins/openbao-plugin-kms-pkcs11 (required for PKCS#11 HSM auto-unseal).
 OPENBAO_SNAP_REVISIONS = {
     "x86_64": "35",
 }
@@ -135,6 +138,10 @@ HSM_LIB_RESOURCE_NAME = "hsm-lib"
 HSM_LIB_DIR = "/var/snap/openbao/common/hsm"
 HSM_LIB_FILENAME = "pkcs11.so"
 HSM_LIB_WORKLOAD_PATH = f"{HSM_LIB_DIR}/{HSM_LIB_FILENAME}"
+PKCS11_KMS_PLUGIN_DIR = "/snap/openbao/current/plugins"
+PKCS11_KMS_PLUGIN_COMMAND = "openbao-plugin-kms-pkcs11"
+PKCS11_KMS_PLUGIN_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/{PKCS11_KMS_PLUGIN_COMMAND}"
+PKCS11_KMS_PLUGIN_VERSION_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/pkcs11.version"
 OPENBAO_STORAGE_PATH = "/var/snap/openbao/common/raft"
 
 
@@ -1581,6 +1588,24 @@ class OpenBaoOperatorCharm(CharmBase):
         ):
             return None
 
+    def _get_pkcs11_kms_plugin_metadata(self) -> tuple[str, str, str] | None:
+        """Return (plugin_directory, version, sha256sum) if the snap ships the PKCS#11 plugin."""
+        plugin_path = Path(PKCS11_KMS_PLUGIN_PATH)
+        version_path = Path(PKCS11_KMS_PLUGIN_VERSION_PATH)
+        if not plugin_path.is_file():
+            return None
+        try:
+            version = version_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if not version or version == "unsupported":
+            return None
+        try:
+            sha256sum = hashlib.sha256(plugin_path.read_bytes()).hexdigest()
+        except OSError:
+            return None
+        return (PKCS11_KMS_PLUGIN_DIR, version, sha256sum)
+
     def _get_hsm_blocked_status(self) -> BlockedStatus | None:
         """Return a blocked status if PKCS#11 HSM configuration is incomplete or conflicting."""
         if not self._hsm_config_requested():
@@ -1604,10 +1629,15 @@ class OpenBaoOperatorCharm(CharmBase):
             return BlockedStatus(
                 "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
             )
+        if not self._get_pkcs11_kms_plugin_metadata():
+            return BlockedStatus(
+                "OpenBao snap does not include the PKCS#11 KMS plugin "
+                "(requires an amd64/arm64 snap revision that ships it)"
+            )
         return None
 
     def _get_pkcs11_seal_configuration(self) -> Pkcs11SealConfiguration | None:
-        """Return PKCS#11 seal configuration when the secret and library are both ready."""
+        """Return PKCS#11 seal configuration when the secret, library, and KMS plugin are ready."""
         if not self._hsm_config_requested() or self._transit_autounseal_requested():
             return None
         lib_path = self._install_hsm_lib()
@@ -1616,7 +1646,18 @@ class OpenBaoOperatorCharm(CharmBase):
         content = self._get_hsm_secret_content()
         if not content:
             return None
-        return pkcs11_seal_config_from_secret(content, lib_path)
+        plugin_meta = self._get_pkcs11_kms_plugin_metadata()
+        if not plugin_meta:
+            return None
+        plugin_directory, plugin_version, plugin_sha256sum = plugin_meta
+        return pkcs11_seal_config_from_secret(
+            content,
+            lib_path,
+            plugin_directory=plugin_directory,
+            plugin_command=PKCS11_KMS_PLUGIN_COMMAND,
+            plugin_version=plugin_version,
+            plugin_sha256sum=plugin_sha256sum,
+        )
 
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""

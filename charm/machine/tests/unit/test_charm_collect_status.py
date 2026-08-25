@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import ops.testing as testing
+import pytest
 from charms.operator_libs_linux.v2.snap import Snap
 from openbao.openbao_autounseal import AutounsealDetails
 from openbao.openbao_client import OpenBaoClientError
@@ -773,6 +774,39 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
 
         assert state_out.unit_status == BlockedStatus(
             "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
+        )
+
+    def test_given_hsm_ready_but_kms_plugin_missing_when_collect_unit_status_then_blocked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        missing_dir = tmp_path / "missing-plugins"
+        monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
+        )
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
+        )
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        state_in = testing.State(
+            config={"hsm-config-secret-id": hsm_secret.id},
+            secrets=[hsm_secret],
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+        )
+        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
+
+        assert state_out.unit_status == BlockedStatus(
+            "OpenBao snap does not include the PKCS#11 KMS plugin "
+            "(requires an amd64/arm64 snap revision that ships it)"
         )
 
     def test_given_hsm_and_transit_autounseal_when_collect_unit_status_then_blocked(self):
