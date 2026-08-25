@@ -58,6 +58,17 @@ class Machine(WorkloadBase):
             write_file.write(source)
             logger.info("Pushed file %s", path)
 
+    def copy_file(self, source: str, dest: str) -> None:
+        """Copy a file on the unit, preserving metadata.
+
+        Args:
+            source: The path of the source file
+            dest: The path of the destination file
+        """
+        shutil.copy2(source, dest)
+        os.chmod(dest, 0o755)
+        logger.info("Copied file %s to %s", source, dest)
+
     def make_dir(self, path: str) -> None:
         """Create a directory."""
         Path(path).mkdir(parents=True, exist_ok=True)

@@ -334,6 +334,19 @@ def _get_arch_constraint() -> str:
     return f"arch={_get_arch()}"
 
 
+def _hsm_lib_placeholder_path() -> Path:
+    """Return a non-ELF placeholder so Juju can attach the required hsm-lib resource."""
+    return Path(__file__).resolve().parents[2] / "hsm-lib-placeholder"
+
+
+def openbao_charm_resources(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Resources required to deploy the OpenBao charm from a local .charm file."""
+    resources = {"hsm-lib": str(_hsm_lib_placeholder_path())}
+    if extra:
+        resources.update(extra)
+    return resources
+
+
 def deploy_if_not_exists(  # noqa: C901
     juju: jubilant.Juju,
     app_name: str,
@@ -353,7 +366,9 @@ def deploy_if_not_exists(  # noqa: C901
     kwargs: dict[str, Any] = {}
     if config:
         kwargs["config"] = config
-    if resources:
+    if app_name == APP_NAME or (charm_path and Path(charm_path).name.startswith("openbao_")):
+        kwargs["resources"] = openbao_charm_resources(resources)
+    elif resources:
         kwargs["resources"] = resources
     if channel:
         kwargs["channel"] = channel
@@ -441,9 +456,9 @@ def run_action_on_leader(
 
 
 def refresh_application(juju: jubilant.Juju, app_name: str, charm_path: Path) -> None:
-    resources = None
+    resources = openbao_charm_resources()
     if app_name == APP_NAME and config.OPENBAO_SNAP_PATH:
-        resources = {"openbao-snap": config.OPENBAO_SNAP_PATH}
+        resources["openbao-snap"] = config.OPENBAO_SNAP_PATH
     juju.refresh(app_name, path=charm_path, resources=resources)
 
 

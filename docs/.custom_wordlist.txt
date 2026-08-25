@@ -33,3 +33,13 @@ configurability
 OpenBao
 OpenBao's
 openbao
+PKCS
+HSM
+Shamir
+YubiKey
+cgo
+pcscd
+libykcs11
+unsetting
+ELF
+stanza

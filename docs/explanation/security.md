@@ -47,3 +47,5 @@ This option may be the right choice if the "auto-unsealer" OpenBao:
 3. Has processes in place to ensure that new nodes can be unsealed promptly when necessary
 
 For example, you may have a corporate OpenBao that is tightly monitored and maintained 24/7. In this case, your OpenBao may "piggy-back" off this corporate OpenBao's existing availability and security and trust it to manage the unseal keys. Auto-unseal will allow your OpenBao to be unsealed automatically, provided it can communicate with the corporate OpenBao and has the appropriate credentials.
+
+On machine deployments, [PKCS#11 HSM auto-unseal](../how-to/configure_pkcs11_hsm.md) is an alternative that keeps unseal material in hardware. That configuration is also one-way: you cannot return to Shamir after OpenBao has been initialized with PKCS#11.

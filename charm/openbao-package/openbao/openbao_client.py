@@ -268,6 +268,10 @@ class OpenBaoClient:
         """Return whether OpenBao is sealed by the transit backend."""
         return "transit" == self.get_seal_type()
 
+    def is_seal_type_pkcs11(self) -> bool:
+        """Return whether OpenBao is sealed by a PKCS#11 HSM."""
+        return "pkcs11" == self.get_seal_type()
+
     def _health_status_code(self, standby_ok: bool = False) -> int:
         """Return the HTTP status code of the OpenBao health endpoint."""
         params = {"standbyok": "true"} if standby_ok else None
