@@ -1,4 +1,6 @@
 #!/bin/sh -e
 
 cp "$SNAP/openbao-config.hcl" "$SNAP_COMMON/openbao-config.hcl"
-cp "$SNAP/openbao.env" "$SNAP_COMMON/openbao.env"
+if [ ! -f "$SNAP_COMMON/openbao.env" ]; then
+    cp "$SNAP/openbao.env" "$SNAP_COMMON/openbao.env"
+fi
