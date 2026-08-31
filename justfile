@@ -1,5 +1,3 @@
-import "../identity-credentials-workflows/common.just"
-
 # Override the shared lint-grafana recipe: `go install module@version` fails because
 # dashboard-linter v0.1.1's go.mod contains replace directives, so use the upstream
 # prebuilt release binary instead (no Go toolchain required).
