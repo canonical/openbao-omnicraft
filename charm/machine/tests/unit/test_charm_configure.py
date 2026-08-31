@@ -30,9 +30,7 @@ def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     (plugin_dir / "pkcs11.version").write_text("v0.1.0\n")
     monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(plugin_dir))
     monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
-    monkeypatch.setattr(
-        "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version")
-    )
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version"))
     return sha256(plugin_bytes).hexdigest()
 
 

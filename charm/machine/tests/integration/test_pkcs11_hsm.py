@@ -53,9 +53,7 @@ pytestmark = pytest.mark.skipif(
 def _required_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        pytest.fail(
-            f"{name} must be set when OPENBAO_HSM_SOFTHSM=1 or OPENBAO_HSM_YUBIKEY=1"
-        )
+        pytest.fail(f"{name} must be set when OPENBAO_HSM_SOFTHSM=1 or OPENBAO_HSM_YUBIKEY=1")
     return value
 
 
