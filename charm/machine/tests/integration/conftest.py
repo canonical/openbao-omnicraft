@@ -96,6 +96,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Path to the resource under test (the openbao snap) to attach as the charm's snap resource",
     )
     parser.addoption(
+        "--softhsm-snap-path",
+        action="store",
+        default=None,
+        help=(
+            "Path to a local softhsm .snap to install on units for PKCS#11 tests "
+            "(also accepted via OPENBAO_SOFTHSM_SNAP). Required when softhsm is not in the Snap Store."
+        ),
+    )
+    parser.addoption(
         "--no-deploy",
         action="store_true",
         default=False,
@@ -114,6 +123,9 @@ def pytest_configure(config: pytest.Config) -> None:
     charm_path = str(config.getoption("--charm_path"))
     resource_path = str(config.getoption("--resource-path"))
     kv_requirer_charm_path = config.getoption("--kv_requirer_charm_path")
+    softhsm_snap_path = config.getoption("--softhsm-snap-path") or os.environ.get(
+        "OPENBAO_SOFTHSM_SNAP"
+    )
     if not charm_path:
         pytest.exit("The --charm_path option is required. Tests aborted.")
     if not os.path.exists(charm_path):
@@ -121,6 +133,11 @@ def pytest_configure(config: pytest.Config) -> None:
     import config as test_config
 
     test_config.OPENBAO_SNAP_PATH = str(Path(resource_path).resolve())
+    if softhsm_snap_path:
+        softhsm_path = Path(str(softhsm_snap_path)).resolve()
+        if not softhsm_path.is_file():
+            pytest.exit(f"The SoftHSM snap path does not exist: {softhsm_path}")
+        test_config.SOFTHSM_SNAP_PATH = str(softhsm_path)
     if kv_requirer_charm_path and not os.path.exists(str(kv_requirer_charm_path)):
         pytest.exit(f"The path specified does not exist: {kv_requirer_charm_path}")
     config.addinivalue_line("markers", "abort_on_fail: abort remaining tests in module on failure")

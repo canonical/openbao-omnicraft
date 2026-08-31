@@ -52,8 +52,13 @@ from openbao.openbao_helpers import (
     config_file_content_matches,
     get_env_var,
     hsm_config_secret_validation_error,
+    hsm_lib_module_relative_path,
+    is_elf_shared_object,
+    is_hsm_lib_archive,
+    is_hsm_lib_resource_usable,
     pkcs11_seal_config_from_secret,
     render_openbao_config_file,
+    resolve_hsm_pkcs11_module,
     sans_dns_config_is_valid,
     sans_ip_config_is_valid,
     seal_type_has_changed,
@@ -136,8 +141,6 @@ OPENBAO_PROCESS_NAME = "bao"
 HSM_CONFIG_SECRET_ID_CONFIG_KEY = "hsm-config-secret-id"
 HSM_LIB_RESOURCE_NAME = "hsm-lib"
 HSM_LIB_DIR = "/var/snap/openbao/common/hsm"
-HSM_LIB_FILENAME = "pkcs11.so"
-HSM_LIB_WORKLOAD_PATH = f"{HSM_LIB_DIR}/{HSM_LIB_FILENAME}"
 PKCS11_KMS_PLUGIN_DIR = "/snap/openbao/current/plugins"
 PKCS11_KMS_PLUGIN_COMMAND = "openbao-plugin-kms-pkcs11"
 PKCS11_KMS_PLUGIN_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/{PKCS11_KMS_PLUGIN_COMMAND}"
@@ -1542,10 +1545,11 @@ class OpenBaoOperatorCharm(CharmBase):
         return self.openbao_autounseal_requires.get_details() is not None
 
     def _get_hsm_lib_resource_path(self) -> str | None:
-        """Return the attached PKCS#11 library path, or None if it is missing or a placeholder.
+        """Return the attached hsm-lib path, or None if missing or a deploy placeholder.
 
-        A zero-length file or a non-ELF file is treated as unattached so that a
-        dummy resource can be provided at deploy time.
+        The resource is a directory packed as a tar/zip (module + shared-library
+        dependencies), or a single ELF PKCS#11 ``.so`` for simple providers.
+        Empty or non-ELF text placeholders used at deploy time count as unattached.
         """
         try:
             path = self.model.resources.fetch(HSM_LIB_RESOURCE_NAME)
@@ -1554,24 +1558,40 @@ class OpenBaoOperatorCharm(CharmBase):
         if not path:
             return None
         lib_path = Path(path)
-        try:
-            if not lib_path.is_file() or lib_path.stat().st_size == 0:
-                return None
-            with lib_path.open("rb") as lib_file:
-                if lib_file.read(4) != b"\x7fELF":
-                    return None
-        except OSError:
+        if not is_hsm_lib_resource_usable(lib_path):
             return None
         return str(lib_path)
 
     def _install_hsm_lib(self) -> str | None:
-        """Copy the attached PKCS#11 library into snap-common and return its path."""
+        """Install the hsm-lib resource into snap-common and return the PKCS#11 module path."""
         source = self._get_hsm_lib_resource_path()
         if not source:
             return None
-        self.machine.make_dir(path=HSM_LIB_DIR)
-        self.machine.copy_file(source, HSM_LIB_WORKLOAD_PATH)
-        return HSM_LIB_WORKLOAD_PATH
+        source_path = Path(source)
+        content = self._get_hsm_secret_content() or {}
+        lib_relative = hsm_lib_module_relative_path(content)
+
+        try:
+            self.machine.replace_directory(HSM_LIB_DIR)
+            if is_hsm_lib_archive(source_path):
+                self.machine.extract_archive(source, HSM_LIB_DIR)
+            elif is_elf_shared_object(source_path):
+                dest = f"{HSM_LIB_DIR}/{source_path.name}"
+                self.machine.copy_file(source, dest)
+            else:
+                return None
+        except (OSError, ValueError) as exc:
+            logger.warning("Failed to install hsm-lib resource: %s", exc)
+            return None
+
+        module = resolve_hsm_pkcs11_module(Path(HSM_LIB_DIR), lib_relative)
+        if not module:
+            logger.warning(
+                "Could not resolve PKCS#11 module under %s (set hsm-config secret key `lib`)",
+                HSM_LIB_DIR,
+            )
+            return None
+        return str(module)
 
     def _get_hsm_secret_content(self) -> dict[str, str] | None:
         """Return the HSM secret content, or None if it cannot be read."""
@@ -1627,7 +1647,14 @@ class OpenBaoOperatorCharm(CharmBase):
             return BlockedStatus(error)
         if not self._get_hsm_lib_resource_path():
             return BlockedStatus(
-                "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
+                "hsm-lib resource is not attached; pack the PKCS#11 module and deps "
+                "into a tarball and use `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`"
+            )
+        # Ensure the archive/module installs and the PKCS#11 .so can be resolved.
+        if not self._install_hsm_lib():
+            return BlockedStatus(
+                "hsm-lib could not be installed; ensure the tarball contains the PKCS#11 "
+                "module (name it pkcs11.so or set secret key `lib` to the module filename)"
             )
         if not self._get_pkcs11_kms_plugin_metadata():
             return BlockedStatus(

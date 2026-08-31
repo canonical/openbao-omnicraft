@@ -457,17 +457,23 @@ config:
         Juju secret ID containing PKCS#11 HSM auto-unseal settings. Leave unset to keep
         Shamir seal. The secret must be granted to this application and should include:
         `pin` (required); `slot` and/or `token-label`; `key-label` and/or `key-id`.
-        Also attach the `hsm-lib` resource with the PKCS#11 shared library.
+        Optional `lib` is the PKCS#11 module filename (or relative path) inside the
+        attached `hsm-lib` directory. Also attach the `hsm-lib` resource (a tarball of
+        the module plus shared-library dependencies).
         Enabling PKCS#11 is one-way: after OpenBao is initialized with this seal, you
         cannot go back to Shamir by unsetting this option.
 
 resources:
   hsm-lib:
     type: file
-    filename: pkcs11.so
+    filename: hsm-lib.tar.gz
     description: >-
-      PKCS#11 shared library used for HSM auto-unseal (for example libykcs11.so).
-      Attach with `juju attach-resource openbao hsm-lib=./some-lib.so`.
+      Tarball (or zip) of a directory containing the PKCS#11 shared library and any
+      dependencies it needs under snap confinement. Pack with
+      `tar czf hsm-lib.tar.gz -C ./hsm-libs .` then
+      `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`.
+      A single `.so` is still accepted for simple providers. Use secret key `lib` when
+      the archive contains multiple shared objects.
 
 actions:
   authorize-charm:

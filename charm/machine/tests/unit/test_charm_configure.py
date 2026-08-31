@@ -7,6 +7,7 @@ from datetime import timedelta
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
+import tarfile
 from unittest.mock import MagicMock, patch
 
 import hcl
@@ -18,6 +19,7 @@ from openbao.openbao_client import AppRole
 
 from certificates import generate_example_provider_certificate
 from fixtures import OpenBaoCharmFixtures
+from machine import Machine
 
 
 def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
@@ -32,6 +34,33 @@ def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
     monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version"))
     return sha256(plugin_bytes).hexdigest()
+
+
+def _wire_real_hsm_machine_fs(mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
+    real = Machine()
+    hsm_dir = tmp_path / "hsm"
+    monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
+    mock_machine.replace_directory.side_effect = real.replace_directory
+    mock_machine.extract_archive.side_effect = real.extract_archive
+    mock_machine.copy_file.side_effect = real.copy_file
+    return hsm_dir
+
+
+def _make_hsm_lib_tarball(tmp_path: Path, *names: str) -> Path:
+    """Create a tarball containing ELF stubs named ``names`` (default pkcs11.so)."""
+    if not names:
+        names = ("pkcs11.so",)
+    staging = tmp_path / "hsm-staging"
+    staging.mkdir(exist_ok=True)
+    archive = tmp_path / "hsm-lib.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for name in names:
+            member = staging / name
+            member.parent.mkdir(parents=True, exist_ok=True)
+            member.write_bytes(b"\x7fELF" + b"\x00" * 16)
+            tar.add(member, arcname=name)
+    return archive
 
 
 class MockRelation:
@@ -625,8 +654,8 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
         plugin_sha = _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
-        hsm_lib = tmp_path / "libykcs11.so"
-        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_dir = _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
+        hsm_archive = _make_hsm_lib_tarball(tmp_path, "pkcs11.so", "libdep.so")
         hsm_secret = testing.Secret(
             tracked_content={
                 "slot": "0",
@@ -645,7 +674,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
             relations=[peer_relation],
             secrets=[hsm_secret],
             config={"hsm-config-secret-id": hsm_secret.id},
-            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            resources=[testing.Resource(name="hsm-lib", path=hsm_archive)],
             networks={
                 testing.Network(
                     "openbao-peers",
@@ -656,14 +685,14 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        self.mock_machine.copy_file.assert_called_with(
-            str(hsm_lib), "/var/snap/openbao/common/hsm/pkcs11.so"
-        )
+        self.mock_machine.extract_archive.assert_called_with(str(hsm_archive), str(hsm_dir))
+        assert (hsm_dir / "pkcs11.so").is_file()
+        assert (hsm_dir / "libdep.so").is_file()
         actual_config_hcl = self._pushed_openbao_hcl()
         assert actual_config_hcl["plugin_directory"] == str(tmp_path / "plugins")
         assert actual_config_hcl["plugin_auto_register"] is True
         pkcs11 = actual_config_hcl["seal"]["pkcs11"]
-        assert pkcs11["lib"] == "/var/snap/openbao/common/hsm/pkcs11.so"
+        assert pkcs11["lib"] == str(hsm_dir / "pkcs11.so")
         assert pkcs11["slot"] == "0"
         assert pkcs11["token_label"] == "OpenBao"
         assert pkcs11["pin"] == "1234"
@@ -675,11 +704,49 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         assert 'version   = "v0.1.0"' in raw_config
         assert f'sha256sum = "{plugin_sha}"' in raw_config
 
+    def test_given_hsm_tarball_with_lib_secret_when_configure_then_named_module_is_used(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
+        hsm_dir = _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
+        hsm_archive = _make_hsm_lib_tarball(tmp_path, "yubihsm_pkcs11.so", "libyubihsm.so.2")
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+                "lib": "yubihsm_pkcs11.so",
+            },
+        )
+        peer_relation = testing.PeerRelation(endpoint="openbao-peers")
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_archive)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        pkcs11 = self._pushed_openbao_hcl()["seal"]["pkcs11"]
+        assert pkcs11["lib"] == str(hsm_dir / "yubihsm_pkcs11.so")
+
     def test_given_hsm_ready_but_kms_plugin_missing_when_configure_then_pkcs11_stanza_is_not_generated(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
+        _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
         missing_dir = tmp_path / "missing-plugins"
         monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
         monkeypatch.setattr(

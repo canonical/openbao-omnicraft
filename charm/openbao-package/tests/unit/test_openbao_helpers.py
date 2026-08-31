@@ -8,8 +8,11 @@ from openbao.openbao_helpers import (
     allowed_domains_config_is_valid,
     config_file_content_matches,
     hsm_config_secret_validation_error,
+    is_hsm_lib_archive,
+    is_hsm_lib_resource_usable,
     pkcs11_seal_config_from_secret,
     render_openbao_config_file,
+    resolve_hsm_pkcs11_module,
     sans_dns_config_is_valid,
     seal_type_has_changed,
 )
@@ -223,3 +226,46 @@ class TestHsmConfigSecret:
         assert 'version   = "v0.1.0"' in rendered
         assert 'sha256sum = "deadbeef"' in rendered
         assert 'seal "pkcs11"' in rendered
+
+
+class TestHsmLibResourceHelpers:
+    def test_given_placeholder_when_resource_usable_then_false(self, tmp_path):
+        placeholder = tmp_path / "placeholder"
+        placeholder.write_text("placeholder")
+        assert not is_hsm_lib_resource_usable(placeholder)
+
+    def test_given_elf_when_resource_usable_then_true(self, tmp_path):
+        lib = tmp_path / "lib.so"
+        lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        assert is_hsm_lib_resource_usable(lib)
+
+    def test_given_tarball_when_archive_detected(self, tmp_path):
+        import tarfile
+
+        member = tmp_path / "pkcs11.so"
+        member.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        archive = tmp_path / "hsm-lib.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(member, arcname="pkcs11.so")
+        assert is_hsm_lib_archive(archive)
+        assert is_hsm_lib_resource_usable(archive)
+
+    def test_given_pkcs11_so_when_resolve_then_preferred(self, tmp_path):
+        (tmp_path / "dep.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
+        module = tmp_path / "pkcs11.so"
+        module.write_bytes(b"\x7fELF" + b"\x00" * 8)
+        assert resolve_hsm_pkcs11_module(tmp_path) == module.resolve()
+
+    def test_given_lib_secret_when_resolve_then_uses_relative_path(self, tmp_path):
+        (tmp_path / "pkcs11.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
+        named = tmp_path / "yubihsm_pkcs11.so"
+        named.write_bytes(b"\x7fELF" + b"\x00" * 8)
+        assert resolve_hsm_pkcs11_module(tmp_path, "yubihsm_pkcs11.so") == named.resolve()
+
+    def test_given_path_escape_when_resolve_then_none(self, tmp_path):
+        assert resolve_hsm_pkcs11_module(tmp_path, "../etc/passwd") is None
+
+    def test_given_multiple_sos_without_lib_when_resolve_then_none(self, tmp_path):
+        (tmp_path / "a.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
+        (tmp_path / "b.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
+        assert resolve_hsm_pkcs11_module(tmp_path) is None

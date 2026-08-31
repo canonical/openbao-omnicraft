@@ -62,6 +62,23 @@ tox run -e integration -- --charm_path ./openbao_amd64.charm --kv_requirer_charm
 
 At this time, each integration test suite must be run separately.
 
+#### PKCS#11 SoftHSM tests
+
+`test_pkcs11_hsm.py` installs the `softhsm` snap on the OpenBao unit (skips install if
+already present), creates a token and AES key under snap-common via SoftHSMv2 util, and
+attaches `libsofthsm2.so` as the `hsm-lib` resource. SoftHSM is not yet in the Snap
+Store, so pass a local `.snap` with `--softhsm-snap-path` (or `OPENBAO_SOFTHSM_SNAP`).
+Pass a local OpenBao snap that ships `plugins/openbao-plugin-kms-pkcs11` with
+`--resource-path` when required by your tox/integration setup.
+
+```shell
+tox run -e integration -- \
+  --charm_path ./openbao_amd64.charm \
+  --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm \
+  --softhsm-snap-path /path/to/softhsm_2.7.0_amd64.snap \
+  -k test_pkcs11_hsm.py
+```
+
 #### Backup tests
 
 To run the backup tests, you will need to have an S3 compatible storage service running, such as MinIO. You can find instructions to configure LXD to manage the MinIO service at <https://documentation.ubuntu.com/lxd/latest/howto/storage_buckets/#howto-storage-buckets>.

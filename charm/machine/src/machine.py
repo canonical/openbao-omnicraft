@@ -7,6 +7,8 @@
 import logging
 import os
 import shutil
+import tarfile
+import zipfile
 from pathlib import Path
 from typing import TextIO
 
@@ -72,6 +74,43 @@ class Machine(WorkloadBase):
     def make_dir(self, path: str) -> None:
         """Create a directory."""
         Path(path).mkdir(parents=True, exist_ok=True)
+
+    def replace_directory(self, path: str) -> None:
+        """Remove path if it exists and recreate it as an empty directory."""
+        destination = Path(path)
+        if destination.exists():
+            if destination.is_dir():
+                shutil.rmtree(destination)
+            else:
+                destination.unlink()
+        destination.mkdir(parents=True, exist_ok=True)
+
+    def extract_archive(self, archive: str, dest: str) -> None:
+        """Extract a tar/zip archive into dest (dest must already exist)."""
+        archive_path = Path(archive)
+        dest_path = Path(dest)
+        if zipfile.is_zipfile(archive_path):
+            with zipfile.ZipFile(archive_path) as zf:
+                for info in zf.infolist():
+                    member_path = Path(info.filename)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise ValueError(f"Refusing unsafe zip member path: {info.filename}")
+                zf.extractall(dest_path)
+        elif tarfile.is_tarfile(archive_path):
+            with tarfile.open(archive_path) as tf:
+                members = tf.getmembers()
+                for member in members:
+                    member_path = Path(member.name)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise ValueError(f"Refusing unsafe tar member path: {member.name}")
+                # filter="data" is the safe default on Python 3.12+
+                try:
+                    tf.extractall(dest_path, members=members, filter="data")
+                except TypeError:
+                    tf.extractall(dest_path, members=members)
+        else:
+            raise ValueError(f"Unsupported hsm-lib archive format: {archive}")
+        logger.info("Extracted archive %s to %s", archive, dest)
 
     def remove_path(self, path: str, recursive: bool = False) -> None:
         """Remove a file or directory.
