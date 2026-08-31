@@ -173,16 +173,14 @@ class TestHsmConfigSecret:
         assert config.plugin_version == "v0.1.0"
         assert config.plugin_sha256sum == "abc123"
 
-    def test_given_pkcs11_plugin_config_when_render_then_plugin_and_seal_present(
-        self, tmp_path
-    ):
+    def test_given_pkcs11_plugin_config_when_render_then_plugin_and_seal_present(self, tmp_path):
         template = tmp_path / "openbao.hcl.j2"
         template.write_text(
-            '{% if pkcs11_lib %}\n'
-            '{% if pkcs11_plugin_directory %}\n'
+            "{% if pkcs11_lib %}\n"
+            "{% if pkcs11_plugin_directory %}\n"
             'plugin_directory = "{{ pkcs11_plugin_directory }}"\n'
             "plugin_auto_register = true\n"
-            '\n'
+            "\n"
             'plugin "kms" "pkcs11" {\n'
             '  command   = "{{ pkcs11_plugin_command }}"\n'
             '  version   = "{{ pkcs11_plugin_version }}"\n'
