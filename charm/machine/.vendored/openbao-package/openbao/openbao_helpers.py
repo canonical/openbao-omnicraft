@@ -3,7 +3,10 @@
 import ipaddress
 import logging
 import os
+import tarfile
+import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List
 
 import hcl
@@ -17,6 +20,11 @@ HSM_CONFIG_SECRET_SLOT_KEY = "slot"
 HSM_CONFIG_SECRET_TOKEN_LABEL_KEY = "token-label"
 HSM_CONFIG_SECRET_KEY_LABEL_KEY = "key-label"
 HSM_CONFIG_SECRET_KEY_ID_KEY = "key-id"
+# Relative path of the PKCS#11 module inside the attached hsm-lib directory/tarball.
+HSM_CONFIG_SECRET_LIB_KEY = "lib"
+
+HSM_LIB_DEFAULT_MODULE_NAME = "pkcs11.so"
+_HSM_LIB_ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".tar", ".zip")
 
 
 @dataclass
@@ -100,6 +108,88 @@ def sans_ip_config_is_valid(sans_ip: str) -> bool:
 
 def _secret_field(content: dict[str, str], key: str) -> str:
     return (content.get(key) or "").strip()
+
+
+def is_elf_shared_object(path: Path) -> bool:
+    """Return whether path is a non-empty ELF object (typical PKCS#11 .so)."""
+    try:
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+        with path.open("rb") as handle:
+            return handle.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def is_hsm_lib_archive(path: Path) -> bool:
+    """Return whether path looks like a tarball/zip of an HSM library directory."""
+    if not path.is_file() or path.stat().st_size == 0:
+        return False
+    name = path.name.lower()
+    if name.endswith(_HSM_LIB_ARCHIVE_SUFFIXES):
+        return True
+    try:
+        return tarfile.is_tarfile(path) or zipfile.is_zipfile(path)
+    except OSError:
+        return False
+
+
+def is_hsm_lib_resource_usable(path: Path) -> bool:
+    """Return whether an attached hsm-lib resource is a real module or archive.
+
+    Deploy-time placeholders (empty or non-ELF text files) return False.
+    """
+    return is_elf_shared_object(path) or is_hsm_lib_archive(path)
+
+
+def hsm_lib_module_relative_path(content: dict[str, str]) -> str | None:
+    """Return the optional PKCS#11 module path relative to the extracted hsm-lib dir."""
+    value = _secret_field(content, HSM_CONFIG_SECRET_LIB_KEY)
+    return value or None
+
+
+def resolve_hsm_pkcs11_module(hsm_dir: Path, lib_relative: str | None = None) -> Path | None:
+    """Resolve the PKCS#11 module path inside an installed hsm-lib directory.
+
+    Resolution order:
+    1. ``lib_relative`` from the HSM secret (path relative to ``hsm_dir``)
+    2. ``pkcs11.so`` in ``hsm_dir`` if present
+    3. Exactly one top-level ELF file whose name contains ``.so``
+    """
+    try:
+        root = hsm_dir.resolve()
+    except OSError:
+        return None
+    if not root.is_dir():
+        return None
+
+    if lib_relative:
+        if os.path.isabs(lib_relative) or ".." in Path(lib_relative).parts:
+            logger.warning("Ignoring unsafe hsm-config lib path %r", lib_relative)
+            return None
+        candidate = (root / lib_relative).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            logger.warning("hsm-config lib path escapes hsm dir: %r", lib_relative)
+            return None
+        return candidate if is_elf_shared_object(candidate) else None
+
+    preferred = root / HSM_LIB_DEFAULT_MODULE_NAME
+    if is_elf_shared_object(preferred):
+        return preferred
+
+    matches: list[Path] = []
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.is_file() and ".so" in entry.name and is_elf_shared_object(entry):
+            matches.append(entry)
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def hsm_config_secret_validation_error(content: dict[str, str]) -> str | None:

@@ -14,6 +14,17 @@ from openbao.openbao_client import OpenBaoClientError
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
 from fixtures import OpenBaoCharmFixtures
+from machine import Machine
+
+
+def _wire_real_hsm_machine_fs(mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    real = Machine()
+    hsm_dir = tmp_path / "hsm"
+    monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
+    mock_machine.replace_directory.side_effect = real.replace_directory
+    mock_machine.extract_archive.side_effect = real.extract_archive
+    mock_machine.copy_file.side_effect = real.copy_file
+    return hsm_dir
 
 
 class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
@@ -773,13 +784,15 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
-            "hsm-lib resource is not attached; use `juju attach-resource openbao hsm-lib=./some-lib.so`"
+            "hsm-lib resource is not attached; pack the PKCS#11 module and deps "
+            "into a tarball and use `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`"
         )
 
     def test_given_hsm_ready_but_kms_plugin_missing_when_collect_unit_status_then_blocked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         self.mock_autounseal_requires_get_details.return_value = None
+        _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
         missing_dir = tmp_path / "missing-plugins"
         monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
         monkeypatch.setattr(
