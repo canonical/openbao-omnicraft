@@ -124,10 +124,10 @@ OPENBAO_SNAP_NAME = "openbao"
 # Bump OPENBAO_SNAP_REVISIONS after publishing a snap that ships
 # plugins/openbao-plugin-kms-pkcs11 (required for PKCS#11 HSM auto-unseal).
 OPENBAO_SNAP_REVISIONS = {
-    "x86_64": "35",
+    "x86_64": "36",
 }
 OPENBAO_SNAP_CHANNELS = {
-    "x86_64": "2/beta",
+    "x86_64": "2/edge",
 }
 OPENBAO_SNAP_REVISION = OPENBAO_SNAP_REVISIONS.get(platform.machine(), "")
 OPENBAO_SNAP_CHANNEL_FOR_ARCH = OPENBAO_SNAP_CHANNELS.get(platform.machine(), "2/stable")
