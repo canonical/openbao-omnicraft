@@ -31,7 +31,8 @@ Prefer SoftHSM (or another PKCS#11 provider with few dependencies) for first val
 2. Put `libsofthsm2.so` (and any required deps) in a directory, pack it, attach it as `hsm-lib`, create the HSM secret, and set `hsm-config-secret-id` as below.
 3. Confirm the unit leaves `blocked`, OpenBao initializes with seal type `pkcs11`, and a restart auto-unseals.
 
-For snap-only (non-charm) PKCS#11 setup and common failure modes, see [snap/TROUBLESHOOTING.md](../../snap/TROUBLESHOOTING.md).
+For snap-only (non-charm) PKCS#11 setup and common failure modes, see
+[snap/TROUBLESHOOTING.md](https://github.com/canonical/openbao-omnicraft/blob/main/snap/TROUBLESHOOTING.md).
 
 ## 1. Pack and attach the PKCS#11 library directory
 

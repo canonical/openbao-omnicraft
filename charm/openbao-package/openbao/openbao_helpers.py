@@ -148,7 +148,9 @@ def hsm_lib_module_relative_path(content: dict[str, str]) -> str | None:
     return value or None
 
 
-def resolve_hsm_pkcs11_module(hsm_dir: Path, lib_relative: str | None = None) -> Path | None:
+def resolve_hsm_pkcs11_module(  # noqa: C901
+    hsm_dir: Path, lib_relative: str | None = None
+) -> Path | None:
     """Resolve the PKCS#11 module path inside an installed hsm-lib directory.
 
     Resolution order:
