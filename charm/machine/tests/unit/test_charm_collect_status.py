@@ -17,7 +17,9 @@ from fixtures import OpenBaoCharmFixtures
 from machine import Machine
 
 
-def _wire_real_hsm_machine_fs(mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _wire_real_hsm_machine_fs(
+    mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     real = Machine()
     hsm_dir = tmp_path / "hsm"
     monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
