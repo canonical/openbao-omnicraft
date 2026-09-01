@@ -3,11 +3,11 @@
 # See LICENSE file for licensing details.
 
 
+import tarfile
 from datetime import timedelta
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
-import tarfile
 from unittest.mock import MagicMock, patch
 
 import hcl
@@ -36,7 +36,9 @@ def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     return sha256(plugin_bytes).hexdigest()
 
 
-def _wire_real_hsm_machine_fs(mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _wire_real_hsm_machine_fs(
+    mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
     real = Machine()
     hsm_dir = tmp_path / "hsm"

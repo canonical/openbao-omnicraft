@@ -367,11 +367,11 @@ _REMOTE_SOFTHSM_SNAP = "/tmp/openbao-softhsm.snap"
 
 
 def _unit_exec(juju: jubilant.Juju, unit_name: str, command: str, *args: str) -> str:
-    """Run a shell command on a unit and return stdout.
+    r"""Run a shell command on a unit and return stdout.
 
     Prefer ``_unit_exec(juju, unit, "bash", "-lc", script)`` for multiline scripts so
     newlines are preserved as a separate argv element (``json.dumps`` + ``bash -lc``
-    leaves literal ``\\n`` and breaks heredocs).
+    leaves literal ``\n`` and breaks heredocs).
     """
     result = juju.exec(command, *args, unit=unit_name)
     return (result.stdout or "").strip()
@@ -494,7 +494,9 @@ echo "$MODULE"
         lines = [line for line in module_path.splitlines() if line.strip()]
         module_path = lines[-1] if lines else ""
     if SOFTHSM_MODULE_NAME not in module_path:
-        raise RuntimeError(f"SoftHSM setup did not report {SOFTHSM_MODULE_NAME} path: {module_path!r}")
+        raise RuntimeError(
+            f"SoftHSM setup did not report {SOFTHSM_MODULE_NAME} path: {module_path!r}"
+        )
     logger.info("SoftHSM ready on %s (module %s)", unit_name, module_path)
     return {
         "pin": SOFTHSM_PIN,
