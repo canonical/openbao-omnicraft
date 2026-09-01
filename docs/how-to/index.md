@@ -18,6 +18,7 @@ use_as_acme_server
 integrate_with_cos_k8s
 integrate_with_cos_machine
 configure_for_autounseal
+configure_pkcs11_hsm
 ```
 
 ## Day-2 operations

@@ -12,6 +12,13 @@ from jinja2 import Environment, FileSystemLoader
 logger = logging.getLogger(__name__)
 
 
+HSM_CONFIG_SECRET_PIN_KEY = "pin"
+HSM_CONFIG_SECRET_SLOT_KEY = "slot"
+HSM_CONFIG_SECRET_TOKEN_LABEL_KEY = "token-label"
+HSM_CONFIG_SECRET_KEY_LABEL_KEY = "key-label"
+HSM_CONFIG_SECRET_KEY_ID_KEY = "key-id"
+
+
 @dataclass
 class AutounsealConfiguration:
     """Details required for configuring auto-unseal on OpenBao."""
@@ -20,6 +27,26 @@ class AutounsealConfiguration:
     mount_path: str
     key_name: str
     ca_cert_path: str
+
+
+@dataclass(frozen=True)
+class Pkcs11SealConfiguration:
+    """Details required for configuring PKCS#11 auto-unseal on OpenBao.
+
+    Plugin fields register the external openbao-plugin-kms-pkcs11 binary shipped
+    in the OpenBao snap (required for static bao builds and for OpenBao 2.7+).
+    """
+
+    lib: str
+    pin: str
+    slot: str | None = None
+    token_label: str | None = None
+    key_label: str | None = None
+    key_id: str | None = None
+    plugin_directory: str | None = None
+    plugin_command: str | None = None
+    plugin_version: str | None = None
+    plugin_sha256sum: str | None = None
 
 
 def common_name_config_is_valid(common_name: str) -> bool:
@@ -71,6 +98,64 @@ def sans_ip_config_is_valid(sans_ip: str) -> bool:
     return True
 
 
+def _secret_field(content: dict[str, str], key: str) -> str:
+    return (content.get(key) or "").strip()
+
+
+def hsm_config_secret_validation_error(content: dict[str, str]) -> str | None:
+    """Return an error if the HSM secret is missing fields required by PKCS#11.
+
+    OpenBao requires a PIN, at least one of slot or token_label, and at least
+    one of key_label or key_id. Empty values are treated as unset.
+    """
+    pin = _secret_field(content, HSM_CONFIG_SECRET_PIN_KEY)
+    slot = _secret_field(content, HSM_CONFIG_SECRET_SLOT_KEY)
+    token_label = _secret_field(content, HSM_CONFIG_SECRET_TOKEN_LABEL_KEY)
+    key_label = _secret_field(content, HSM_CONFIG_SECRET_KEY_LABEL_KEY)
+    key_id = _secret_field(content, HSM_CONFIG_SECRET_KEY_ID_KEY)
+    missing: list[str] = []
+    if not pin:
+        missing.append(HSM_CONFIG_SECRET_PIN_KEY)
+    if not slot and not token_label:
+        missing.append(f"{HSM_CONFIG_SECRET_SLOT_KEY} or {HSM_CONFIG_SECRET_TOKEN_LABEL_KEY}")
+    if not key_label and not key_id:
+        missing.append(f"{HSM_CONFIG_SECRET_KEY_LABEL_KEY} or {HSM_CONFIG_SECRET_KEY_ID_KEY}")
+    if missing:
+        return "hsm-config secret is missing required fields: " + ", ".join(missing)
+    return None
+
+
+def pkcs11_seal_config_from_secret(
+    content: dict[str, str],
+    lib: str,
+    *,
+    plugin_directory: str | None = None,
+    plugin_command: str | None = None,
+    plugin_version: str | None = None,
+    plugin_sha256sum: str | None = None,
+) -> Pkcs11SealConfiguration | None:
+    """Build a PKCS#11 seal configuration from a Juju secret and library path."""
+    if not lib or hsm_config_secret_validation_error(content):
+        return None
+    return Pkcs11SealConfiguration(
+        lib=lib,
+        pin=_secret_field(content, HSM_CONFIG_SECRET_PIN_KEY),
+        slot=_secret_field(content, HSM_CONFIG_SECRET_SLOT_KEY) or None,
+        token_label=_secret_field(content, HSM_CONFIG_SECRET_TOKEN_LABEL_KEY) or None,
+        key_label=_secret_field(content, HSM_CONFIG_SECRET_KEY_LABEL_KEY) or None,
+        key_id=_secret_field(content, HSM_CONFIG_SECRET_KEY_ID_KEY) or None,
+        plugin_directory=plugin_directory,
+        plugin_command=plugin_command,
+        plugin_version=plugin_version,
+        plugin_sha256sum=plugin_sha256sum,
+    )
+
+
+def _hcl_escape(value: str) -> str:
+    """Escape a string for use inside a quoted HCL value."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def render_openbao_config_file(
     config_template_path: str,
     config_template_name: str,
@@ -86,6 +171,7 @@ def render_openbao_config_file(
     retry_joins: List[Dict[str, str]],
     log_level: str,
     autounseal_config: AutounsealConfiguration | None = None,
+    pkcs11_config: Pkcs11SealConfiguration | None = None,
 ) -> str:
     """Render the OpenBao config file."""
     jinja2_environment = Environment(loader=FileSystemLoader(config_template_path))
@@ -106,24 +192,65 @@ def render_openbao_config_file(
         autounseal_mount_path=autounseal_config.mount_path if autounseal_config else None,
         autounseal_key_name=autounseal_config.key_name if autounseal_config else None,
         autounseal_ca_cert_path=autounseal_config.ca_cert_path if autounseal_config else None,
+        pkcs11_lib=_hcl_escape(pkcs11_config.lib) if pkcs11_config else None,
+        pkcs11_pin=_hcl_escape(pkcs11_config.pin) if pkcs11_config else None,
+        pkcs11_slot=(
+            _hcl_escape(pkcs11_config.slot) if pkcs11_config and pkcs11_config.slot else None
+        ),
+        pkcs11_token_label=(
+            _hcl_escape(pkcs11_config.token_label)
+            if pkcs11_config and pkcs11_config.token_label
+            else None
+        ),
+        pkcs11_key_label=(
+            _hcl_escape(pkcs11_config.key_label)
+            if pkcs11_config and pkcs11_config.key_label
+            else None
+        ),
+        pkcs11_key_id=(
+            _hcl_escape(pkcs11_config.key_id) if pkcs11_config and pkcs11_config.key_id else None
+        ),
+        pkcs11_plugin_directory=(
+            _hcl_escape(pkcs11_config.plugin_directory)
+            if pkcs11_config and pkcs11_config.plugin_directory
+            else None
+        ),
+        pkcs11_plugin_command=(
+            _hcl_escape(pkcs11_config.plugin_command)
+            if pkcs11_config and pkcs11_config.plugin_command
+            else None
+        ),
+        pkcs11_plugin_version=(
+            _hcl_escape(pkcs11_config.plugin_version)
+            if pkcs11_config and pkcs11_config.plugin_version
+            else None
+        ),
+        pkcs11_plugin_sha256sum=(
+            _hcl_escape(pkcs11_config.plugin_sha256sum)
+            if pkcs11_config and pkcs11_config.plugin_sha256sum
+            else None
+        ),
     )
     return content
 
 
 def seal_type_has_changed(content_a: str, content_b: str) -> bool:
-    """Check if the seal type has changed between two versions of the OpenBao configuration file.
-
-    Currently only checks if the transit stanza is present or not, since this
-    is all we support. This function will need to be extended to support
-    alternate cases if and when we support them.
-    """
-    config_a = hcl.loads(content_a)
-    config_b = hcl.loads(content_b)
-    return _contains_transit_stanza(config_a) != _contains_transit_stanza(config_b)
+    """Check if the seal type has changed between two versions of the OpenBao configuration file."""
+    return _seal_types(_load_hcl(content_a)) != _seal_types(_load_hcl(content_b))
 
 
-def _contains_transit_stanza(config: dict) -> bool:
-    return "seal" in config and "transit" in config["seal"]
+def _load_hcl(content: str) -> dict:
+    if not content or not content.strip():
+        return {}
+    loaded = hcl.loads(content)
+    return loaded or {}
+
+
+def _seal_types(config: dict) -> set[str]:
+    seal = config.get("seal")
+    if not isinstance(seal, dict):
+        return set()
+    return set(seal.keys())
 
 
 def config_file_content_matches(existing_content: str, new_content: str) -> bool:

@@ -41,3 +41,23 @@ seal "transit" {
   tls_ca_cert     = "{{ autounseal_ca_cert_path }}"
 }
 {% endif %}
+{% if pkcs11_lib %}
+{% if pkcs11_plugin_directory %}
+plugin_directory = "{{ pkcs11_plugin_directory }}"
+plugin_auto_register = true
+
+plugin "kms" "pkcs11" {
+  command   = "{{ pkcs11_plugin_command }}"
+  version   = "{{ pkcs11_plugin_version }}"
+  sha256sum = "{{ pkcs11_plugin_sha256sum }}"
+}
+{% endif %}
+seal "pkcs11" {
+  lib = "{{ pkcs11_lib }}"
+  {% if pkcs11_slot %}slot = "{{ pkcs11_slot }}"{% endif %}
+  {% if pkcs11_token_label %}token_label = "{{ pkcs11_token_label }}"{% endif %}
+  pin = "{{ pkcs11_pin }}"
+  {% if pkcs11_key_label %}key_label = "{{ pkcs11_key_label }}"{% endif %}
+  {% if pkcs11_key_id %}key_id = "{{ pkcs11_key_id }}"{% endif %}
+}
+{% endif %}
