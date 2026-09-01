@@ -18,7 +18,7 @@ from machine import Machine
 
 
 def _wire_real_hsm_machine_fs(
-    mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mock_machine: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     real = Machine()
     hsm_dir = tmp_path / "hsm"
