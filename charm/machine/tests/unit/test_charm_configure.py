@@ -37,7 +37,7 @@ def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 def _wire_real_hsm_machine_fs(
-    mock_machine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mock_machine: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
     real = Machine()

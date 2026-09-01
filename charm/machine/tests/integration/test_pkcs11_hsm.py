@@ -105,12 +105,12 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
     assert recovery_key, "PKCS#11 initialization should return a recovery key"
     openbao = get_openbao_client(juju, leader_name, root_token)
     openbao.wait_for_node_to_be_unsealed()
-    assert openbao.client.seal_status["type"] == "pkcs11"
+    assert openbao.client.seal_status["type"] == "pkcs11"  # type: ignore[reportIndexIssue]
     assert not openbao.is_sealed()
 
     juju.ssh(leader_name, "sudo snap restart openbao")
     openbao.wait_for_node_to_be_unsealed()
     assert not openbao.is_sealed()
-    assert openbao.client.seal_status["type"] == "pkcs11"
+    assert openbao.client.seal_status["type"] == "pkcs11"  # type: ignore[reportIndexIssue]
 
     authorize_charm_and_wait(juju, root_token)
