@@ -45,16 +45,16 @@ openbao/1   blocked   idle   10.1.182.51         Please unseal OpenBao
 openbao/2   blocked   idle   10.1.182.34         Please unseal OpenBao
 ```
 
-Set the `OPENBAO_ADDR` variable to the `openbao/1` unit:
+Set the `BAO_ADDR` variable to the `openbao/1` unit:
 
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/1 --format=yaml |  yq -r '.applications.openbao.units.openbao/1.address'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/1 --format=yaml |  yq -r '.applications.openbao.units.openbao/1.address'):8200; echo $BAO_ADDR
 ```
 
-Set the `OPENBAO_SKIP_VERIFY` to true:
+Set the `BAO_SKIP_VERIFY` to true:
 
 ```
-export OPENBAO_SKIP_VERIFY=true
+export BAO_SKIP_VERIFY=true
 ```
 
 Unseal the the `openbao/1` unit using the same unseal keys as received during the initialization of the OpenBao leader:
@@ -66,7 +66,7 @@ bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 And complete the same operations for the `openbao/2` unit:
 
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $BAO_ADDR
 bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 ```
 
