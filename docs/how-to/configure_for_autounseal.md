@@ -19,7 +19,7 @@ juju integrate openbao-unsealer:openbao-autounseal-provides openbao-autounsealed
 ## 2. Configure the OpenBao CLI to interact with the *autounsealed* OpenBao.
 
 ```bash
-export OPENBAO_ADDR="..."
+export BAO_ADDR="..."
 export BAO_TOKEN="..."
 ```
 
@@ -35,7 +35,7 @@ bao operator unseal -migrate ${token}
 
 ### 2b. If not already initialized, initialize and authorize the *autounsealed* OpenBao instance
 
-Configure your CLI to interact with the *autounsealed* OpenBao instance. See the getting started guide for more information on how to do this. In short, you will need to set the `OPENBAO_ADDR` environment variable to the address of the *autounsealed* OpenBao instance, and retrieve and set the appropriate CA certificate.
+Configure your CLI to interact with the *autounsealed* OpenBao instance. See the getting started guide for more information on how to do this. In short, you will need to set the `BAO_ADDR` environment variable to the address of the *autounsealed* OpenBao instance, and retrieve and set the appropriate CA certificate.
 
 ```bash
 bao operator init

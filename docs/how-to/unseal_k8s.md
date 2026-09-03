@@ -18,10 +18,10 @@ openbao/1   active    idle   10.1.182.51
 openbao/2   blocked   idle   10.1.182.15         Please unseal OpenBao
 ```
 
-Set the `OPENBAO_ADDR` variable to the sealed unit:
+Set the `BAO_ADDR` variable to the sealed unit:
 
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $BAO_ADDR
 ```
 
 Unseal the the unit using the same unseal keys as received during the initialization of the OpenBao leader:
