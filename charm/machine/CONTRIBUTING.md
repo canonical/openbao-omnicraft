@@ -64,18 +64,20 @@ At this time, each integration test suite must be run separately.
 
 #### PKCS#11 SoftHSM tests
 
-`test_pkcs11_hsm.py` installs the `softhsm` snap on the OpenBao unit (skips install if
-already present), creates a token and AES key under snap-common via SoftHSMv2 util, and
-attaches `libsofthsm2.so` as the `hsm-lib` resource. SoftHSM is not yet in the Snap
-Store, so pass a local `.snap` with `--softhsm-snap-path` (or `OPENBAO_SOFTHSM_SNAP`).
+`test_pkcs11_hsm.py` installs the `softhsm` snap from the Snap Store on the OpenBao
+unit (skips install if already present; optional local `.snap` via
+`--softhsm-snap-path` / `OPENBAO_SOFTHSM_SNAP`, or `OPENBAO_SOFTHSM_CHANNEL` for a
+non-default channel). It creates a token and AES key with SoftHSM + OpenSC, copies
+the token store into OpenBao snap-common, attaches `libsofthsm2.so` as `hsm-lib`,
+and verifies PKCS#11 init + restart auto-unseal.
+
 Pass a local OpenBao snap that ships `plugins/openbao-plugin-kms-pkcs11` with
-`--resource-path` when required by your tox/integration setup.
+`--resource-path` when your tox/integration setup requires it.
 
 ```shell
 tox run -e integration -- \
   --charm_path ./openbao_amd64.charm \
   --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm \
-  --softhsm-snap-path /path/to/softhsm_2.7.0_amd64.snap \
   -k test_pkcs11_hsm.py
 ```
 

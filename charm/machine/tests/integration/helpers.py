@@ -352,7 +352,6 @@ def openbao_charm_resources(extra: dict[str, str] | None = None) -> dict[str, st
 
 # SoftHSM defaults used by PKCS#11 integration tests.
 SOFTHSM_SNAP_NAME = "softhsm"
-# Snap app name (local/devel SoftHSM snap); not published to the store yet.
 SOFTHSM_UTIL = "softhsm.softhsm2-util"
 SOFTHSM_TOKEN_LABEL = "OpenBao"
 SOFTHSM_PIN = "1234"
@@ -363,7 +362,6 @@ SOFTHSM_OPENBAO_DIR = "/var/snap/openbao/common/softhsm"
 SOFTHSM_CONF_PATH = f"{SOFTHSM_OPENBAO_DIR}/softhsm2.conf"
 SOFTHSM_TOKENS_DIR = f"{SOFTHSM_OPENBAO_DIR}/tokens"
 OPENBAO_ENV_PATH = "/var/snap/openbao/common/openbao.env"
-_REMOTE_SOFTHSM_SNAP = "/tmp/openbao-softhsm.snap"
 
 
 def _unit_exec(juju: jubilant.Juju, unit_name: str, command: str, *args: str) -> str:
@@ -378,7 +376,7 @@ def _unit_exec(juju: jubilant.Juju, unit_name: str, command: str, *args: str) ->
 
 
 def _ensure_softhsm_snap_installed(juju: jubilant.Juju, unit_name: str) -> None:
-    """Install the SoftHSM snap on the unit if missing (store, else local --dangerous)."""
+    """Install the SoftHSM snap on the unit if missing (Snap Store, else local --dangerous)."""
     already = _unit_exec(
         juju,
         unit_name,
@@ -387,17 +385,17 @@ def _ensure_softhsm_snap_installed(juju: jubilant.Juju, unit_name: str) -> None:
         f"snap list '{SOFTHSM_SNAP_NAME}' >/dev/null 2>&1 && echo yes || echo no",
     )
     if already == "yes":
+        logger.info("SoftHSM snap already installed on %s", unit_name)
         return
 
-    # Prefer the Snap Store when the snap is published.
+    channel = os.environ.get("OPENBAO_SOFTHSM_CHANNEL", "")
+    install_cmd = f"sudo snap install '{SOFTHSM_SNAP_NAME}'"
+    if channel:
+        install_cmd += f" --channel='{channel}'"
+
     try:
-        _unit_exec(
-            juju,
-            unit_name,
-            "bash",
-            "-lc",
-            f"sudo snap install '{SOFTHSM_SNAP_NAME}'",
-        )
+        _unit_exec(juju, unit_name, "bash", "-lc", install_cmd)
+        logger.info("Installed SoftHSM snap from the Snap Store on %s", unit_name)
         return
     except jubilant.TaskError as store_err:
         logger.info(
@@ -408,83 +406,99 @@ def _ensure_softhsm_snap_installed(juju: jubilant.Juju, unit_name: str) -> None:
 
     if not config.SOFTHSM_SNAP_PATH:
         raise RuntimeError(
-            "SoftHSM snap is not in the Snap Store. Pass --softhsm-snap-path "
-            "/path/to/softhsm_*.snap (or set OPENBAO_SOFTHSM_SNAP)."
+            "SoftHSM snap is not installable from the Snap Store. Pass --softhsm-snap-path "
+            "/path/to/softhsm_*.snap (or set OPENBAO_SOFTHSM_SNAP), or set "
+            "OPENBAO_SOFTHSM_CHANNEL if it is only on a non-default channel."
         )
-    juju.cli("scp", config.SOFTHSM_SNAP_PATH, f"{unit_name}:{_REMOTE_SOFTHSM_SNAP}")
+    # Juju snap cannot scp into host /tmp; put the file under the unit user's home.
+    unit_home = _unit_exec(juju, unit_name, "bash", "-lc", 'echo "$HOME"')
+    remote_snap = f"{unit_home}/openbao-softhsm.snap"
+    juju.cli("scp", config.SOFTHSM_SNAP_PATH, f"{unit_name}:{remote_snap}")
     _unit_exec(
         juju,
         unit_name,
         "bash",
         "-lc",
-        f"sudo snap install --dangerous '{_REMOTE_SOFTHSM_SNAP}'",
+        f"sudo snap install --dangerous '{remote_snap}'",
     )
+    logger.info("Installed SoftHSM snap from local file on %s", unit_name)
 
 
 def setup_softhsm_on_unit(juju: jubilant.Juju, unit_name: str) -> dict[str, str]:
-    """Install the SoftHSM snap (idempotent), create a token+AES key under snap-common.
+    """Install SoftHSM, create a token+AES key, and stage them for the OpenBao snap.
 
-    Token storage and ``SOFTHSM2_CONF`` live under ``/var/snap/openbao/common`` so the
-    strictly confined OpenBao snap can use them. SoftHSM tools are invoked via the
-    snap's staged binaries (not the confined snap app wrappers) so they can write
-    under OpenBao's snap-common. Returns Juju secret field content for the PKCS#11
-    seal (including ``lib`` = ``libsofthsm2.so``).
+    Flow (matches the manual SoftHSM bring-up):
+
+    1. Install the ``softhsm`` snap from the Snap Store (local ``.snap`` fallback).
+    2. Create a token with ``softhsm.softhsm2-util`` (writes under SoftHSM's user-common).
+    3. Generate an AES key with OpenSC ``pkcs11-tool`` against that token.
+    4. Copy the token store into ``/var/snap/openbao/common/softhsm/`` and ``chown root``.
+    5. Write ``SOFTHSM2_CONF`` into ``openbao.env`` with ``export`` so ``baod-start``
+       passes it to the PKCS#11 plugin.
+
+    Returns Juju secret field content for the PKCS#11 seal (including ``lib``).
     """
     _ensure_softhsm_snap_installed(juju, unit_name)
 
-    # Run SoftHSMv2 binaries from the snap mount (bypass strict app confinement).
-    # The util dlopens /usr/lib/softhsm/libsofthsm2.so (snap layout path), so symlink it.
     script = f"""
 set -euo pipefail
-SNAP_ROOT="$(readlink -f /snap/{SOFTHSM_SNAP_NAME}/current)"
-LIBDIR="$(find "$SNAP_ROOT/usr/lib" -maxdepth 1 -type d -name '*-linux-gnu' | head -n1 || true)"
-export LD_LIBRARY_PATH="$SNAP_ROOT/usr/lib${{LIBDIR:+:$LIBDIR}}${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
-UTIL="$SNAP_ROOT/usr/bin/softhsm2-util"
-MODULE="$(find "$SNAP_ROOT" -name '{SOFTHSM_MODULE_NAME}' 2>/dev/null | head -n1)"
-test -x "$UTIL"
-test -n "$MODULE"
-sudo mkdir -p /usr/lib/softhsm
-sudo ln -sfn "$MODULE" /usr/lib/softhsm/{SOFTHSM_MODULE_NAME}
 
+# SoftHSM snap apps write under SNAP_USER_COMMON for the invoking user.
+SOFTHSM_USER_COMMON="${{HOME}}/snap/{SOFTHSM_SNAP_NAME}/common"
+mkdir -p "$SOFTHSM_USER_COMMON/tokens"
+find "$SOFTHSM_USER_COMMON/tokens" -mindepth 1 -delete 2>/dev/null || true
+
+# Create token via the published SoftHSM snap command (confined to SoftHSM's store).
+{SOFTHSM_UTIL} --init-token --free \\
+  --label '{SOFTHSM_TOKEN_LABEL}' \\
+  --pin '{SOFTHSM_PIN}' \\
+  --so-pin '{SOFTHSM_SO_PIN}'
+
+test -f "$SOFTHSM_USER_COMMON/softhsm2.conf"
+export SOFTHSM2_CONF="$SOFTHSM_USER_COMMON/softhsm2.conf"
+
+SNAP_ROOT="$(readlink -f /snap/{SOFTHSM_SNAP_NAME}/current)"
+MODULE="$(find "$SNAP_ROOT" -name '{SOFTHSM_MODULE_NAME}' 2>/dev/null | head -n1)"
+test -n "$MODULE"
+
+# SoftHSM snap has no keygen; use OpenSC pkcs11-tool against SoftHSM's store.
+if ! command -v pkcs11-tool >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq opensc
+fi
+pkcs11-tool --module "$MODULE" \\
+  --token-label '{SOFTHSM_TOKEN_LABEL}' \\
+  --login --pin '{SOFTHSM_PIN}' \\
+  --keygen --key-type aes:32 \\
+  --label '{SOFTHSM_KEY_LABEL}' --id 01
+
+# Confirm the AES key exists before copying.
+pkcs11-tool --module "$MODULE" \\
+  --token-label '{SOFTHSM_TOKEN_LABEL}' \\
+  --login --pin '{SOFTHSM_PIN}' \\
+  --list-objects | grep -F '{SOFTHSM_KEY_LABEL}'
+
+# Stage token files where the OpenBao snap can read them (root-owned).
 sudo mkdir -p '{SOFTHSM_TOKENS_DIR}'
+sudo find '{SOFTHSM_TOKENS_DIR}' -mindepth 1 -delete 2>/dev/null || true
+sudo cp -a "$SOFTHSM_USER_COMMON/tokens/." '{SOFTHSM_TOKENS_DIR}/'
 sudo tee '{SOFTHSM_CONF_PATH}' >/dev/null <<'EOF'
 directories.tokendir = {SOFTHSM_TOKENS_DIR}
 objectstore.backend = file
 log.level = INFO
 EOF
-sudo chmod -R a+rX '{SOFTHSM_OPENBAO_DIR}'
+sudo chown -R root:root '{SOFTHSM_OPENBAO_DIR}'
+sudo chmod -R u+rwX '{SOFTHSM_OPENBAO_DIR}'
 
-export SOFTHSM2_CONF='{SOFTHSM_CONF_PATH}'
-# Re-init cleanly for repeatable test runs.
-sudo find '{SOFTHSM_TOKENS_DIR}' -mindepth 1 -delete
-sudo -E "$UTIL" --init-token --free \
-  --label '{SOFTHSM_TOKEN_LABEL}' \
-  --pin '{SOFTHSM_PIN}' \
-  --so-pin '{SOFTHSM_SO_PIN}' >/dev/null
-
-# Prefer a pkcs11-tool shipped by the SoftHSM snap; fall back to OpenSC.
-if command -v softhsm.pkcs11-tool >/dev/null 2>&1; then
-  PKCS11_TOOL=softhsm.pkcs11-tool
-elif command -v pkcs11-tool >/dev/null 2>&1; then
-  PKCS11_TOOL=pkcs11-tool
-else
-  export DEBIAN_FRONTEND=noninteractive
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq opensc
-  PKCS11_TOOL=pkcs11-tool
-fi
-sudo -E "$PKCS11_TOOL" --module "$MODULE" \
-  --token-label '{SOFTHSM_TOKEN_LABEL}' \
-  --login --pin '{SOFTHSM_PIN}' \
-  --keygen --key-type aes:32 \
-  --label '{SOFTHSM_KEY_LABEL}' --id 01 >/dev/null
-
-# Ensure the OpenBao snap daemon sees SoftHSM config.
+# baod-start sources openbao.env then exec's bao; SOFTHSM2_CONF must be exported.
 sudo touch '{OPENBAO_ENV_PATH}'
-if ! sudo grep -q '^export SOFTHSM2_CONF=' '{OPENBAO_ENV_PATH}'; then
-  echo "export SOFTHSM2_CONF={SOFTHSM_CONF_PATH}" | sudo tee -a '{OPENBAO_ENV_PATH}' >/dev/null
-else
+if sudo grep -q '^export SOFTHSM2_CONF=' '{OPENBAO_ENV_PATH}'; then
   sudo sed -i 's|^export SOFTHSM2_CONF=.*|export SOFTHSM2_CONF={SOFTHSM_CONF_PATH}|' '{OPENBAO_ENV_PATH}'
+elif sudo grep -q '^SOFTHSM2_CONF=' '{OPENBAO_ENV_PATH}'; then
+  sudo sed -i 's|^SOFTHSM2_CONF=.*|export SOFTHSM2_CONF={SOFTHSM_CONF_PATH}|' '{OPENBAO_ENV_PATH}'
+else
+  echo 'export SOFTHSM2_CONF={SOFTHSM_CONF_PATH}' | sudo tee -a '{OPENBAO_ENV_PATH}' >/dev/null
 fi
 
 echo "$MODULE"
@@ -520,7 +534,6 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp -aL "$MODULE" "$STAGE/{SOFTHSM_MODULE_NAME}"
 # Bundle shared-library dependencies SoftHSM needs inside the OpenBao snap.
-# Ignore ldd failures (pipefail) when only system libs are linked.
 set +e
 DEPS="$(ldd "$MODULE" | awk '/=> \\// {{print $3}}')"
 set -e

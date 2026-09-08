@@ -60,6 +60,7 @@ jobs:
           - test_deploy_unseal
           - test_ingress
           - test_kv
+          - test_pkcs11_hsm
           - test_pki
           - test_pki_self_signed
           - test_upgrade_first

@@ -100,8 +100,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help=(
-            "Path to a local softhsm .snap to install on units for PKCS#11 tests "
-            "(also accepted via OPENBAO_SOFTHSM_SNAP). Required when softhsm is not in the Snap Store."
+            "Optional path to a local softhsm .snap for PKCS#11 tests when the Snap Store "
+            "package is unavailable (also accepted via OPENBAO_SOFTHSM_SNAP). Prefer the "
+            "store install; use OPENBAO_SOFTHSM_CHANNEL for a non-default channel."
         ),
     )
     parser.addoption(
