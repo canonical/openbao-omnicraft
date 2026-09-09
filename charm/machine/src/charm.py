@@ -1330,8 +1330,8 @@ class OpenBaoOperatorCharm(CharmBase):
             logger.debug("No auto-unseal token or proxy environment variables available")
             with suppress(ValueError):
                 self.machine.remove_path(SYSTEMD_DROP_IN_FILE_PATH)
-            if self.machine.exists(path=f"{HSM_LIB_DIR}/openbao.env"):
-                return self._apply_hsm_openbao_env()
+            if self._apply_hsm_openbao_env():
+                return True
             with suppress(ValueError):
                 self.machine.remove_path(OPENBAO_ENV_PATH)
                 logger.info("Removed systemd drop-in file and openbao.env")
@@ -1426,14 +1426,16 @@ class OpenBaoOperatorCharm(CharmBase):
             True if ``OPENBAO_ENV_PATH`` was written or changed.
         """
         hsm_env_path = f"{HSM_LIB_DIR}/openbao.env"
-        if not self.machine.exists(path=hsm_env_path):
+        # Use the real filesystem: Machine.exists is often a MagicMock in unit tests
+        # and would otherwise look present.
+        if not Path(hsm_env_path).is_file():
             return False
         hsm_content = self.machine.pull(path=hsm_env_path).read()
         content = f"{prefix.rstrip()}\n{hsm_content}" if prefix else hsm_content
         if not content.endswith("\n"):
             content += "\n"
-        if self.machine.exists(path=OPENBAO_ENV_PATH):
-            if self.machine.pull(path=OPENBAO_ENV_PATH).read() == content:
+        if Path(OPENBAO_ENV_PATH).is_file():
+            if Path(OPENBAO_ENV_PATH).read_text(encoding="utf-8") == content:
                 return False
         self.machine.push(path=OPENBAO_ENV_PATH, source=content)
         logger.info("Installed openbao.env from hsm-lib into %s", OPENBAO_ENV_PATH)
