@@ -73,9 +73,7 @@ def _wire_real_hsm_machine_fs(
     return hsm_dir
 
 
-def _make_hsm_lib_tarball(
-    tmp_path: Path, *names: str, openbao_env: str | None = None
-) -> Path:
+def _make_hsm_lib_tarball(tmp_path: Path, *names: str, openbao_env: str | None = None) -> Path:
     """Create a tarball containing ELF stubs named ``names`` (default pkcs11.so)."""
     if not names:
         names = ("pkcs11.so",)

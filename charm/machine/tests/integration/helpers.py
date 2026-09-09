@@ -522,7 +522,9 @@ def build_host_softhsm_hsm_lib_tarball(dest: Path) -> tuple[Path, dict[str, str]
     util, module_path = _ensure_host_softhsm()
     pkcs11_tool = _which_host("pkcs11-tool")
     if not pkcs11_tool:
-        raise RuntimeError("pkcs11-tool (opensc) is required on the test runner for SoftHSM keygen")
+        raise RuntimeError(
+            "pkcs11-tool (opensc) is required on the test runner for SoftHSM keygen"
+        )
 
     dest = dest.resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
