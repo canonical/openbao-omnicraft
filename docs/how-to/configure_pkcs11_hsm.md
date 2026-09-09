@@ -26,10 +26,18 @@ Do not combine PKCS#11 auto-unseal with [transit auto-unseal](configure_for_auto
 ## SoftHSM smoke path
 
 Prefer SoftHSM (or another PKCS#11 provider with few dependencies) for first validation.
+Prepare everything on the **host**; the charm only unpacks the tarball and applies the Juju secret.
 
-1. Install SoftHSM on the host and create a token plus AES/RSA key.
-2. Put `libsofthsm2.so` (and any required deps) in a directory, pack it, attach it as `hsm-lib`, create the HSM secret, and set `hsm-config-secret-id` as below.
-3. Confirm the unit leaves `blocked`, OpenBao initializes with seal type `pkcs11`, and a restart auto-unseals.
+1. Install SoftHSM on the host (`snap install softhsm`) and create a token plus AES/RSA key.
+2. Pack into `hsm-lib.tar.gz`:
+   - `libsofthsm2.so` and any required shared-library dependencies
+   - the SoftHSM `tokens/` directory
+   - `softhsm2.conf` with `directories.tokendir = /var/snap/openbao/common/hsm/tokens`
+   - `openbao.env` containing `export SOFTHSM2_CONF=/var/snap/openbao/common/hsm/softhsm2.conf`
+3. Attach the tarball as `hsm-lib`, create the HSM secret, and set `hsm-config-secret-id` as below.
+4. Confirm the unit leaves `blocked`, the charm rewrites the PKCS#11 seal and restarts OpenBao, then initialize with seal type `pkcs11` and verify a restart auto-unseals.
+
+The charm does not install SoftHSM or create keys. Provider-specific environment belongs in `openbao.env` inside the archive; the charm installs that file to `/var/snap/openbao/common/openbao.env` (already sourced by `baod-start`).
 
 For snap-only (non-charm) PKCS#11 setup and common failure modes, see
 [snap/TROUBLESHOOTING.md](https://github.com/canonical/openbao-omnicraft/blob/main/snap/TROUBLESHOOTING.md).
@@ -42,11 +50,12 @@ Juju file resources are a single file, so pack the library directory as a tarbal
 mkdir -p ./hsm-libs
 # Copy the PKCS#11 module and its shared-library dependencies into ./hsm-libs
 # Prefer naming the module pkcs11.so, or set secret key `lib` to the real filename.
+# SoftHSM: also include tokens/, softhsm2.conf (tokendir under .../hsm/tokens), and openbao.env.
 tar czf hsm-lib.tar.gz -C ./hsm-libs .
 juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz
 ```
 
-The charm extracts the archive to `/var/snap/openbao/common/hsm/` and points the seal `lib` at the PKCS#11 module. A single ELF `.so` is still accepted for simple providers.
+The charm extracts the archive to `/var/snap/openbao/common/hsm/` and points the seal `lib` at the PKCS#11 module. A single ELF `.so` is still accepted for simple providers. Optional `openbao.env` in the archive is installed to `/var/snap/openbao/common/openbao.env`.
 
 The charm ignores a deploy-time placeholder (non-ELF text). Attach the real tarball before setting the secret.
 

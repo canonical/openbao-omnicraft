@@ -10,11 +10,14 @@ Config and env used by the server daemon:
 |------|------|
 | `/var/snap/openbao/common/openbao-config.hcl` | Server config (seal, plugin registration) |
 | `/var/snap/openbao/common/openbao.env` | Sourced by `baod-start` (library path, vendor env) |
+| `/var/snap/openbao/common/hsm/` | Extracted `hsm-lib` resource (PKCS#11 module, deps, optional provider files) |
 | `/snap/openbao/current/plugins/` | KMS plugin binary + `pkcs11.version` |
 
 On first install, defaults are copied from the snap into `$SNAP_COMMON`. After that,
 edit the copies under `/var/snap/openbao/common/` (refresh does not overwrite `openbao.env`
-once it exists).
+once it exists). Prefer shipping provider env (for example SoftHSM `SOFTHSM2_CONF`) as
+`openbao.env` inside the `hsm-lib` tarball; the charm installs that file to
+`$SNAP_COMMON/openbao.env` when the resource is attached.
 
 Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](../docs/how-to/configure_pkcs11_hsm.md).
 
@@ -23,11 +26,19 @@ Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](../docs/h
 **Any PKCS#11 HSM under this snap**
 
 - Register the KMS plugin (`plugin_directory` + `plugin "kms" "pkcs11"`).
-- Put the PKCS#11 module under snap-common (not `/usr/lib/...`).
+- Put the PKCS#11 module under `$SNAP_COMMON/hsm` (not `/usr/lib/...`).
 - Copy transitive shared libraries next to it (or rely on libs staged in the snap).
-- Set `LD_LIBRARY_PATH` to include that directory (`openbao.env` / `baod-start`).
+- `baod-start` prepends `$SNAP_COMMON/hsm` to `LD_LIBRARY_PATH`.
+- Put provider-specific exports in an `openbao.env` file inside the `hsm-lib` tarball
+  when needed (the charm installs it to `$SNAP_COMMON/openbao.env`).
 - Create the seal key on the HSM before `bao operator init`.
 - Connect `raw-usb` / `hardware-observe` only if the device needs USB.
+
+**SoftHSM**
+
+- Pack `libsofthsm2.so` (+ deps), a `tokens/` store, `softhsm2.conf` with
+  `directories.tokendir = /var/snap/openbao/common/hsm/tokens`, and
+  `openbao.env` with `export SOFTHSM2_CONF=/var/snap/openbao/common/hsm/softhsm2.conf`.
 
 **YubiHSM only**
 

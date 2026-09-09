@@ -693,9 +693,16 @@ class OpenBaoOperatorCharm(CharmBase):
         # config changes to pick up the current active node. Restarting is
         # harmless at that point since the node holds no data. A seal type
         # change also requires a restart so OpenBao can pick up PKCS#11 or
-        # transit auto-unseal.
+        # transit auto-unseal. Any PKCS#11 config rewrite (secret/lib ready or
+        # updated) must restart so baod-start reloads openbao.env from hsm-lib
+        # and the plugin sees the new seal stanza.
         restart_needed = (
-            env_changed or seal_changed or (config_changed and self._openbao_is_uninitialized())
+            env_changed
+            or seal_changed
+            or (
+                config_changed
+                and (self._openbao_is_uninitialized() or self._hsm_config_requested())
+            )
         )
         if restart_needed and self._openbao_service_is_running():
             self._restart_openbao_service()
@@ -1310,7 +1317,8 @@ class OpenBaoOperatorCharm(CharmBase):
         variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY) when available.
 
         If no token and no proxy environment variables are available, the systemd drop-in
-        is removed and openbao.env is cleared.
+        is removed. ``openbao.env`` is restored from an optional ``openbao.env`` shipped
+        in the hsm-lib resource when present; otherwise it is cleared.
 
         Returns:
             True if environment files were updated, False otherwise
@@ -1322,6 +1330,9 @@ class OpenBaoOperatorCharm(CharmBase):
             logger.debug("No auto-unseal token or proxy environment variables available")
             with suppress(ValueError):
                 self.machine.remove_path(SYSTEMD_DROP_IN_FILE_PATH)
+            if self.machine.exists(path=f"{HSM_LIB_DIR}/openbao.env"):
+                return self._apply_hsm_openbao_env()
+            with suppress(ValueError):
                 self.machine.remove_path(OPENBAO_ENV_PATH)
                 logger.info("Removed systemd drop-in file and openbao.env")
             return False
@@ -1393,9 +1404,39 @@ class OpenBaoOperatorCharm(CharmBase):
             openbao_env_content = jinja2.get_template(
                 TEMPLATE_OPENBAO_ENV_LOAD_SYSTEMD_CREDS
             ).render(credential_name=SYSTEMD_CRED_EXTERNAL_BAO_TOKEN_NAME)
-            self.machine.push(path=OPENBAO_ENV_PATH, source=openbao_env_content)
+            # Preserve optional provider exports shipped in hsm-lib's openbao.env.
+            if not self._apply_hsm_openbao_env(prefix=openbao_env_content):
+                self.machine.push(path=OPENBAO_ENV_PATH, source=openbao_env_content)
             logger.info("Updated systemd drop-in file for OpenBao service")
 
+        return True
+
+    def _apply_hsm_openbao_env(self, prefix: str = "") -> bool:
+        """Install optional ``openbao.env`` from the unpacked hsm-lib into SNAP_COMMON.
+
+        ``baod-start`` already sources ``$SNAP_COMMON/openbao.env``. Provider-specific
+        exports can be shipped as ``openbao.env`` inside the hsm-lib tarball; the charm
+        copies them into place without parsing HSM-specific keys.
+
+        Args:
+            prefix: Optional content written before the hsm-lib openbao.env (e.g. transit
+                credential exports).
+
+        Returns:
+            True if ``OPENBAO_ENV_PATH`` was written or changed.
+        """
+        hsm_env_path = f"{HSM_LIB_DIR}/openbao.env"
+        if not self.machine.exists(path=hsm_env_path):
+            return False
+        hsm_content = self.machine.pull(path=hsm_env_path).read()
+        content = f"{prefix.rstrip()}\n{hsm_content}" if prefix else hsm_content
+        if not content.endswith("\n"):
+            content += "\n"
+        if self.machine.exists(path=OPENBAO_ENV_PATH):
+            if self.machine.pull(path=OPENBAO_ENV_PATH).read() == content:
+                return False
+        self.machine.push(path=OPENBAO_ENV_PATH, source=content)
+        logger.info("Installed openbao.env from hsm-lib into %s", OPENBAO_ENV_PATH)
         return True
 
     def _filter_active_peer_addresses(self, addresses: List[str]) -> List[str]:
@@ -1583,6 +1624,9 @@ class OpenBaoOperatorCharm(CharmBase):
         except (OSError, ValueError) as exc:
             logger.warning("Failed to install hsm-lib resource: %s", exc)
             return None
+
+        # Optional openbao.env in the archive is installed where baod-start sources it.
+        self._apply_hsm_openbao_env()
 
         module = resolve_hsm_pkcs11_module(Path(HSM_LIB_DIR), lib_relative)
         if not module:

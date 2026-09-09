@@ -7,7 +7,7 @@ METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 
 # Path to the built openbao snap, set from the --snap_path pytest option in conftest.
 OPENBAO_SNAP_PATH: str | None = None
-# Local SoftHSM snap (.snap) for PKCS#11 tests when the store package is unavailable.
+# Local SoftHSM snap (.snap) fallback when `snap install softhsm` from the store fails.
 SOFTHSM_SNAP_PATH: str | None = None
 
 APP_NAME: str = METADATA["name"]

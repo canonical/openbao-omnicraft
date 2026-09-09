@@ -173,6 +173,14 @@ jobs:
 
           echo "MicroCeph RGW setup complete."
           sudo microceph status
+      - name: Install SoftHSM and OpenSC for PKCS#11 tests
+        if: matrix.suite == 'test_pkcs11_hsm'
+        run: |
+          sudo snap install softhsm
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq opensc
+          softhsm.softhsm2-util --version
+          pkcs11-tool --version || true
       - name: Run integration tests
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:

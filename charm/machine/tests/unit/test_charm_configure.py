@@ -42,26 +42,54 @@ def _wire_real_hsm_machine_fs(
     """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
     real = Machine()
     hsm_dir = tmp_path / "hsm"
+    openbao_env = tmp_path / "openbao.env"
     monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
+    monkeypatch.setattr("charm.OPENBAO_ENV_PATH", str(openbao_env))
     mock_machine.replace_directory.side_effect = real.replace_directory
     mock_machine.extract_archive.side_effect = real.extract_archive
     mock_machine.copy_file.side_effect = real.copy_file
+
+    def exists(path: str) -> bool:
+        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
+            str(hsm_dir)
+        ):
+            return real.exists(path)
+        return False
+
+    def pull(path: str):
+        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
+            str(hsm_dir)
+        ):
+            return real.pull(path)
+        return StringIO("")
+
+    def push(path: str, source: str) -> None:
+        if path == str(openbao_env) or path.startswith(str(hsm_dir)):
+            real.push(path, source)
+
+    mock_machine.exists.side_effect = exists
+    mock_machine.pull.side_effect = pull
+    mock_machine.push.side_effect = push
     return hsm_dir
 
 
-def _make_hsm_lib_tarball(tmp_path: Path, *names: str) -> Path:
+def _make_hsm_lib_tarball(
+    tmp_path: Path, *names: str, openbao_env: str | None = None
+) -> Path:
     """Create a tarball containing ELF stubs named ``names`` (default pkcs11.so)."""
     if not names:
         names = ("pkcs11.so",)
-    staging = tmp_path / "hsm-staging"
-    staging.mkdir(exist_ok=True)
+    stage = tmp_path / "hsm-stage"
+    stage.mkdir(exist_ok=True)
+    for name in names:
+        # Minimal ELF header so is_elf_shared_object accepts the stub when needed.
+        (stage / name).write_bytes(b"\x7fELF" + b"\0" * 12)
+    if openbao_env is not None:
+        (stage / "openbao.env").write_text(openbao_env, encoding="utf-8")
     archive = tmp_path / "hsm-lib.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
-        for name in names:
-            member = staging / name
-            member.parent.mkdir(parents=True, exist_ok=True)
-            member.write_bytes(b"\x7fELF" + b"\x00" * 16)
-            tar.add(member, arcname=name)
+        for path in sorted(stage.iterdir()):
+            tar.add(path, arcname=path.name)
     return archive
 
 
@@ -657,7 +685,12 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         self.mock_machine.pull.return_value = StringIO("")
         plugin_sha = _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
         hsm_dir = _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
-        hsm_archive = _make_hsm_lib_tarball(tmp_path, "pkcs11.so", "libdep.so")
+        hsm_archive = _make_hsm_lib_tarball(
+            tmp_path,
+            "pkcs11.so",
+            "libdep.so",
+            openbao_env="export SOFTHSM2_CONF=/var/snap/openbao/common/hsm/softhsm2.conf\n",
+        )
         hsm_secret = testing.Secret(
             tracked_content={
                 "slot": "0",
@@ -690,6 +723,9 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         self.mock_machine.extract_archive.assert_called_with(str(hsm_archive), str(hsm_dir))
         assert (hsm_dir / "pkcs11.so").is_file()
         assert (hsm_dir / "libdep.so").is_file()
+        assert (hsm_dir / "openbao.env").is_file()
+        assert (tmp_path / "openbao.env").is_file()
+        assert "SOFTHSM2_CONF" in (tmp_path / "openbao.env").read_text(encoding="utf-8")
         actual_config_hcl = self._pushed_openbao_hcl()
         assert actual_config_hcl["plugin_directory"] == str(tmp_path / "plugins")
         assert actual_config_hcl["plugin_auto_register"] is True

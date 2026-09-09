@@ -6,15 +6,15 @@
 This suite:
 
 1. Deploys the OpenBao machine charm (placeholder ``hsm-lib``).
-2. Installs the ``softhsm`` snap from the Snap Store on the unit.
-3. Creates a SoftHSM token + AES key, copies the token store into OpenBao
-   snap-common, and exports ``SOFTHSM2_CONF`` in ``openbao.env``.
-4. Attaches ``libsofthsm2.so`` (+ deps) as the ``hsm-lib`` resource and configures
-   the HSM Juju secret.
+2. On the **test runner**, creates a SoftHSM token + AES key and packs
+   libs + tokens + ``softhsm2.conf`` + ``openbao.env`` as ``hsm-lib``.
+3. Attaches the resource and configures the HSM Juju secret.
+4. Waits for the charm to unpack, rewrite the PKCS#11 seal, and restart.
 5. Initializes with PKCS#11, verifies seal type, restart auto-unseal, and charm
    authorization.
 
-Requires an amd64/arm64 OpenBao snap that ships ``plugins/openbao-plugin-kms-pkcs11``.
+Requires SoftHSM via ``snap install softhsm`` and OpenSC on the
+runner, plus an amd64/arm64 OpenBao snap that ships ``plugins/openbao-plugin-kms-pkcs11``.
 YubiHSM / YubiKey coverage is deferred.
 """
 
@@ -30,18 +30,18 @@ import pytest
 
 from config import APP_NAME, JUJU_FAST_INTERVAL
 from helpers import (
-    SOFTHSM_CONF_PATH,
+    HSM_LIB_DIR,
+    SOFTHSM_CONF_IN_SNAP,
     SOFTHSM_KEY_LABEL,
     SOFTHSM_MODULE_NAME,
     SOFTHSM_TOKEN_LABEL,
     authorize_charm_and_wait,
-    build_softhsm_hsm_lib_tarball,
+    build_host_softhsm_hsm_lib_tarball,
     deploy_openbao,
     fast_forward,
     get_leader_unit_name,
     get_openbao_client,
     initialize_openbao_leader,
-    setup_softhsm_on_unit,
     wait_for_status_message,
 )
 
@@ -65,23 +65,26 @@ def _wait_for_pkcs11_seal_config(juju: jubilant.Juju, unit_name: str, timeout: i
     raise TimeoutError(f"Timed out waiting for PKCS#11 seal config on {unit_name}")
 
 
-def _assert_softhsm_runtime_ready(juju: jubilant.Juju, unit_name: str) -> None:
-    """Assert SoftHSM conf/env and token files are staged for the OpenBao snap."""
+def _assert_hsm_lib_unpacked(juju: jubilant.Juju, unit_name: str) -> None:
+    """Assert the charm unpacked the SoftHSM archive and installed openbao.env."""
     juju.exec(
         "bash",
         "-lc",
         f"""
 set -euo pipefail
-test -f '{SOFTHSM_CONF_PATH}'
-grep -q 'directories.tokendir' '{SOFTHSM_CONF_PATH}'
-grep -q '^export SOFTHSM2_CONF={SOFTHSM_CONF_PATH}$' /var/snap/openbao/common/openbao.env
-test -d /var/snap/openbao/common/softhsm/tokens
-find /var/snap/openbao/common/softhsm/tokens -name token.object | grep -q .
+test -f '{HSM_LIB_DIR}/{SOFTHSM_MODULE_NAME}'
+test -f '{SOFTHSM_CONF_IN_SNAP}'
+test -f '{HSM_LIB_DIR}/openbao.env'
+grep -q 'directories.tokendir' '{SOFTHSM_CONF_IN_SNAP}'
+grep -q 'SOFTHSM2_CONF' '{HSM_LIB_DIR}/openbao.env'
+grep -q 'SOFTHSM2_CONF' /var/snap/openbao/common/openbao.env
+test -d '{HSM_LIB_DIR}/tokens'
+find '{HSM_LIB_DIR}/tokens' -name token.object | grep -q .
 """,
         unit=unit_name,
     )
     logger.info(
-        "SoftHSM runtime ready on %s (token=%s key=%s)",
+        "hsm-lib unpacked on %s (token=%s key=%s)",
         unit_name,
         SOFTHSM_TOKEN_LABEL,
         SOFTHSM_KEY_LABEL,
@@ -93,10 +96,9 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
     juju: jubilant.Juju,
     openbao_charm_path: Path,
 ):
-    """Deploy OpenBao, provision SoftHSM from the store, initialize PKCS#11, restart."""
+    """Deploy OpenBao, attach host-built SoftHSM hsm-lib, initialize PKCS#11, auto-unseal."""
     deploy_openbao(juju, num_openbaos=1, charm_path=openbao_charm_path)
 
-    # Wait until the snap/charm are far enough along that snap-common exists.
     with fast_forward(juju, JUJU_FAST_INTERVAL):
         wait_for_status_message(
             juju,
@@ -109,18 +111,16 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
 
     leader_name = get_leader_unit_name(juju, APP_NAME)
 
-    # Install SoftHSM from the Snap Store, create token+key, copy into OpenBao common.
-    secret_content = setup_softhsm_on_unit(juju, leader_name)
-    _assert_softhsm_runtime_ready(juju, leader_name)
-    assert secret_content["token-label"] == SOFTHSM_TOKEN_LABEL
-    assert secret_content["key-label"] == SOFTHSM_KEY_LABEL
-    assert secret_content["lib"] == SOFTHSM_MODULE_NAME
-
-    # Juju is snap-confined and cannot scp into host /tmp; keep the archive under $HOME.
+    # SoftHSM lives on the runner; the charm only unpacks the attached tarball.
+    # Juju snap cannot read host /tmp for attach-resource; keep the archive under $HOME.
     with tempfile.TemporaryDirectory(prefix="openbao-hsm-", dir=Path.home()) as tmp:
-        hsm_resource = build_softhsm_hsm_lib_tarball(
-            juju, leader_name, Path(tmp) / "hsm-lib.tar.gz"
+        hsm_resource, secret_content = build_host_softhsm_hsm_lib_tarball(
+            Path(tmp) / "hsm-lib.tar.gz"
         )
+        assert secret_content["token-label"] == SOFTHSM_TOKEN_LABEL
+        assert secret_content["key-label"] == SOFTHSM_KEY_LABEL
+        assert secret_content["lib"] == SOFTHSM_MODULE_NAME
+
         juju.cli("attach-resource", APP_NAME, f"hsm-lib={hsm_resource}")
 
         secret_name = "hsm-config"
@@ -128,21 +128,16 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
         juju.grant_secret(secret_name, APP_NAME)
         juju.config(APP_NAME, {"hsm-config-secret-id": secret_id})
 
-        # Keep the archive until attach-resource has uploaded it; then wait for
-        # the charm to render the PKCS#11 seal. With HSM configured the status
-        # shortens to "Please initialize OpenBao" (no auto-unseal-provider hint).
+        # Charm unpacks hsm-lib, rewrites the PKCS#11 seal, and restarts OpenBao.
         with fast_forward(juju, JUJU_FAST_INTERVAL):
             _wait_for_pkcs11_seal_config(juju, leader_name, timeout=600)
+            _assert_hsm_lib_unpacked(juju, leader_name)
             wait_for_status_message(
                 juju,
                 expected_message="Please initialize OpenBao",
                 app_name=APP_NAME,
                 timeout=600,
             )
-
-    # SoftHSM env is already set; restart so the seal plugin sees SOFTHSM2_CONF
-    # before initialization if config-changed did not bounce the snap.
-    juju.ssh(leader_name, "sudo snap restart openbao")
 
     root_token, recovery_key = initialize_openbao_leader(juju, APP_NAME)
     assert recovery_key, "PKCS#11 initialization should return a recovery key"
@@ -151,7 +146,7 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
     assert openbao.client.seal_status["type"] == "pkcs11"  # type: ignore[reportIndexIssue]
     assert not openbao.is_sealed()
 
-    # Auto-unseal across restart.
+    # Auto-unseal across restart (charm already bounced once when seal became ready).
     juju.ssh(leader_name, "sudo snap restart openbao")
     openbao.wait_for_node_to_be_unsealed()
     assert not openbao.is_sealed()
@@ -159,7 +154,6 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
 
     authorize_charm_and_wait(juju, root_token)
 
-    # Charm should settle active after authorization.
     with fast_forward(juju, JUJU_FAST_INTERVAL):
         juju.wait(
             lambda status: APP_NAME in status.apps and jubilant.all_active(status, APP_NAME),
