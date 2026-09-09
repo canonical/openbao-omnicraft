@@ -411,7 +411,16 @@ def _ensure_softhsm_snap_installed(juju: jubilant.Juju, unit_name: str) -> None:
             "OPENBAO_SOFTHSM_CHANNEL if it is only on a non-default channel."
         )
     # Juju snap cannot scp into host /tmp; put the file under the unit user's home.
-    unit_home = _unit_exec(juju, unit_name, "bash", "-lc", 'echo "$HOME"')
+    # juju exec often leaves HOME unset even with bash -lc.
+    unit_home = _unit_exec(
+        juju,
+        unit_name,
+        "bash",
+        "-lc",
+        'echo "${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}"',
+    )
+    if not unit_home:
+        raise RuntimeError(f"Could not resolve home directory on {unit_name}")
     remote_snap = f"{unit_home}/openbao-softhsm.snap"
     juju.cli("scp", config.SOFTHSM_SNAP_PATH, f"{unit_name}:{remote_snap}")
     _unit_exec(
@@ -444,7 +453,10 @@ def setup_softhsm_on_unit(juju: jubilant.Juju, unit_name: str) -> dict[str, str]
 set -euo pipefail
 
 # SoftHSM snap apps write under SNAP_USER_COMMON for the invoking user.
-SOFTHSM_USER_COMMON="${{HOME}}/snap/{SOFTHSM_SNAP_NAME}/common"
+# juju exec often leaves HOME unset; resolve from passwd when needed.
+HOME="${{HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}}"
+test -n "$HOME"
+SOFTHSM_USER_COMMON="$HOME/snap/{SOFTHSM_SNAP_NAME}/common"
 mkdir -p "$SOFTHSM_USER_COMMON/tokens"
 find "$SOFTHSM_USER_COMMON/tokens" -mindepth 1 -delete 2>/dev/null || true
 
