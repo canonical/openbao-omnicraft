@@ -341,8 +341,10 @@ def _hsm_lib_placeholder_path() -> Path:
     """Return a non-module placeholder tarball so Juju can attach hsm-lib at deploy time.
 
     Filename must end in ``.gz`` to match the charm resource ``filename: hsm-lib.tar.gz``.
+    Kept under the integration tests tree; local deploys that need a dummy resource can
+    point at the same file.
     """
-    return Path(__file__).resolve().parents[2] / "hsm-lib-placeholder.tar.gz"
+    return Path(__file__).resolve().parent / "hsm-lib-placeholder.tar.gz"
 
 
 def openbao_charm_resources(extra: dict[str, str] | None = None) -> dict[str, str]:
