@@ -76,9 +76,9 @@ openbao/0*  blocked   idle   10.1.0.237         Please initialize OpenBao or int
 
 To communicate with OpenBao via CLI, we need to install the OpenBao CLI client and set the following environment variables:
 
-- `OPENBAO_ADDR`
+- `BAO_ADDR`
 - `BAO_TOKEN`
-- `OPENBAO_CAPATH`
+- `BAO_CAPATH`
 
 Install the [OpenBao client](https://snapcraft.io/openbao) and [yq](https://snapcraft.io/yq):
 
@@ -87,10 +87,10 @@ sudo snap install openbao
 sudo snap install yq
 ```
 
-Set the `OPENBAO_ADDR` environment variable:
+Set the `BAO_ADDR` environment variable:
 
 ```shell
-export OPENBAO_ADDR=https://$(juju status openbao/leader --format=yaml | yq -r '.applications.openbao.address'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/leader --format=yaml | yq -r '.applications.openbao.address'):8200; echo $BAO_ADDR
 ```
 
 Extract and store OpenBao's CA certificate to a `openbao.pem` file:
@@ -100,10 +100,10 @@ cert_juju_secret_id=$(juju secrets --format=yaml | yq -r 'to_entries | .[] | sel
 juju show-secret ${cert_juju_secret_id} --reveal --format=yaml | yq -r '.[].content.certificate' > openbao.pem
 ```
 
-This will put the CA certificate in a file called `openbao.pem`. Now, you can point the `openbao` client to this file by setting the `OPENBAO_CAPATH` variable.
+This will put the CA certificate in a file called `openbao.pem`. Now, you can point the `openbao` client to this file by setting the `BAO_CAPATH` variable.
 
 ```shell
-export OPENBAO_CAPATH=$(pwd)/openbao.pem; echo $OPENBAO_CAPATH
+export BAO_CAPATH=$(pwd)/openbao.pem; echo $BAO_CAPATH
 ```
 
 Validate that OpenBao is accessible and up and running:

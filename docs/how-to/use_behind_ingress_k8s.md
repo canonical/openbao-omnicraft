@@ -134,16 +134,16 @@ cks0s1c24l7c77v23p80:
     [...]
 ```
 
-Copy the CA certificate content into a file and set the `OPENBAO_CAPATH` environment variable to reference this file:
+Copy the CA certificate content into a file and set the `BAO_CAPATH` environment variable to reference this file:
 
 ```bash
-export OPENBAO_CAPATH=/path/to/openbao_ca.pem
+export BAO_CAPATH=/path/to/openbao_ca.pem
 ```
 
-Identify the openbao address by setting the `OPENBAO_ADDR` environment variable using the OpenBao URL which is retrieved through `show-proxied-endpoints` action. In our example, the openbao address is `https://10.0.0.5/openbao-openbao-k8s`:
+Identify the openbao address by setting the `BAO_ADDR` environment variable using the OpenBao URL which is retrieved through `show-proxied-endpoints` action. In our example, the openbao address is `https://10.0.0.5/openbao-openbao-k8s`:
 
 ```bash
-export OPENBAO_ADDR="https://10.0.0.5/openbao-openbao-k8s"
+export BAO_ADDR="https://10.0.0.5/openbao-openbao-k8s"
 ```
 
 You can now run openbao commands against the openbao unit.

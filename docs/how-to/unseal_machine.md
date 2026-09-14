@@ -22,10 +22,10 @@ Machine  State    Address         Inst id        Base          AZ  Message
 2        started  10.191.126.90   juju-b8368f-2  ubuntu@22.04      Running
 ```
 
-Set the `OPENBAO_ADDR` variable to the sealed unit:
+Set the `BAO_ADDR` variable to the sealed unit:
 
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $BAO_ADDR
 ```
 
 Unseal the the unit using the same unseal keys as received during the initialization of the OpenBao leader:

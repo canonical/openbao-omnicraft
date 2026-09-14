@@ -53,9 +53,9 @@ Machine  State    Address         Inst id        Base          AZ  Message
 
 ```
 
-Set the `OPENBAO_ADDR` variable to the `openbao/1` unit:
+Set the `BAO_ADDR` variable to the `openbao/1` unit:
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/1 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/1 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $BAO_ADDR
 ```
 Unseal the the `openbao/1` unit using the same unseal keys as received during the initialization of the OpenBao leader:
 
@@ -66,7 +66,7 @@ bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 And complete the same operations for the `openbao/2` unit:
 
 ```
-export OPENBAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $OPENBAO_ADDR
+export BAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $BAO_ADDR
 bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
 ```
 
