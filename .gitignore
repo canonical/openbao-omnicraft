@@ -218,6 +218,7 @@ __marimo__/
 charm/k8s/tests/integration/openbao_kv_requirer_operator/lib/*
 charm/machine/tests/integration/openbao_kv_requirer_operator/lib/*
 charm/.charm_tracing_buffer.raw
+charm/*/.charm_tracing_buffer.raw
 
 # Ignore allure report and results if running locally
 charm/allure-report/
