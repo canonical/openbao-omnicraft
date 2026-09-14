@@ -1,4 +1,6 @@
-# OpenBao snap — PKCS#11 troubleshooting
+# Troubleshooting
+
+## Snap
 
 The OpenBao snap ships a **static** `bao` binary and an external **PKCS#11 KMS plugin**
 (`openbao-plugin-kms-pkcs11`) on amd64/arm64. Strict confinement means host library
@@ -19,9 +21,9 @@ once it exists). Prefer shipping provider env (for example SoftHSM `SOFTHSM2_CON
 `openbao.env` inside the `hsm-lib` tarball; the charm installs that file to
 `$SNAP_COMMON/openbao.env` when the resource is attached.
 
-Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](../docs/how-to/configure_pkcs11_hsm.md).
+Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](how-to/configure_pkcs11_hsm.md).
 
-## What is general vs vendor-specific
+### What is general vs vendor-specific
 
 **Any PKCS#11 HSM under this snap**
 
@@ -48,7 +50,7 @@ Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](../docs/h
 - PKCS#11 PIN format: `{auth_key_id as 4 hex digits}{password}` (e.g. `0002S3cretPass`).
 - Password must be at least **8** characters (total PIN length 12–68 bytes).
 
-## Checklist before `init`
+### Checklist before `init`
 
 1. Plugin present: `ls /snap/openbao/current/plugins/openbao-plugin-kms-pkcs11`
 2. Module visible inside the snap and deps resolve:
@@ -64,14 +66,14 @@ Also see the machine charm how-to: [Configure PKCS#11 HSM auto-unseal](../docs/h
 5. Restart: `sudo snap restart openbao.server`
 6. Initialize: `bao operator init` (expect **recovery keys**, not Shamir unseal keys).
 
-## Common errors
+### Common errors
 
-### `this build of OpenBao has PKCS#11 disabled`
+#### `this build of OpenBao has PKCS#11 disabled`
 
 The main `bao` binary is static (CGO off). You need the external KMS plugin stanza in
 config (amd64/arm64 snap that ships `plugins/openbao-plugin-kms-pkcs11`).
 
-### Panic / nil pointer in `miekg/pkcs11` (`Initialize`)
+#### Panic / nil pointer in `miekg/pkcs11` (`Initialize`)
 
 `dlopen` of the seal `lib` failed. Typical causes:
 
@@ -83,7 +85,7 @@ config (amd64/arm64 snap that ships `plugins/openbao-plugin-kms-pkcs11`).
 `$SNAP_COMMON` or `$SNAP_COMMON/hsm`, ensure `LD_LIBRARY_PATH` includes that directory,
 restart the server.
 
-### `CKR_ARGUMENTS_BAD` during initialize (not login)
+#### `CKR_ARGUMENTS_BAD` during initialize (not login)
 
 Often the YubiHSM PKCS#11 module has no usable config. Create:
 
@@ -99,7 +101,7 @@ Ensure `YUBIHSM_PKCS11_CONF` points at that file (`openbao.env`) and the connect
 curl -sS http://127.0.0.1:12345/connector/status
 ```
 
-### `CKR_FUNCTION_FAILED` during initialize
+#### `CKR_FUNCTION_FAILED` during initialize
 
 Config was found, but a backend failed to load. For YubiHSM over HTTP, check:
 
@@ -113,7 +115,7 @@ snap run --shell openbao.server -c '
 `libcurl.so.4 => not found` (or similar) means copy those libraries into `$SNAP_COMMON`
 (or rebuild a snap that stages `libcurl` / `libusb`). USB backends need `libusb`.
 
-### `CKR_ARGUMENTS_BAD` during login (`failed to login`)
+#### `CKR_ARGUMENTS_BAD` during login (`failed to login`)
 
 For YubiHSM this is almost always PIN format or length:
 
@@ -126,7 +128,7 @@ pin = "{4-hex-auth-key-id}{password}"   # e.g. 0002S3cretPass
 
 Bare passwords like `S3cret` (6 chars) or `0002S3cret` (10 bytes total) fail login.
 
-### `stored unseal keys … none were found` / `security barrier not initialized`
+#### `stored unseal keys … none were found` / `security barrier not initialized`
 
 The seal path is working; the server is simply not initialized yet:
 
@@ -137,7 +139,7 @@ bao operator init
 
 Store the recovery keys and root token.
 
-### USB plugs disconnected
+#### USB plugs disconnected
 
 ```bash
 sudo snap connect openbao:raw-usb
@@ -147,13 +149,13 @@ sudo snap connect openbao:hardware-observe
 Needed when the PKCS#11 stack talks to a local USB device (not when only using a
 remote/network connector).
 
-### Mixing YubiHSM package versions
+#### Mixing YubiHSM package versions
 
 Ubuntu packages (`libyubihsm2`, shell 2.7.1) **conflict** with Yubico 2.7.3 packages
 (`libyubihsm1`). Keep one consistent SDK stack; do not mix. After changing the PKCS#11
 `.so` on the host, recopy it (and deps) into `$SNAP_COMMON`.
 
-## Useful commands
+### Useful commands
 
 ```bash
 # Service logs

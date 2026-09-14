@@ -40,7 +40,7 @@ Prepare everything on the **host**; the charm only unpacks the tarball and appli
 The charm does not install SoftHSM or create keys. Provider-specific environment belongs in `openbao.env` inside the archive; the charm installs that file to `/var/snap/openbao/common/openbao.env` (already sourced by `baod-start`).
 
 For snap-only (non-charm) PKCS#11 setup and common failure modes, see
-[snap/TROUBLESHOOTING.md](https://github.com/canonical/openbao-omnicraft/blob/main/snap/TROUBLESHOOTING.md).
+[Troubleshooting (Snap)](../troubleshooting.md).
 
 ## 1. Pack and attach the PKCS#11 library directory
 
@@ -59,10 +59,12 @@ The charm extracts the archive to `/var/snap/openbao/common/hsm/` and points the
 
 The charm ignores a deploy-time placeholder (non-ELF text). Attach the real tarball before setting the secret.
 
-When deploying a local `.charm` file, Juju requires the resource at deploy time. Use the placeholder shipped in the repository until you attach a real library:
+When deploying a local `.charm` file, Juju requires the resource at deploy time. Use the
+placeholder under `charm/machine/tests/integration/` until you attach a real library:
 
 ```bash
-juju deploy ./openbao.charm --resource hsm-lib=./hsm-lib-placeholder.tar.gz
+juju deploy ./openbao.charm \
+  --resource hsm-lib=./charm/machine/tests/integration/hsm-lib-placeholder.tar.gz
 juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz
 ```
 
