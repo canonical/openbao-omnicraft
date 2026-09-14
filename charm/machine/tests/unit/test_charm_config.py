@@ -60,6 +60,7 @@ class TestCharmConfig:
         "acme_country": "US",
         "acme_province": "CA",
         "acme_locality": "San Francisco",
+        "hsm-config-secret-id": "secret:cqgj49fmp25c7796r0pg",
     }
 
     def test_given_config_with_defaults_then_default_config_values_are_correct(self):
