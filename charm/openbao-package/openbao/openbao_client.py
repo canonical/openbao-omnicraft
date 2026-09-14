@@ -24,6 +24,7 @@ from openbao.openbao_http import (
     InternalServerError,
     InvalidPathError,
     InvalidRequestError,
+    NotInitializedError,
     OpenBaoHttp,
 )
 
@@ -92,6 +93,15 @@ class Certificate:
     certificate: str
     ca: str
     chain: List[str]
+
+
+@dataclass
+class InitializationResult:
+    """Credentials returned when OpenBao is initialized."""
+
+    root_token: str
+    keys: List[str]
+    keys_are_recovery: bool = False
 
 
 class AuditDeviceType(Enum):
@@ -181,6 +191,74 @@ class OpenBaoClient:
         """Return whether OpenBao is initialized."""
         return self._client.get("/v1/sys/init").json()["initialized"]
 
+    def initialize(
+        self, secret_shares: int = 1, secret_threshold: int = 1
+    ) -> InitializationResult:
+        """Initialize OpenBao and return the root token and key shares.
+
+        Shamir seal uses unseal key shares. Auto-unseal types (transit, pkcs11)
+        use recovery key shares instead.
+
+        Raises:
+            OpenBaoClientError: If OpenBao is already initialized, the share
+                parameters are invalid, or the API request fails.
+        """
+        if secret_shares < 1 or secret_threshold < 1 or secret_threshold > secret_shares:
+            raise OpenBaoClientError(
+                "secret-threshold must be >= 1 and secret-shares must be >= secret-threshold"
+            )
+        try:
+            if self.is_initialized():
+                raise OpenBaoClientError("OpenBao is already initialized")
+            seal_type = self.get_seal_type()
+            if seal_type == "shamir":
+                payload = {
+                    "secret_shares": secret_shares,
+                    "secret_threshold": secret_threshold,
+                }
+            else:
+                payload = {
+                    "recovery_shares": secret_shares,
+                    "recovery_threshold": secret_threshold,
+                }
+            data = self._client.put("/v1/sys/init", json=payload).json()
+            root_token = data["root_token"]
+            if seal_type == "shamir":
+                return InitializationResult(
+                    root_token=root_token,
+                    keys=list(data["keys"]),
+                    keys_are_recovery=False,
+                )
+            recovery_keys = data.get("recovery_keys") or data.get("keys") or []
+            return InitializationResult(
+                root_token=root_token,
+                keys=list(recovery_keys),
+                keys_are_recovery=True,
+            )
+        except OpenBaoClientError:
+            raise
+        except (HttpError, ValueError, KeyError, TypeError) as e:
+            logger.error("Error while initializing OpenBao")
+            raise OpenBaoClientError("Failed to initialize OpenBao") from e
+
+    def unseal(self, key: str) -> dict:
+        """Submit an unseal key share and return the resulting seal status.
+
+        The key is never logged.
+
+        Returns:
+            The seal status after submitting the key, including ``sealed``,
+            ``progress``, and ``t`` (threshold).
+
+        Raises:
+            OpenBaoClientError: If OpenBao rejects the request or is unreachable.
+        """
+        try:
+            return self._client.put("/v1/sys/unseal", json={"key": key}).json()
+        except (InvalidRequestError, NotInitializedError, HttpError) as e:
+            logger.error("Error while unsealing OpenBao")
+            raise OpenBaoClientError("Failed to unseal OpenBao") from e
+
     def is_sealed(self) -> bool:
         """Return whether OpenBao is sealed."""
         try:
@@ -267,6 +345,10 @@ class OpenBaoClient:
     def is_seal_type_transit(self) -> bool:
         """Return whether OpenBao is sealed by the transit backend."""
         return "transit" == self.get_seal_type()
+
+    def is_seal_type_pkcs11(self) -> bool:
+        """Return whether OpenBao is sealed by a PKCS#11 HSM."""
+        return "pkcs11" == self.get_seal_type()
 
     def _health_status_code(self, standby_ok: bool = False) -> int:
         """Return the HTTP status code of the OpenBao health endpoint."""

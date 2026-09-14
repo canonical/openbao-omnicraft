@@ -20,6 +20,7 @@ from helpers import (
     get_openbao_token_and_unseal_key,
     initialize_openbao_leader,
     initialize_unseal_authorize_openbao,
+    openbao_charm_resources,
     wait_for_status_message,
 )
 
@@ -74,6 +75,7 @@ def test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounsea
             "openbao-b",
             trust=True,
             num_units=1,
+            resources=openbao_charm_resources(),
         )
         juju.wait(
             lambda s: (
@@ -106,7 +108,7 @@ def test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounsea
         wait_for_status_message(
             juju=juju,
             count=1,
-            expected_message="Please initialize OpenBao",
+            expected_message="Please initialize OpenBao (see `initialize` action)",
             app_name="openbao-b",
         )
 

@@ -45,10 +45,10 @@ Model  Controller           Cloud/Region         Version  SLA          Timestamp
 demo   localhost-localhost  localhost/localhost  3.6.8    unsupported  11:41:15-04:00
 
 App    Version  Status   Scale  Charm  Channel    Rev  Exposed  Message
-openbao           blocked      1  openbao  1.19/edge  475  no       Please initialize OpenBao or integrate with an auto-unseal provider
+openbao           blocked      1  openbao  1.19/edge  475  no       Please initialize OpenBao (see `initialize` action) or integrate with an auto-unseal provider
 
 Unit      Workload  Agent  Machine  Public address  Ports  Message
-openbao/0*  blocked   idle   0        10.102.71.106          Please initialize OpenBao or integrate with an auto-unseal provider
+openbao/0*  blocked   idle   0        10.102.71.106          Please initialize OpenBao (see `initialize` action) or integrate with an auto-unseal provider
 
 Machine  State    Address        Inst id        Base          AZ  Message
 0        started  10.102.71.106  juju-c3e914-0  ubuntu@24.04      Running
@@ -114,76 +114,54 @@ HA Enabled         true
 
 ## 5. Initialise and unseal OpenBao
 
-Initialise OpenBao: 
+Initialise OpenBao with the charm action. This stores the root token and unseal key in a Juju secret that expires (default 1 hour). Reveal and store those credentials offline before they expire.
 
 ```shell
-$ bao operator init -key-shares=1 -key-threshold=1
-Unseal Key 1: NXw7vSzWOnNuNF2v5aEkQcQy/TdTuryYS9Qz3hxDS38=
-
-Initial Root Token: hvs.0d26h3eSnlZzpUoVu49Sj64V
-
-OpenBao initialized with 1 key shares and a key threshold of 1. Please securely
-distribute the key shares printed above. When the OpenBao is re-sealed,
-restarted, or stopped, you must supply at least 1 of these keys to unseal it
-before it can start servicing requests.
-
-OpenBao does not store the generated root key. Without at least 1 keys to
-reconstruct the root key, OpenBao will remain permanently sealed!
-
-It is possible to generate new unseal keys, provided you have a quorum of
-existing unseal keys shares. See "bao operator rekey" for more information.
+juju run openbao/leader initialize
 ```
 
-Set the `BAO_TOKEN` variable using the root token:
+Example output:
+
+```
+secret-id: secret://demo/cq3rldnmp25c7bvnhim0
+expires: 2026-09-14T15:41:00Z
+result: OpenBao initialized. Reveal the secret before it expires and store the root token and unseal keys offline. Then unseal each unit with the unseal action if using Shamir seal.
+```
+
+Reveal the secret and save the values:
+
+```shell
+juju show-secret secret://demo/cq3rldnmp25c7bvnhim0 --reveal
+```
+
+Set the `BAO_TOKEN` variable using the root token from the secret:
+
 ```
 export BAO_TOKEN=hvs.0d26h3eSnlZzpUoVu49Sj64V
 ```
 
-Unseal OpenBao using the unseal key:
+Unseal OpenBao with the same secret:
 
 ```shell
-bao operator unseal NXw7vSzWOnNuNF2v5aEkQcQy/TdTuryYS9Qz3hxDS38=
+juju run openbao/leader unseal secret-id=cq3rldnmp25c7bvnhim0
 ```
 
 ## 6. Authorise the OpenBao charm
 
-Create a token:
-
-```
-$openbao token create -ttl=10m
-Key                  Value
----                  -----
-token                hvs.M9vfjsKfv1zOgU6QTuFJblwP
-token_accessor       ctfCqC3MX8vGH9G7Z3URgWsR
-token_duration       10m
-token_renewable      true
-token_policies       ["root"]
-identity_policies    []
-policies             ["root"]
-```
-
-Add the token as a juju user secret
+Authorise the charm using the same initialization secret (it contains a `token` field). This must be done before the secret expires.
 
 ```shell
-juju add-secret one-time-token token=hvs.M9vfjsKfv1zOgU6QTuFJblwP
+juju run openbao/leader authorize-charm secret-id=cq3rldnmp25c7bvnhim0
 ```
 
-Grant this secret to the charm
+If the initialization secret has already expired, create a short-lived token and pass it as a Juju secret:
 
 ```shell
+openbao token create -ttl=10m
+juju add-secret one-time-token token=<token>
 juju grant-secret one-time-token openbao
-```
-
-Authorise the charm to interact with OpenBao using the token value from the secret:
-
-```shell
-juju run openbao/leader authorize-charm secret-id="cq3rldnmp25c7bvnhim0"
-```
-
-You may now remove the secret
-
-```shell
-juju remove-secret secret:cq3rldnmp25c7bvnhim0
+juju run openbao/leader authorize-charm secret-id=<secret-id>
+juju remove-secret one-time-token
 ```
 
 ## 7. Create a key-value type secret

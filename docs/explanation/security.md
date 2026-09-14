@@ -22,7 +22,7 @@ Since OpenBao Charms is built on top of OpenBao, many of the security considerat
 
 During initial configuration of the Charm, you will need to provide the Charm with a token that has broad permissions, so that the charm can properly configure itself. This token should be short-lived, and can be revoked as soon as the Charm is configured. The Charm will generate its own credentials with limited permissions, which will be used for all subsequent operations.
 
-The token must be passed using Juju secrets, which ensures that the transfer of this token to the Charm is secure.
+The token must be passed using Juju secrets, which ensures that the transfer of this token to the Charm is secure. After `juju run openbao/leader initialize`, the same expiring secret can be passed to `authorize-charm` if you do so before it expires.
 
 ```bash
 openbao token create -ttl=5m
@@ -34,7 +34,7 @@ juju remove-secret one-time-token
 
 ### Handling Unseal Keys
 
-Ensure that the unseal keys are not a single source of failure or loss. Due to the overhead of unsealing, you may wish to use auto-unseal in enterprise environments.
+Store unseal keys offline as soon as OpenBao is initialized. The `initialize` action keeps them in a Juju secret only until the configured ttl (default 1 hour). Do not rely on that secret as long-term storage, and never log the keys. Ensure that the unseal keys are not a single source of failure or loss. Due to the overhead of unsealing, you may wish to use auto-unseal in enterprise environments.
 
 ### When to use Auto-unseal
 
@@ -47,3 +47,5 @@ This option may be the right choice if the "auto-unsealer" OpenBao:
 3. Has processes in place to ensure that new nodes can be unsealed promptly when necessary
 
 For example, you may have a corporate OpenBao that is tightly monitored and maintained 24/7. In this case, your OpenBao may "piggy-back" off this corporate OpenBao's existing availability and security and trust it to manage the unseal keys. Auto-unseal will allow your OpenBao to be unsealed automatically, provided it can communicate with the corporate OpenBao and has the appropriate credentials.
+
+On machine deployments, [PKCS#11 HSM auto-unseal](../how-to/configure_pkcs11_hsm.md) is an alternative that keeps unseal material in hardware. That configuration is also one-way: you cannot return to Shamir after OpenBao has been initialized with PKCS#11.

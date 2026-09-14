@@ -33,7 +33,7 @@ def test_deploy_and_unseal(juju: jubilant.Juju, openbao_charm_path: Path):
     with fast_forward(juju, JUJU_FAST_INTERVAL):
         wait_for_status_message(
             juju,
-            expected_message="Please initialize OpenBao or integrate with an auto-unseal provider",
+            expected_message="Please initialize OpenBao (see `initialize` action) or integrate with an auto-unseal provider",
             app_name=APPLICATION_NAME,
             timeout=600,
         )

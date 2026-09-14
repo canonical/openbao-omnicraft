@@ -62,6 +62,27 @@ tox run -e integration -- --charm_path ./openbao_amd64.charm --kv_requirer_charm
 
 At this time, each integration test suite must be run separately.
 
+#### PKCS#11 SoftHSM tests
+
+`test_pkcs11_hsm.py` prepares SoftHSM on the **test runner** (not the Juju unit):
+`snap install softhsm` (optional local `.snap` via `--softhsm-snap-path` /
+`OPENBAO_SOFTHSM_SNAP`, or `OPENBAO_SOFTHSM_CHANNEL` for a non-default channel),
+create a token + AES key with SoftHSM + OpenSC, and pack `libsofthsm2.so` (+ deps),
+`tokens/`, `softhsm2.conf`, and `openbao.env` as `hsm-lib`. The charm unpacks the
+resource, installs `openbao.env` for `baod-start`, rewrites the PKCS#11 seal from the
+Juju secret, and restarts OpenBao. The suite then verifies PKCS#11 init + restart
+auto-unseal.
+
+Pass a local OpenBao snap that ships `plugins/openbao-plugin-kms-pkcs11` with
+`--resource-path` when your tox/integration setup requires it.
+
+```shell
+tox run -e integration -- \
+  --charm_path ./openbao_amd64.charm \
+  --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm \
+  -k test_pkcs11_hsm.py
+```
+
 #### Backup tests
 
 To run the backup tests, you will need to have an S3 compatible storage service running, such as MinIO. You can find instructions to configure LXD to manage the MinIO service at <https://documentation.ubuntu.com/lxd/latest/howto/storage_buckets/#howto-storage-buckets>.

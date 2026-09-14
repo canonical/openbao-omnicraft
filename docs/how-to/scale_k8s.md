@@ -41,34 +41,18 @@ openbao           waiting      3  openbao-k8s  2.0/edge  198  10.152.183.208  no
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
-openbao/1   blocked   idle   10.1.182.51         Please unseal OpenBao
-openbao/2   blocked   idle   10.1.182.34         Please unseal OpenBao
+openbao/1   blocked   idle   10.1.182.51         Please unseal OpenBao (see `unseal` action)
+openbao/2   blocked   idle   10.1.182.34         Please unseal OpenBao (see `unseal` action)
 ```
 
-Set the `BAO_ADDR` variable to the `openbao/1` unit:
+Unseal the new units with the same unseal keys stored at initialization. If the initialize secret has not expired, reuse it; otherwise create a secret that contains `key`:
 
 ```
-export BAO_ADDR=https://$(juju status openbao/1 --format=yaml |  yq -r '.applications.openbao.units.openbao/1.address'):8200; echo $BAO_ADDR
+juju run openbao/1 unseal secret-id=<secret-id>
+juju run openbao/2 unseal secret-id=<secret-id>
 ```
 
-Set the `BAO_SKIP_VERIFY` to true:
-
-```
-export BAO_SKIP_VERIFY=true
-```
-
-Unseal the the `openbao/1` unit using the same unseal keys as received during the initialization of the OpenBao leader:
-
-```
-bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
-```
-
-And complete the same operations for the `openbao/2` unit:
-
-```
-export BAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $BAO_ADDR
-bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
-```
+See [Unseal a sealed unit (K8s)](unseal_k8s.md) for details.
 
 ## 3. Validate that all units are part of the cluster
 

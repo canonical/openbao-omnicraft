@@ -136,7 +136,7 @@ def test_given_application_is_deployed_when_scale_up_then_status_is_active(
                 len(s.apps[APP_NAME].units) == num_units
                 and all(u.public_address for u in s.apps[APP_NAME].units.values())
                 and any(
-                    u.workload_status.message == "Please unseal OpenBao"
+                    u.workload_status.message == "Please unseal OpenBao (see `unseal` action)"
                     for u in s.apps[APP_NAME].units.values()
                 )
             ),

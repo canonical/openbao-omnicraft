@@ -451,6 +451,30 @@ config:
         This value specifies the L (Locality) value in the Subject field of the certificate issued by OpenBao PKI.
         If not set the issued certificate will not have an L value in the Subject field.
 
+    hsm-config-secret-id:
+      type: string
+      description: >-
+        Juju secret ID containing PKCS#11 HSM auto-unseal settings. Leave unset to keep
+        Shamir seal. The secret must be granted to this application and should include:
+        `pin` (required); `slot` and/or `token-label`; `key-label` and/or `key-id`.
+        Optional `lib` is the PKCS#11 module filename (or relative path) inside the
+        attached `hsm-lib` directory. Also attach the `hsm-lib` resource (a tarball of
+        the module plus shared-library dependencies).
+        Enabling PKCS#11 is one-way: after OpenBao is initialized with this seal, you
+        cannot go back to Shamir by unsetting this option.
+
+resources:
+  hsm-lib:
+    type: file
+    filename: hsm-lib.tar.gz
+    description: >-
+      Tarball (or zip) of a directory containing the PKCS#11 shared library and any
+      dependencies it needs under snap confinement. Pack with
+      `tar czf hsm-lib.tar.gz -C ./hsm-libs .` then
+      `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`.
+      A single `.so` is still accepted for simple providers. Use secret key `lib` when
+      the archive contains multiple shared objects.
+
 actions:
   authorize-charm:
     description: >-
@@ -466,6 +490,42 @@ actions:
           new policies, such as the root token that is provided upon initializing
           OpenBao. Used to create the app role and policy for the charm. It is not
           stored by the charm.
+    required: [secret-id]
+
+  initialize:
+    description: >-
+      Initializes OpenBao on the leader unit. Stores the root token and key shares
+      in a Juju secret that expires after the given ttl. Reveal and store those
+      credentials offline before expiry. This action does not unseal OpenBao.
+    params:
+      secret-shares:
+        type: integer
+        default: 1
+        description: Number of Shamir (or recovery) key shares to generate.
+      secret-threshold:
+        type: integer
+        default: 1
+        description: Number of key shares required to unseal (or recover).
+      ttl:
+        type: string
+        default: 1h
+        description: How long the Juju secret with initialization credentials remains available (for example 1h or 30m).
+
+  unseal:
+    description: >-
+      Submits an unseal key share to this unit. Provide a Juju secret that
+      contains the key. For Shamir with multiple shares, run the action until
+      the threshold is met, using key-name to select additional shares.
+    params:
+      secret-id:
+        type: string
+        description: >-
+          Juju secret ID containing an unseal key share. The initialize action
+          creates a secret with fields `token` and `key` that can be reused here.
+      key-name:
+        type: string
+        default: key
+        description: Secret field that contains the unseal key share to submit.
     required: [secret-id]
 
   bootstrap-raft:

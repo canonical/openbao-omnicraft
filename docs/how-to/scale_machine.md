@@ -39,12 +39,12 @@ Model  Controller           Cloud/Region         Version  SLA          Timestamp
 demo   localhost-localhost  localhost/localhost  3.4.0    unsupported  12:19:14-04:00
 
 App    Version  Status   Scale  Charm  Channel    Rev  Exposed  Message
-openbao           blocked      3  openbao  1.19/edge  257  no       Waiting for OpenBao to be unsealed
+openbao           blocked      3  openbao  1.19/edge  257  no       Please unseal OpenBao (see `unseal` action)
 
 Unit      Workload  Agent  Machine  Public address  Ports  Message
-openbao/0*  active    idle   0        10.191.126.116         
-openbao/1   blocked   idle   1        10.191.126.151         Waiting for OpenBao to be unsealed
-openbao/2   blocked   idle   2        10.191.126.90          Waiting for OpenBao to be unsealed
+openbao/0*  active    idle   0        10.191.126.116
+openbao/1   blocked   idle   1        10.191.126.151         Please unseal OpenBao (see `unseal` action)
+openbao/2   blocked   idle   2        10.191.126.90          Please unseal OpenBao (see `unseal` action)
 
 Machine  State    Address         Inst id        Base          AZ  Message
 0        started  10.191.126.116  juju-b8368f-0  ubuntu@22.04      Running
@@ -53,22 +53,14 @@ Machine  State    Address         Inst id        Base          AZ  Message
 
 ```
 
-Set the `BAO_ADDR` variable to the `openbao/1` unit:
-```
-export BAO_ADDR=https://$(juju status openbao/1 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $BAO_ADDR
-```
-Unseal the the `openbao/1` unit using the same unseal keys as received during the initialization of the OpenBao leader:
+Unseal the new units with the same unseal keys stored at initialization. If the initialize secret has not expired, reuse it; otherwise create a secret that contains `key`:
 
 ```
-bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
+juju run openbao/1 unseal secret-id=<secret-id>
+juju run openbao/2 unseal secret-id=<secret-id>
 ```
 
-And complete the same operations for the `openbao/2` unit:
-
-```
-export BAO_ADDR=https://$(juju status openbao/2 --format=yaml | awk '/public-address/ { print $2 }'):8200; echo $BAO_ADDR
-bao operator unseal EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
-```
+See [Unseal a sealed unit (Machine)](unseal_machine.md) for details.
 
 ## 3. Validate that all units are part of the cluster
 

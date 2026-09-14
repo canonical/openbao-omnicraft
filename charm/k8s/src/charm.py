@@ -10,6 +10,8 @@ For more information on OpenBao, please visit https://openbao.org/.
 import json
 import logging
 import socket
+import time
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 from typing import Any, Generator
 
@@ -36,12 +38,14 @@ from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProv
 from openbao.juju_facade import (
     JujuFacade,
     NoSuchSecretError,
+    SecretAccessDeniedError,
     SecretRemovedError,
     TransientJujuError,
 )
 from openbao.openbao_autounseal import OpenBaoAutounsealProvides, OpenBaoAutounsealRequires
 from openbao.openbao_client import (
     AppRole,
+    InitializationResult,
     OpenBaoAuthenticationError,
     OpenBaoClient,
     OpenBaoClientError,
@@ -54,6 +58,8 @@ from openbao.openbao_helpers import (
     common_name_config_is_valid,
     config_file_content_matches,
     get_env_var,
+    initialization_secret_content,
+    parse_ttl_duration,
     render_openbao_config_file,
     sans_dns_config_is_valid,
     seal_type_has_changed,
@@ -105,10 +111,13 @@ ACME_ROLE_NAME = "charm"
 PROMETHEUS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
 S3_RELATION_NAME = "s3-parameters"
 OPENBAO_CHARM_APPROLE_SECRET_LABEL = "openbao-approle-auth-details"
+OPENBAO_INIT_CREDENTIALS_SECRET_LABEL = "openbao-init-credentials"
 OPENBAO_CONFIG_FILE_PATH = "/openbao/config/openbao.hcl"
 OPENBAO_STORAGE_PATH = "/openbao/raft"
 INGRESS_PER_APP_RELATION_NAME = "ingress"
 INGRESS_PER_UNIT_RELATION_NAME = "ingress-per-unit"
+UNSEAL_RETRY_INTERVAL_SECONDS = 5
+UNSEAL_RETRY_TIMEOUT_SECONDS = 60
 
 
 @trace_charm(
@@ -249,6 +258,8 @@ class OpenBaoCharm(CharmBase):
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
+        self.framework.observe(self.on.initialize_action, self._on_initialize_action)
+        self.framework.observe(self.on.unseal_action, self._on_unseal_action)
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
@@ -405,12 +416,15 @@ class OpenBaoCharm(CharmBase):
             return
         if not openbao.is_initialized():
             if openbao.is_seal_type_transit():
-                event.add_status(BlockedStatus("Please initialize OpenBao"))
+                event.add_status(
+                    BlockedStatus("Please initialize OpenBao (see `initialize` action)")
+                )
                 return
 
             event.add_status(
                 BlockedStatus(
-                    "Please initialize OpenBao or integrate with an auto-unseal provider"
+                    "Please initialize OpenBao (see `initialize` action) or "
+                    "integrate with an auto-unseal provider"
                 )
             )
             return
@@ -422,7 +436,7 @@ class OpenBaoCharm(CharmBase):
                 if openbao.is_seal_type_transit():
                     event.add_status(WaitingStatus("Waiting for transit auto-unseal"))
                     return
-                event.add_status(BlockedStatus("Please unseal OpenBao"))
+                event.add_status(BlockedStatus("Please unseal OpenBao (see `unseal` action)"))
                 return
         except OpenBaoClientError:
             event.add_status(
@@ -892,6 +906,202 @@ class OpenBaoCharm(CharmBase):
         except OpenBaoClientError as e:
             logger.exception("OpenBao returned an error while authorizing the charm")
             event.fail(f"OpenBao returned an error while authorizing the charm: {str(e)}")
+
+    def _on_initialize_action(self, event: ActionEvent) -> None:
+        """Initialize OpenBao and store credentials in an expiring Juju secret."""
+        if not self.unit.is_leader():
+            event.fail("This action must be run on the leader unit.")
+            return
+        try:
+            secret_shares = int(event.params.get("secret-shares", 1))
+            secret_threshold = int(event.params.get("secret-threshold", 1))
+        except (TypeError, ValueError):
+            event.fail("secret-shares and secret-threshold must be integers")
+            return
+        if secret_shares < 1 or secret_threshold < 1 or secret_threshold > secret_shares:
+            event.fail(
+                "secret-threshold must be >= 1 and secret-shares must be >= secret-threshold"
+            )
+            return
+        try:
+            ttl = parse_ttl_duration(str(event.params.get("ttl") or "1h"))
+        except ValueError:
+            event.fail("ttl must be a positive duration such as 1h or 30m")
+            return
+        try:
+            openbao = OpenBaoClient(
+                self._api_address, self.tls.get_tls_file_path_in_charm(File.CA)
+            )
+        except (OpenBaoCertsError, TransientJujuError) as e:
+            event.fail(f"Failed to initialize the OpenBao client: {e}")
+            return
+        if not openbao.is_api_available():
+            event.fail("OpenBao API is not yet available")
+            return
+        try:
+            result = openbao.initialize(
+                secret_shares=secret_shares, secret_threshold=secret_threshold
+            )
+        except OpenBaoClientError as e:
+            logger.exception("Failed to initialize OpenBao")
+            event.fail(str(e))
+            return
+        self._store_initialization_credentials(event, result, ttl)
+
+    def _store_initialization_credentials(
+        self, event: ActionEvent, result: InitializationResult, ttl: timedelta
+    ) -> None:
+        """Store init credentials in an expiring app secret and return the secret id."""
+        expires = datetime.now(timezone.utc) + ttl
+        try:
+            content = initialization_secret_content(result.root_token, result.keys)
+            secret = self.juju_facade.set_app_secret_content(
+                content=content,
+                label=OPENBAO_INIT_CREDENTIALS_SECRET_LABEL,
+                description="OpenBao initialization credentials. Reveal and store offline before expiry.",
+            )
+            try:
+                self.juju_facade.set_secret_expiry(
+                    expires, OPENBAO_INIT_CREDENTIALS_SECRET_LABEL, id=secret.id
+                )
+            except (TransientJujuError, NoSuchSecretError):
+                logger.warning("Failed to set expiry on initialization credentials secret")
+            key_kind = "recovery keys" if result.keys_are_recovery else "unseal keys"
+            event.set_results(
+                {
+                    "secret-id": secret.id or "",
+                    "expires": expires.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "result": (
+                        "OpenBao initialized. Reveal the secret before it expires and store "
+                        f"the root token and {key_kind} offline. Then unseal each unit with "
+                        "the unseal action if using Shamir seal."
+                    ),
+                }
+            )
+        except (TransientJujuError, ValueError, NoSuchSecretError) as e:
+            logger.exception("Failed to store initialization credentials in a Juju secret")
+            emergency = {
+                "result": (
+                    "OpenBao was initialized but the charm could not store credentials in a "
+                    "Juju secret. Save the token and keys from this result immediately."
+                ),
+                "token": result.root_token,
+                "key": result.keys[0] if result.keys else "",
+            }
+            for index, key in enumerate(result.keys[1:], start=2):
+                emergency[f"key-{index}"] = key
+            event.set_results(emergency)
+            event.fail(f"Failed to store initialization credentials: {e}")
+
+    def _on_unseal_action(self, event: ActionEvent) -> None:
+        """Submit an unseal key share from a Juju secret."""
+        key = self._read_unseal_key_from_secret(event)
+        if key is None:
+            return
+        try:
+            openbao = OpenBaoClient(
+                self._api_address, self.tls.get_tls_file_path_in_charm(File.CA)
+            )
+        except (OpenBaoCertsError, TransientJujuError) as e:
+            event.fail(f"Failed to initialize the OpenBao client: {e}")
+            return
+        try:
+            if reason := self._unseal_blocked_reason(openbao):
+                event.fail(reason)
+                return
+            if not openbao.is_sealed():
+                self._set_unseal_action_results(
+                    event, sealed=False, progress=0, threshold=0, already_unsealed=True
+                )
+                return
+            status = self._submit_unseal_key_with_retry(openbao, key)
+        except OpenBaoClientError as e:
+            logger.exception("Failed to unseal OpenBao")
+            event.fail(str(e))
+            return
+        sealed = bool(status.get("sealed", True))
+        self._set_unseal_action_results(
+            event,
+            sealed=sealed,
+            progress=status.get("progress", 0),
+            threshold=status.get("t", 0),
+        )
+        if not sealed:
+            try:
+                self._configure(event)
+            except Exception:
+                logger.exception("Unsealed OpenBao but failed to run configuration")
+
+    def _read_unseal_key_from_secret(self, event: ActionEvent) -> str | None:
+        """Return the unseal key from the action secret, or fail the action."""
+        secret_id = event.params.get("secret-id", "")
+        key_name = str(event.params.get("key-name") or "key")
+        try:
+            content = self.juju_facade.get_latest_secret_content(id=secret_id)
+            if key := content.get(key_name, ""):
+                return key
+            logger.warning("Unseal key not found in the secret.")
+            event.fail(f"Unseal key not found in the secret. Expected field `{key_name}`.")
+            return None
+        except (NoSuchSecretError, SecretRemovedError, SecretAccessDeniedError):
+            logger.warning("Secret id provided could not be found by the charm when unsealing.")
+            event.fail(
+                "The secret id provided could not be found by the charm. "
+                "Please grant the unseal key secret to the charm."
+            )
+            return None
+
+    def _unseal_blocked_reason(self, openbao: OpenBaoClient) -> str | None:
+        """Return a failure message if this unit cannot be unsealed, else None."""
+        if not openbao.is_api_available():
+            return "OpenBao API is not yet available"
+        if not openbao.is_initialized():
+            return "OpenBao is not initialized. Please run the initialize action first."
+        if openbao.needs_migration():
+            return "OpenBao requires seal migration. The unseal action cannot migrate."
+        seal_type = openbao.get_seal_type()
+        if seal_type != "shamir":
+            return f"OpenBao uses {seal_type} auto-unseal. Recovery keys cannot unseal this unit."
+        return None
+
+    def _set_unseal_action_results(
+        self,
+        event: ActionEvent,
+        *,
+        sealed: bool,
+        progress: int,
+        threshold: int,
+        already_unsealed: bool = False,
+    ) -> None:
+        if already_unsealed:
+            result = "OpenBao is already unsealed."
+        elif not sealed:
+            result = "OpenBao unsealed."
+        else:
+            result = "Unseal in progress."
+        event.set_results(
+            {
+                "sealed": sealed,
+                "progress": progress,
+                "threshold": threshold,
+                "result": result,
+            }
+        )
+
+    def _submit_unseal_key_with_retry(self, openbao: OpenBaoClient, key: str) -> dict:
+        """Submit an unseal key, retrying while a follower is still joining raft."""
+        deadline = time.monotonic() + UNSEAL_RETRY_TIMEOUT_SECONDS
+        while True:
+            try:
+                return openbao.unseal(key)
+            except OpenBaoClientError as e:
+                cause = str(e.__cause__ or e).lower()
+                if "not initialized" not in cause:
+                    raise
+                if time.monotonic() > deadline:
+                    raise
+                logger.info("OpenBao is not ready to unseal yet, retrying...")
+                time.sleep(UNSEAL_RETRY_INTERVAL_SECONDS)
 
     def _on_bootstrap_raft_action(self, event: ActionEvent) -> None:
         """Bootstraps the raft cluster when a single node is present.

@@ -2,6 +2,8 @@
 
 **WARNING: There is currently no way to remove the auto-unseal configuration once it has been set on OpenBao Charms. Removing the integration may put OpenBao Charms in a bad state which requires manual intervention.**
 
+Transit auto-unseal cannot be combined with [PKCS#11 HSM auto-unseal](configure_pkcs11_hsm.md) on the machine charm.
+
 
 ## Prerequisites
 
@@ -38,32 +40,14 @@ bao operator unseal -migrate ${token}
 Configure your CLI to interact with the *autounsealed* OpenBao instance. See the getting started guide for more information on how to do this. In short, you will need to set the `BAO_ADDR` environment variable to the address of the *autounsealed* OpenBao instance, and retrieve and set the appropriate CA certificate.
 
 ```bash
-bao operator init
+juju run openbao-autounsealed/leader initialize
 ```
 
-Use the root token to create a temporary token, and authorize the OpenBao charm with it.
+Reveal the expiring Juju secret, store the recovery keys and root token offline, then authorize the charm with that secret:
 
-```console
-$ openbao token create -ttl=10m
-Key                  Value
----                  -----
-token                hvs.mmMXCLNZ2X7OcqCM38WYDnoX
-token_accessor       eXzWoD1ajA5YtNgfopj1DP1r
-token_duration       10m
-token_renewable      true
-token_policies       ["root"]
-identity_policies    []
-policies             ["root"]
-```
-
-Create a secret that contains the token above
-```console
-$ juju add-secret approle_authorization_token token="hvs.mmMXCLNZ2X7OcqCM38WYDnoX"
-secret:cqgj49fmp25c7796r0pg
-```
-
-Grant the secret to the *autounsealed* openbao, and provide the ID of the secret to the `authorize-charm` action.
 ```bash
-juju grant-secret approle_authorization_token openbao-autounsealed
-juju run openbao-autounsealed/leader authorize-charm secret-id=cqgj49fmp25c7796r0pg
+juju run openbao-autounsealed/leader authorize-charm secret-id=<secret-id>
 ```
+
+If the initialization secret has already expired, create a short-lived token from the saved root token and pass it as a Juju secret, as in the getting started guide.
+

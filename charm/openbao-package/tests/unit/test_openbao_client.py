@@ -23,6 +23,7 @@ from openbao.openbao_http import (
     ForbiddenError,
     InternalServerError,
     InvalidRequestError,
+    NotInitializedError,
 )
 
 TEST_PATH = "./tests/unit"
@@ -113,6 +114,104 @@ def test_given_api_returns_when_is_api_available_then_return_true(patch_request:
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
 
     assert openbao.is_api_available()
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.put")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+def test_given_shamir_seal_when_initialize_then_returns_unseal_keys(
+    patch_get: MagicMock, patch_put: MagicMock
+):
+    patch_get.side_effect = [
+        make_response(json_body={"initialized": False}),
+        make_response(json_body={"type": "shamir", "sealed": True, "migration": False}),
+    ]
+    patch_put.return_value = make_response(
+        json_body={"root_token": "hvs.root", "keys": ["unseal-key"]}
+    )
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    result = openbao.initialize()
+
+    patch_put.assert_called_once_with(
+        "/v1/sys/init", json={"secret_shares": 1, "secret_threshold": 1}
+    )
+    assert result.root_token == "hvs.root"
+    assert result.keys == ["unseal-key"]
+    assert not result.keys_are_recovery
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.put")
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+def test_given_transit_seal_when_initialize_then_returns_recovery_keys(
+    patch_get: MagicMock, patch_put: MagicMock
+):
+    patch_get.side_effect = [
+        make_response(json_body={"initialized": False}),
+        make_response(json_body={"type": "transit", "sealed": True, "migration": False}),
+    ]
+    patch_put.return_value = make_response(
+        json_body={"root_token": "hvs.root", "recovery_keys": ["recovery-key"]}
+    )
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    result = openbao.initialize(secret_shares=1, secret_threshold=1)
+
+    patch_put.assert_called_once_with(
+        "/v1/sys/init", json={"recovery_shares": 1, "recovery_threshold": 1}
+    )
+    assert result.root_token == "hvs.root"
+    assert result.keys == ["recovery-key"]
+    assert result.keys_are_recovery
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.get")
+def test_given_already_initialized_when_initialize_then_raises(patch_get: MagicMock):
+    patch_get.return_value = make_response(json_body={"initialized": True})
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    with pytest.raises(OpenBaoClientError, match="already initialized"):
+        openbao.initialize()
+
+
+def test_given_invalid_shares_when_initialize_then_raises():
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    with pytest.raises(OpenBaoClientError, match="secret-threshold"):
+        openbao.initialize(secret_shares=1, secret_threshold=2)
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.put")
+def test_given_valid_key_when_unseal_then_returns_seal_status(patch_put: MagicMock):
+    patch_put.return_value = make_response(
+        json_body={"sealed": False, "progress": 1, "t": 1, "n": 1}
+    )
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    status = openbao.unseal("unseal-key")
+
+    patch_put.assert_called_once_with("/v1/sys/unseal", json={"key": "unseal-key"})
+    assert status["sealed"] is False
+    assert status["progress"] == 1
+    assert status["t"] == 1
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.put")
+def test_given_invalid_key_when_unseal_then_raises_without_key_in_message(patch_put: MagicMock):
+    patch_put.side_effect = InvalidRequestError("provided key is invalid")
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    with pytest.raises(OpenBaoClientError, match="Failed to unseal OpenBao") as exc:
+        openbao.unseal("super-secret-key")
+    assert "super-secret-key" not in str(exc.value)
+
+
+@patch("openbao.openbao_http.OpenBaoHttp.put")
+def test_given_not_initialized_when_unseal_then_raises(patch_put: MagicMock):
+    patch_put.side_effect = NotInitializedError("OpenBao is not initialized")
+    openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
+
+    with pytest.raises(OpenBaoClientError, match="Failed to unseal OpenBao"):
+        openbao.unseal("unseal-key")
 
 
 @patch("openbao.openbao_http.OpenBaoHttp.get")

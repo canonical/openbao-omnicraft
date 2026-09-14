@@ -7,6 +7,9 @@ import json
 import logging
 import os
 import platform
+import shutil
+import subprocess
+import tarfile
 import tempfile
 import time
 from pathlib import Path
@@ -145,16 +148,24 @@ def get_openbao_token_and_unseal_key(
 
 def initialize_openbao_leader(juju: jubilant.Juju, app_name: str) -> Tuple[str, str]:
     """Initialize the leader openbao unit and return the root token and unseal key."""
+    try:
+        return get_openbao_token_and_unseal_key(juju, app_name)
+    except (StopIteration, jubilant.CLIError, KeyError):
+        logger.info("Existing init credentials not found, initializing via charm action")
+
     leader_name = get_leader_unit_name(juju, app_name)
-    openbao = get_openbao_client(juju, leader_name)
-    if not openbao.is_initialized():
-        root_token, key = openbao.initialize()
+    task = juju.run(leader_name, "initialize", wait=120)
+    secret_id = task.results["secret-id"]
+    revealed = juju.show_secret(secret_id, reveal=True)
+    root_token = revealed.content["token"]
+    key = revealed.content["key"]
+    try:
         juju.add_secret(
             f"root-token-key-{app_name}",
             {"root-token": root_token, "key": key},
         )
-        return root_token, key
-    root_token, key = get_openbao_token_and_unseal_key(juju, app_name)
+    except jubilant.CLIError:
+        logger.info("Test secret for init credentials already exists")
     return root_token, key
 
 
@@ -170,27 +181,43 @@ def get_openbao_client(
     return OpenBao(url=f"https://{address}:8200", token=token, ca_file_location=ca_file_name)
 
 
+def _unseal_secret_id(juju: jubilant.Juju, unseal_key: str, app_name: str) -> str:
+    """Return a secret id the charm can use to unseal, creating one if needed."""
+    for secret in juju.secrets():
+        if secret.label == "openbao-init-credentials":
+            return str(secret.uri).split(":")[-1]
+    secret_name = f"unseal-key-{app_name}"
+    try:
+        secret_uri = juju.add_secret(secret_name, {"key": unseal_key})
+    except jubilant.CLIError:
+        juju.update_secret(secret_name, {"key": unseal_key})
+        secret_uri = secret_name
+    juju.grant_secret(secret_name, app_name)
+    return str(secret_uri).split(":")[-1]
+
+
 def unseal_all_openbao_units(
     juju: jubilant.Juju, unseal_key: str, ca_file_name: str | None = None
 ) -> None:
     """Unseal all the openbao units."""
+    secret_id = _unseal_secret_id(juju, unseal_key, APP_NAME)
     status = juju.status()
     app = status.apps[APP_NAME]
 
-    # We need to unseal the leader first, since this is the one we initialized.
     leader_name = get_leader_unit_name(juju, APP_NAME)
+    juju.run(leader_name, "unseal", {"secret-id": secret_id}, wait=180)
     unit_address = app.units[leader_name].public_address
     assert unit_address
-    openbao = OpenBao(url=f"https://{unit_address}:8200")
-    if openbao.is_sealed():
-        openbao.unseal(unseal_key)
+    openbao = OpenBao(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
     openbao.wait_for_node_to_be_unsealed()
 
     for unit_name, unit in app.units.items():
+        if unit_name == leader_name:
+            continue
+        juju.run(unit_name, "unseal", {"secret-id": secret_id}, wait=180)
         unit_address = unit.public_address
         assert unit_address
         openbao = OpenBao(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
-        openbao.unseal(unseal_key)
         openbao.wait_for_node_to_be_unsealed()
 
 
@@ -334,6 +361,299 @@ def _get_arch_constraint() -> str:
     return f"arch={_get_arch()}"
 
 
+def _hsm_lib_placeholder_path() -> Path:
+    """Return a non-module placeholder tarball so Juju can attach hsm-lib at deploy time.
+
+    Filename must end in ``.gz`` to match the charm resource ``filename: hsm-lib.tar.gz``.
+    Kept under the integration tests tree; local deploys that need a dummy resource can
+    point at the same file.
+    """
+    return Path(__file__).resolve().parent / "hsm-lib-placeholder.tar.gz"
+
+
+def openbao_charm_resources(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Resources required to deploy the OpenBao charm from a local .charm file."""
+    resources = {"hsm-lib": str(_hsm_lib_placeholder_path())}
+    if extra:
+        resources.update(extra)
+    return resources
+
+
+# SoftHSM defaults used by PKCS#11 integration tests (host-side prep via snap).
+SOFTHSM_SNAP_NAME = "softhsm"
+SOFTHSM_UTIL = "softhsm.softhsm2-util"
+SOFTHSM_TOKEN_LABEL = "OpenBao"
+SOFTHSM_PIN = "1234"
+SOFTHSM_SO_PIN = "1234"
+SOFTHSM_KEY_LABEL = "bao-root-key-aes"
+SOFTHSM_MODULE_NAME = "libsofthsm2.so"
+# Paths after the charm unpacks hsm-lib into snap-common (operator/tar convention).
+HSM_LIB_DIR = "/var/snap/openbao/common/hsm"
+SOFTHSM_CONF_IN_SNAP = f"{HSM_LIB_DIR}/softhsm2.conf"
+SOFTHSM_TOKENS_IN_SNAP = f"{HSM_LIB_DIR}/tokens"
+
+
+def _run_host(command: list[str], *, env: dict[str, str] | None = None) -> str:
+    """Run a command on the test runner and return stripped stdout."""
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
+    result = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=merged,
+    )
+    return (result.stdout or "").strip()
+
+
+def _which_host(*names: str) -> str | None:
+    for name in names:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def _find_softhsm_module() -> str | None:
+    """Locate libsofthsm2.so inside the SoftHSM snap on the host."""
+    snap_root = Path("/snap/softhsm/current")
+    if not snap_root.exists():
+        return None
+    try:
+        for candidate in snap_root.resolve().rglob(SOFTHSM_MODULE_NAME):
+            if candidate.is_file():
+                return str(candidate.resolve())
+    except OSError:
+        return None
+    return None
+
+
+def _ensure_opensc_pkcs11_tool() -> None:
+    """Install OpenSC on the host if ``pkcs11-tool`` is missing."""
+    if shutil.which("pkcs11-tool"):
+        return
+    env = os.environ.copy()
+    env["DEBIAN_FRONTEND"] = "noninteractive"
+    subprocess.run(
+        ["sudo", "apt-get", "update", "-qq"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    subprocess.run(
+        ["sudo", "apt-get", "install", "-y", "-qq", "opensc"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def _ensure_host_softhsm() -> tuple[str, str]:
+    """Install SoftHSM on the test runner with ``snap install softhsm``.
+
+    Returns ``(softhsm.softhsm2-util path, module_path)``.
+    """
+    already = _run_host(
+        ["bash", "-lc", f"snap list '{SOFTHSM_SNAP_NAME}' >/dev/null 2>&1 && echo yes || echo no"]
+    )
+    if already != "yes":
+        channel = os.environ.get("OPENBAO_SOFTHSM_CHANNEL", "")
+        install_cmd = ["sudo", "snap", "install", SOFTHSM_SNAP_NAME]
+        if channel:
+            install_cmd.extend(["--channel", channel])
+        try:
+            subprocess.run(install_cmd, check=True, capture_output=True, text=True)
+            logger.info("Installed SoftHSM snap from the Snap Store on the host")
+        except (subprocess.CalledProcessError, FileNotFoundError) as store_err:
+            if not config.SOFTHSM_SNAP_PATH:
+                raise RuntimeError(
+                    "Failed to `snap install softhsm` from the Snap Store. Pass "
+                    "--softhsm-snap-path / OPENBAO_SOFTHSM_SNAP for a local .snap, or set "
+                    "OPENBAO_SOFTHSM_CHANNEL for a non-default channel."
+                ) from store_err
+            subprocess.run(
+                ["sudo", "snap", "install", "--dangerous", config.SOFTHSM_SNAP_PATH],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Installed SoftHSM snap from local file on the host")
+
+    util = _which_host(SOFTHSM_UTIL)
+    module = _find_softhsm_module()
+    if not util or not module:
+        raise RuntimeError(
+            f"SoftHSM snap installed but {SOFTHSM_UTIL} / {SOFTHSM_MODULE_NAME} not found on the host"
+        )
+    _ensure_opensc_pkcs11_tool()
+    return util, module
+
+
+def _copy_module_deps(module: Path, stage: Path) -> None:
+    """Copy non-glibc shared-library deps of ``module`` into ``stage``."""
+    shutil.copy2(module, stage / SOFTHSM_MODULE_NAME, follow_symlinks=True)
+    try:
+        ldd = subprocess.run(
+            ["ldd", str(module)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except subprocess.CalledProcessError:
+        return
+    skip_prefixes = (
+        "ld-linux",
+        "libc.so",
+        "libm.so",
+        "libpthread.so",
+        "libdl.so",
+        "librt.so",
+        "libgcc_s.so",
+    )
+    for line in ldd.splitlines():
+        if "=>" not in line:
+            continue
+        parts = line.split()
+        try:
+            arrow = parts.index("=>")
+            lib_path = parts[arrow + 1]
+        except (ValueError, IndexError):
+            continue
+        if not lib_path.startswith("/"):
+            continue
+        name = Path(lib_path).name
+        if any(p in name for p in skip_prefixes):
+            continue
+        dest = stage / name
+        if not dest.exists():
+            shutil.copy2(lib_path, dest, follow_symlinks=True)
+
+
+def build_host_softhsm_hsm_lib_tarball(dest: Path) -> tuple[Path, dict[str, str]]:
+    """Create a SoftHSM token on the host and pack libs+tokens+env as hsm-lib.
+
+    SoftHSM is always obtained with ``snap install softhsm``. The archive matches
+    the operator SoftHSM convention:
+
+    - ``libsofthsm2.so`` (+ deps)
+    - ``tokens/`` and ``softhsm2.conf`` with tokendir under ``.../common/hsm/tokens``
+    - ``openbao.env`` exporting ``SOFTHSM2_CONF`` (charm installs it for ``baod-start``)
+
+    Returns ``(tarball_path, secret_content)``.
+    """
+    util, module_path = _ensure_host_softhsm()
+    pkcs11_tool = _which_host("pkcs11-tool")
+    if not pkcs11_tool:
+        raise RuntimeError(
+            "pkcs11-tool (opensc) is required on the test runner for SoftHSM keygen"
+        )
+
+    dest = dest.resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="openbao-softhsm-host-") as tmp:
+        work = Path(tmp)
+        # SoftHSM snap apps ignore SOFTHSM2_CONF and always write under SNAP_USER_COMMON.
+        home = Path.home()
+        snap_common = home / "snap" / SOFTHSM_SNAP_NAME / "common"
+        host_tokens = snap_common / "tokens"
+        host_tokens.mkdir(parents=True, exist_ok=True)
+        for child in list(host_tokens.iterdir()):
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        # softhsm.* util sets its own conf; pkcs11-tool still needs SOFTHSM2_CONF.
+        tool_env = {"SOFTHSM2_CONF": str(snap_common / "softhsm2.conf")}
+
+        _run_host(
+            [
+                util,
+                "--init-token",
+                "--free",
+                "--label",
+                SOFTHSM_TOKEN_LABEL,
+                "--pin",
+                SOFTHSM_PIN,
+                "--so-pin",
+                SOFTHSM_SO_PIN,
+            ],
+        )
+        _run_host(
+            [
+                pkcs11_tool,
+                "--module",
+                module_path,
+                "--token-label",
+                SOFTHSM_TOKEN_LABEL,
+                "--login",
+                "--pin",
+                SOFTHSM_PIN,
+                "--keygen",
+                "--key-type",
+                "aes:32",
+                "--label",
+                SOFTHSM_KEY_LABEL,
+                "--id",
+                "01",
+            ],
+            env=tool_env,
+        )
+        listed = _run_host(
+            [
+                pkcs11_tool,
+                "--module",
+                module_path,
+                "--token-label",
+                SOFTHSM_TOKEN_LABEL,
+                "--login",
+                "--pin",
+                SOFTHSM_PIN,
+                "--list-objects",
+            ],
+            env=tool_env,
+        )
+        if SOFTHSM_KEY_LABEL not in listed:
+            raise RuntimeError(f"SoftHSM key {SOFTHSM_KEY_LABEL!r} not found after keygen")
+
+        stage = work / "hsm-libs"
+        stage.mkdir()
+        _copy_module_deps(Path(module_path), stage)
+
+        stage_tokens = stage / "tokens"
+        shutil.copytree(host_tokens, stage_tokens)
+        (stage / "softhsm2.conf").write_text(
+            f"directories.tokendir = {SOFTHSM_TOKENS_IN_SNAP}\n"
+            "objectstore.backend = file\n"
+            "log.level = INFO\n",
+            encoding="utf-8",
+        )
+        (stage / "openbao.env").write_text(
+            f"export SOFTHSM2_CONF={SOFTHSM_CONF_IN_SNAP}\n",
+            encoding="utf-8",
+        )
+
+        with tarfile.open(dest, "w:gz") as tar:
+            for path in sorted(stage.rglob("*")):
+                if path.is_file() or path.is_symlink():
+                    tar.add(path, arcname=str(path.relative_to(stage)))
+
+    if not dest.is_file() or dest.stat().st_size == 0:
+        raise RuntimeError(f"Failed to build SoftHSM hsm-lib archive at {dest}")
+    logger.info("Built SoftHSM hsm-lib archive %s (%s bytes)", dest, dest.stat().st_size)
+    secret_content = {
+        "pin": SOFTHSM_PIN,
+        "token-label": SOFTHSM_TOKEN_LABEL,
+        "key-label": SOFTHSM_KEY_LABEL,
+        "lib": SOFTHSM_MODULE_NAME,
+    }
+    return dest, secret_content
+
+
 def deploy_if_not_exists(  # noqa: C901
     juju: jubilant.Juju,
     app_name: str,
@@ -353,7 +673,9 @@ def deploy_if_not_exists(  # noqa: C901
     kwargs: dict[str, Any] = {}
     if config:
         kwargs["config"] = config
-    if resources:
+    if app_name == APP_NAME or (charm_path and Path(charm_path).name.startswith("openbao_")):
+        kwargs["resources"] = openbao_charm_resources(resources)
+    elif resources:
         kwargs["resources"] = resources
     if channel:
         kwargs["channel"] = channel
@@ -441,9 +763,9 @@ def run_action_on_leader(
 
 
 def refresh_application(juju: jubilant.Juju, app_name: str, charm_path: Path) -> None:
-    resources = None
+    resources = openbao_charm_resources()
     if app_name == APP_NAME and config.OPENBAO_SNAP_PATH:
-        resources = {"openbao-snap": config.OPENBAO_SNAP_PATH}
+        resources["openbao-snap"] = config.OPENBAO_SNAP_PATH
     juju.refresh(app_name, path=charm_path, resources=resources)
 
 
