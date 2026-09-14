@@ -2,15 +2,20 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+from datetime import timedelta
 from pathlib import Path
+
+import pytest
 
 from openbao.openbao_helpers import (
     Pkcs11SealConfiguration,
     allowed_domains_config_is_valid,
     config_file_content_matches,
     hsm_config_secret_validation_error,
+    initialization_secret_content,
     is_hsm_lib_archive,
     is_hsm_lib_resource_usable,
+    parse_ttl_duration,
     pkcs11_seal_config_from_secret,
     render_openbao_config_file,
     resolve_hsm_pkcs11_module,
@@ -272,3 +277,33 @@ class TestHsmLibResourceHelpers:
         (tmp_path / "a.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
         (tmp_path / "b.so").write_bytes(b"\x7fELF" + b"\x00" * 8)
         assert resolve_hsm_pkcs11_module(tmp_path) is None
+
+
+def test_parse_ttl_duration_hours_and_minutes():
+    assert parse_ttl_duration("1h") == timedelta(hours=1)
+    assert parse_ttl_duration("30m") == timedelta(minutes=30)
+    assert parse_ttl_duration("2") == timedelta(hours=2)
+
+
+def test_parse_ttl_duration_rejects_invalid_values():
+    with pytest.raises(ValueError):
+        parse_ttl_duration("")
+    with pytest.raises(ValueError):
+        parse_ttl_duration("0h")
+    with pytest.raises(ValueError):
+        parse_ttl_duration("abc")
+
+
+def test_initialization_secret_content_single_and_multiple_keys():
+    assert initialization_secret_content("root", ["k1"]) == {"token": "root", "key": "k1"}
+    assert initialization_secret_content("root", ["k1", "k2", "k3"]) == {
+        "token": "root",
+        "key": "k1",
+        "key-2": "k2",
+        "key-3": "k3",
+    }
+
+
+def test_initialization_secret_content_requires_keys():
+    with pytest.raises(ValueError):
+        initialization_secret_content("root", [])

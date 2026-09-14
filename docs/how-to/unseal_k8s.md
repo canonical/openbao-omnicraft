@@ -1,6 +1,6 @@
 # Unseal a sealed unit (K8s)
 
-In the circumstance that a OpenBao unit restarts, you will have to manually unseal it. This guide walks you through the necessary steps:
+If an OpenBao unit restarts, you must unseal it. Use the charm `unseal` action rather than calling the OpenBao API directly.
 
 Starting from a cluster where one unit is sealed:
 
@@ -15,33 +15,29 @@ openbao           waiting      3  openbao-k8s  2.0/edge  198  10.152.183.208  no
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
 openbao/1   active    idle   10.1.182.51
-openbao/2   blocked   idle   10.1.182.15         Please unseal OpenBao
+openbao/2   blocked   idle   10.1.182.15         Please unseal OpenBao (see `unseal` action)
 ```
 
-Set the `BAO_ADDR` variable to the sealed unit:
+If the initialization secret from `juju run openbao/leader initialize` has not expired, reuse it:
 
 ```
-export BAO_ADDR=https://$(juju status openbao/2 --format=yaml |  yq -r '.applications.openbao.units.openbao/2.address'):8200; echo $BAO_ADDR
+juju run openbao/2 unseal secret-id=<secret-id>
 ```
 
-Unseal the the unit using the same unseal keys as received during the initialization of the OpenBao leader:
+Otherwise create a Juju secret that contains the unseal key share (the same key you stored offline at initialization):
 
 ```
-bao operator unseal -tls-skip-verify EJoB62t286mjUpSQYZg3mOla3lz/bbElVL5OLnj+rpE=
+juju add-secret unseal-key key=<unseal-key>
+juju grant-secret unseal-key openbao
+juju run openbao/2 unseal secret-id=<secret-id>
 ```
 
-The units will go back to the active/idle state:
+For Shamir with multiple shares, run the action until the threshold is met. Additional shares from the initialize secret are stored as `key-2`, `key-3`, and so on:
 
 ```
-$ juju status
-Model  Controller          Cloud/Region        Version  SLA          Timestamp
-demo   microk8s-localhost  microk8s/localhost  3.4.0    unsupported  13:03:26-04:00
-
-App    Version  Status  Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           active      3  openbao-k8s  2.0/edge  198  10.152.183.208  no
-
-Unit      Workload  Agent  Address      Ports  Message
-openbao/0*  active    idle   10.1.182.38
-openbao/1   active    idle   10.1.182.51
-openbao/2   active    idle   10.1.182.15
+juju run openbao/2 unseal secret-id=<secret-id> key-name=key-2
 ```
+
+The unit will go back to the active/idle state.
+
+The OpenBao CLI (`bao operator unseal`) remains available as an advanced fallback. The supported operator path is the charm action.

@@ -103,7 +103,7 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
         wait_for_status_message(
             juju,
             expected_message=(
-                "Please initialize OpenBao or integrate with an auto-unseal provider"
+                "Please initialize OpenBao (see `initialize` action) or integrate with an auto-unseal provider"
             ),
             app_name=APP_NAME,
             timeout=600,
@@ -134,7 +134,7 @@ def test_given_softhsm_configured_when_initialized_then_auto_unseals(
             _assert_hsm_lib_unpacked(juju, leader_name)
             wait_for_status_message(
                 juju,
-                expected_message="Please initialize OpenBao",
+                expected_message="Please initialize OpenBao (see `initialize` action)",
                 app_name=APP_NAME,
                 timeout=600,
             )

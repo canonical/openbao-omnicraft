@@ -28,7 +28,7 @@ Next, run the `bootstrap-raft` action on the remaining unit. This will re-bootst
 juju run openbao/leader bootstrap-raft
 ```
 
-This should update the status of the unit to "Please unseal OpenBao".
+This should update the status of the unit to "Please unseal OpenBao (see `unseal` action)".
 
 ## 3. Unseal OpenBao
 

@@ -97,11 +97,11 @@ The charm registers the snap's PKCS#11 KMS plugin and adds a `seal "pkcs11"` sta
 
 ## 4. Initialize OpenBao
 
-Wait until units report `Please initialize OpenBao`, then initialize as in [Getting started (Machine)](../tutorial/getting_started_machine.md). Use recovery keys from this initialization, not Shamir unseal keys.
+Wait until units report that OpenBao should be initialized (`initialize` action), then initialize as in [Getting started (Machine)](../tutorial/getting_started_machine.md). Use recovery keys from this initialization, not Shamir unseal keys.
 
 Authorize the charm with a short-lived root token as usual.
 
-After a restart, units should unseal automatically using the HSM. You should not need `bao operator unseal` for routine restarts.
+After a restart, units should unseal automatically using the HSM. You should not need the unseal action or `bao operator unseal` for routine restarts.
 
 ## Migrating an existing Shamir cluster
 

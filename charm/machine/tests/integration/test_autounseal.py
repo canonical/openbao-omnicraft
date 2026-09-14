@@ -108,7 +108,7 @@ def test_given_openbao_is_deployed_when_integrate_another_openbao_then_autounsea
         wait_for_status_message(
             juju=juju,
             count=1,
-            expected_message="Please initialize OpenBao",
+            expected_message="Please initialize OpenBao (see `initialize` action)",
             app_name="openbao-b",
         )
 

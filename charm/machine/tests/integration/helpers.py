@@ -148,16 +148,24 @@ def get_openbao_token_and_unseal_key(
 
 def initialize_openbao_leader(juju: jubilant.Juju, app_name: str) -> Tuple[str, str]:
     """Initialize the leader openbao unit and return the root token and unseal key."""
+    try:
+        return get_openbao_token_and_unseal_key(juju, app_name)
+    except (StopIteration, jubilant.CLIError, KeyError):
+        logger.info("Existing init credentials not found, initializing via charm action")
+
     leader_name = get_leader_unit_name(juju, app_name)
-    openbao = get_openbao_client(juju, leader_name)
-    if not openbao.is_initialized():
-        root_token, key = openbao.initialize()
+    task = juju.run(leader_name, "initialize", wait=120)
+    secret_id = task.results["secret-id"]
+    revealed = juju.show_secret(secret_id, reveal=True)
+    root_token = revealed.content["token"]
+    key = revealed.content["key"]
+    try:
         juju.add_secret(
             f"root-token-key-{app_name}",
             {"root-token": root_token, "key": key},
         )
-        return root_token, key
-    root_token, key = get_openbao_token_and_unseal_key(juju, app_name)
+    except jubilant.CLIError:
+        logger.info("Test secret for init credentials already exists")
     return root_token, key
 
 
@@ -173,27 +181,43 @@ def get_openbao_client(
     return OpenBao(url=f"https://{address}:8200", token=token, ca_file_location=ca_file_name)
 
 
+def _unseal_secret_id(juju: jubilant.Juju, unseal_key: str, app_name: str) -> str:
+    """Return a secret id the charm can use to unseal, creating one if needed."""
+    for secret in juju.secrets():
+        if secret.label == "openbao-init-credentials":
+            return str(secret.uri).split(":")[-1]
+    secret_name = f"unseal-key-{app_name}"
+    try:
+        secret_uri = juju.add_secret(secret_name, {"key": unseal_key})
+    except jubilant.CLIError:
+        juju.update_secret(secret_name, {"key": unseal_key})
+        secret_uri = secret_name
+    juju.grant_secret(secret_name, app_name)
+    return str(secret_uri).split(":")[-1]
+
+
 def unseal_all_openbao_units(
     juju: jubilant.Juju, unseal_key: str, ca_file_name: str | None = None
 ) -> None:
     """Unseal all the openbao units."""
+    secret_id = _unseal_secret_id(juju, unseal_key, APP_NAME)
     status = juju.status()
     app = status.apps[APP_NAME]
 
-    # We need to unseal the leader first, since this is the one we initialized.
     leader_name = get_leader_unit_name(juju, APP_NAME)
+    juju.run(leader_name, "unseal", {"secret-id": secret_id}, wait=180)
     unit_address = app.units[leader_name].public_address
     assert unit_address
-    openbao = OpenBao(url=f"https://{unit_address}:8200")
-    if openbao.is_sealed():
-        openbao.unseal(unseal_key)
+    openbao = OpenBao(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
     openbao.wait_for_node_to_be_unsealed()
 
     for unit_name, unit in app.units.items():
+        if unit_name == leader_name:
+            continue
+        juju.run(unit_name, "unseal", {"secret-id": secret_id}, wait=180)
         unit_address = unit.public_address
         assert unit_address
         openbao = OpenBao(url=f"https://{unit_address}:8200", ca_file_location=ca_file_name)
-        openbao.unseal(unseal_key)
         openbao.wait_for_node_to_be_unsealed()
 
 

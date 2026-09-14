@@ -6,6 +6,7 @@ import os
 import tarfile
 import zipfile
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict, List
 
@@ -55,6 +56,44 @@ class Pkcs11SealConfiguration:
     plugin_command: str | None = None
     plugin_version: str | None = None
     plugin_sha256sum: str | None = None
+
+
+def parse_ttl_duration(value: str) -> timedelta:
+    """Parse a duration string such as ``1h``, ``30m``, or an integer number of hours.
+
+    Raises:
+        ValueError: If the value is empty, not a positive duration, or malformed.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("ttl must not be empty")
+    unit = raw[-1].lower()
+    if unit in ("h", "m"):
+        amount = int(raw[:-1])
+        if amount < 1:
+            raise ValueError("ttl must be positive")
+        if unit == "h":
+            return timedelta(hours=amount)
+        return timedelta(minutes=amount)
+    amount = int(raw)
+    if amount < 1:
+        raise ValueError("ttl must be positive")
+    return timedelta(hours=amount)
+
+
+def initialization_secret_content(root_token: str, keys: List[str]) -> Dict[str, str]:
+    """Build Juju secret content for initialization credentials.
+
+    The root token is stored as ``token`` so the same secret can be passed to
+    ``authorize-charm``. The first key share is stored as ``key``; additional
+    shares are stored as ``key-2``, ``key-3``, and so on.
+    """
+    if not keys:
+        raise ValueError("initialization returned no keys")
+    content = {"token": root_token, "key": keys[0]}
+    for index, key in enumerate(keys[1:], start=2):
+        content[f"key-{index}"] = key
+    return content
 
 
 def common_name_config_is_valid(common_name: str) -> bool:

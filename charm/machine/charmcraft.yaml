@@ -492,6 +492,42 @@ actions:
           stored by the charm.
     required: [secret-id]
 
+  initialize:
+    description: >-
+      Initializes OpenBao on the leader unit. Stores the root token and key shares
+      in a Juju secret that expires after the given ttl. Reveal and store those
+      credentials offline before expiry. This action does not unseal OpenBao.
+    params:
+      secret-shares:
+        type: integer
+        default: 1
+        description: Number of Shamir (or recovery) key shares to generate.
+      secret-threshold:
+        type: integer
+        default: 1
+        description: Number of key shares required to unseal (or recover).
+      ttl:
+        type: string
+        default: 1h
+        description: How long the Juju secret with initialization credentials remains available (for example 1h or 30m).
+
+  unseal:
+    description: >-
+      Submits an unseal key share to this unit. Provide a Juju secret that
+      contains the key. For Shamir with multiple shares, run the action until
+      the threshold is met, using key-name to select additional shares.
+    params:
+      secret-id:
+        type: string
+        description: >-
+          Juju secret ID containing an unseal key share. The initialize action
+          creates a secret with fields `token` and `key` that can be reused here.
+      key-name:
+        type: string
+        default: key
+        description: Secret field that contains the unseal key share to submit.
+    required: [secret-id]
+
   bootstrap-raft:
     description: >-
       Bootstraps raft using a peers.json file. This action requires the

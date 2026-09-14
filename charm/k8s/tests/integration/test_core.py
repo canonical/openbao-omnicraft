@@ -87,7 +87,7 @@ def test_given_application_is_deployed_when_pod_crashes_then_unit_recovers(
     crash_pod(name=crashed_pod_name, namespace=k8s_namespace)
     wait_for_status_message(
         juju,
-        expected_message="Please unseal OpenBao",
+        expected_message="Please unseal OpenBao (see `unseal` action)",
         timeout=300,
         unit_name=crashed_unit_name,
     )
@@ -110,11 +110,16 @@ def test_given_application_is_deployed_when_scale_up_then_status_is_active(
     num_units = NUM_OPENBAO_UNITS + 1
     scale(juju, APPLICATION_NAME, num_units)
 
-    wait_for_status_message(juju, expected_message="Please unseal OpenBao", timeout=300, count=1)
+    wait_for_status_message(
+        juju,
+        expected_message="Please unseal OpenBao (see `unseal` action)",
+        timeout=300,
+        count=1,
+    )
     sealed = [
         unit_name
         for unit_name, status in get_unit_status_messages(juju)
-        if status == "Please unseal OpenBao"
+        if status == "Please unseal OpenBao (see `unseal` action)"
     ]
     assert len(sealed) == 1
     openbao = get_openbao_client(juju, sealed[0], deploy.root_token)
@@ -255,7 +260,7 @@ def test_given_tls_certificates_integrated_when_openbao_unit_crashes_then_openba
     crash_pod(name=crashed_pod_name, namespace=k8s_namespace)
     wait_for_status_message(
         juju,
-        expected_message="Please unseal OpenBao",
+        expected_message="Please unseal OpenBao (see `unseal` action)",
         timeout=300,
         unit_name=crashed_unit_name,
     )

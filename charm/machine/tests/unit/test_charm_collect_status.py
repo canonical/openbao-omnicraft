@@ -447,7 +447,9 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == BlockedStatus("Please initialize OpenBao")
+        assert state_out.unit_status == BlockedStatus(
+            "Please initialize OpenBao (see `initialize` action)"
+        )
 
     def test_given_openbao_uninitialized_when_collect_unit_status_then_status_is_blocked(
         self,
@@ -486,7 +488,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
         assert state_out.unit_status == BlockedStatus(
-            "Please initialize OpenBao or integrate with an auto-unseal provider"
+            "Please initialize OpenBao (see `initialize` action) or integrate with an auto-unseal provider"
         )
 
     def test_given_openbao_sealed_and_needs_migration_when_collect_unit_status_then_status_is_blocked(
@@ -567,7 +569,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == BlockedStatus("Please unseal OpenBao")
+        assert state_out.unit_status == BlockedStatus("Please unseal OpenBao (see `unseal` action)")
 
     def test_given_openbao_sealed_with_transit_seal_when_collect_unit_status_then_status_is_waiting(
         self,
