@@ -40,7 +40,7 @@ Prepare everything on the **host**; the charm only unpacks the tarball and appli
 The charm does not install SoftHSM or create keys. Provider-specific environment belongs in `openbao.env` inside the archive; the charm installs that file to `/var/snap/openbao/common/openbao.env` (already sourced by `baod-start`).
 
 For snap-only (non-charm) PKCS#11 setup and common failure modes, see
-[Troubleshooting (Snap)](../troubleshooting.md).
+[TROUBLESHOOTING.md](https://github.com/canonical/openbao-omnicraft/blob/main/TROUBLESHOOTING.md).
 
 ## 1. Pack and attach the PKCS#11 library directory
 
