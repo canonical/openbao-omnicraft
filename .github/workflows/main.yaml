@@ -131,8 +131,32 @@ jobs:
           minio_binaries_path="/var/snap/lxd/common/minio"
           sudo mkdir -p ${minio_binaries_path}
           echo "Downloading and installing MinIO binaries to ${minio_binaries_path}"
-          sudo wget --quiet --no-clobber https://dl.min.io/server/minio/release/linux-amd64/minio -O ${minio_binaries_path}/minio && sudo chmod +x ${minio_binaries_path}/minio
-          sudo wget --quiet --no-clobber https://dl.min.io/client/mc/release/linux-amd64/mc -O ${minio_binaries_path}/mc && sudo chmod +x ${minio_binaries_path}/mc
+          # dl.min.io now returns 410 for community binaries. Pin the last GitHub releases.
+          minio_url="https://github.com/minio/minio/releases/download/RELEASE.2025-09-07T16-13-09Z/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z"
+          mc_url="https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z"
+          install_minio_bin() {
+            dest="$1"
+            url="$2"
+            min_bytes="$3"
+            if sudo test -x "$dest"; then
+              size=$(sudo stat -c%s "$dest")
+              if [ "$size" -ge "$min_bytes" ]; then
+                echo "Reusing existing $dest ($size bytes)"
+                return 0
+              fi
+            fi
+            echo "Downloading $url"
+            sudo rm -f "$dest"
+            sudo wget --tries=5 --timeout=60 --retry-connrefused -O "$dest" "$url"
+            sudo chmod +x "$dest"
+            size=$(sudo stat -c%s "$dest")
+            if [ "$size" -lt "$min_bytes" ]; then
+              echo "ERROR: $dest is only $size bytes (expected >= $min_bytes)"
+              exit 1
+            fi
+          }
+          install_minio_bin "${minio_binaries_path}/minio" "$minio_url" 50000000
+          install_minio_bin "${minio_binaries_path}/mc" "$mc_url" 10000000
           sudo snap set lxd minio.path=${minio_binaries_path}
           sudo snap restart lxd
           lxd_bridge_addr=$(sudo lxc network list --format yaml | yq -r '.[] | select(.name == "lxdbr0") | .config["ipv4.address"]' | cut -d'/' -f1)

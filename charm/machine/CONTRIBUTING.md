@@ -90,8 +90,8 @@ To run the backup tests, you will need to have an S3 compatible storage service 
 The following is a summary of the steps, and may not be up to date with the latest LXD documentation or your system. Use with care.
 
 ```shell
-sudo wget --no-clobber https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/bin/minio && sudo chmod +x /usr/bin/minio
-sudo wget --no-clobber https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/bin/mc && sudo chmod +x /usr/bin/mc
+sudo wget --no-clobber https://github.com/minio/minio/releases/download/RELEASE.2025-09-07T16-13-09Z/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z -O /usr/bin/minio && sudo chmod +x /usr/bin/minio
+sudo wget --no-clobber https://github.com/minio/mc/releases/download/RELEASE.2025-08-13T08-35-41Z/mc.linux-amd64.RELEASE.2025-08-13T08-35-41Z -O /usr/bin/mc && sudo chmod +x /usr/bin/mc
 snap set lxd minio.path=/usr/bin
 snap restart lxd
 lxc config set core.storage_buckets_address :8555
