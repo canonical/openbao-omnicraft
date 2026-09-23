@@ -7,6 +7,8 @@ METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
 
 # Path to the built openbao snap, set from the --snap_path pytest option in conftest.
 OPENBAO_SNAP_PATH: str | None = None
+# Local SoftHSM snap (.snap) fallback when `snap install softhsm` from the store fails.
+SOFTHSM_SNAP_PATH: str | None = None
 
 APP_NAME: str = METADATA["name"]
 GRAFANA_AGENT_APPLICATION_NAME = "grafana-agent"
@@ -16,10 +18,6 @@ GRAFANA_AGENT_REVISION = {"x86_64": 605, "aarch64": 606}.get(platform.machine(),
 HAPROXY_APPLICATION_NAME = "haproxy"
 HAPROXY_REVISION = 290
 INGRESS_RELATION_NAME = "ingress"
-MINIO_APPLICATION_NAME = "minio"
-MINIO_S3_ACCESS_KEY = "baointegrationtest"
-MINIO_S3_SECRET_KEY = "baointegrationtest"
-
 MICROCEPH_S3_ACCESS_KEY = "openbaomicrocephtest"
 MICROCEPH_S3_SECRET_KEY = "openbaomicrocephtest"
 MICROCEPH_S3_BUCKET = "openbao-microceph-test"

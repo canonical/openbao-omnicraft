@@ -3,8 +3,11 @@
 # See LICENSE file for licensing details.
 
 
+import tarfile
 from datetime import timedelta
+from hashlib import sha256
 from io import StringIO
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import hcl
@@ -16,6 +19,76 @@ from openbao.openbao_client import AppRole
 
 from certificates import generate_example_provider_certificate
 from fixtures import OpenBaoCharmFixtures
+from machine import Machine
+
+
+def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Install a fake snap PKCS#11 KMS plugin and point charm constants at it."""
+    plugin_dir = tmp_path / "plugins"
+    plugin_dir.mkdir(exist_ok=True)
+    plugin_bin = plugin_dir / "openbao-plugin-kms-pkcs11"
+    plugin_bytes = b"fake-kms-plugin"
+    plugin_bin.write_bytes(plugin_bytes)
+    (plugin_dir / "pkcs11.version").write_text("v0.1.0\n")
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(plugin_dir))
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
+    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version"))
+    return sha256(plugin_bytes).hexdigest()
+
+
+def _wire_real_hsm_machine_fs(
+    mock_machine: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
+    real = Machine()
+    hsm_dir = tmp_path / "hsm"
+    openbao_env = tmp_path / "openbao.env"
+    monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
+    monkeypatch.setattr("charm.OPENBAO_ENV_PATH", str(openbao_env))
+    mock_machine.replace_directory.side_effect = real.replace_directory
+    mock_machine.extract_archive.side_effect = real.extract_archive
+    mock_machine.copy_file.side_effect = real.copy_file
+
+    def exists(path: str) -> bool:
+        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
+            str(hsm_dir)
+        ):
+            return real.exists(path)
+        return False
+
+    def pull(path: str):
+        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
+            str(hsm_dir)
+        ):
+            return real.pull(path)
+        return StringIO("")
+
+    def push(path: str, source: str) -> None:
+        if path == str(openbao_env) or path.startswith(str(hsm_dir)):
+            real.push(path, source)
+
+    mock_machine.exists.side_effect = exists
+    mock_machine.pull.side_effect = pull
+    mock_machine.push.side_effect = push
+    return hsm_dir
+
+
+def _make_hsm_lib_tarball(tmp_path: Path, *names: str, openbao_env: str | None = None) -> Path:
+    """Create a tarball containing ELF stubs named ``names`` (default pkcs11.so)."""
+    if not names:
+        names = ("pkcs11.so",)
+    stage = tmp_path / "hsm-stage"
+    stage.mkdir(exist_ok=True)
+    for name in names:
+        # Minimal ELF header so is_elf_shared_object accepts the stub when needed.
+        (stage / name).write_bytes(b"\x7fELF" + b"\0" * 12)
+    if openbao_env is not None:
+        (stage / "openbao.env").write_text(openbao_env, encoding="utf-8")
+    archive = tmp_path / "hsm-lib.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for path in sorted(stage.iterdir()):
+            tar.add(path, arcname=path.name)
+    return archive
 
 
 class MockRelation:
@@ -591,3 +664,267 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         assert kwargs["egress_subnets"] == ["2.2.2.0/24"]
         assert kwargs["nonce"] == "123123"
         assert kwargs["openbao_url"] == "https://192.0.2.0:8200"
+
+    # PKCS#11 HSM
+
+    def _pushed_openbao_hcl_raw(self) -> str:
+        for call in self.mock_machine.push.call_args_list:
+            if call.kwargs.get("path") == "/var/snap/openbao/common/openbao-config.hcl":
+                return call.kwargs["source"]
+        raise AssertionError("openbao-config.hcl was not pushed")
+
+    def _pushed_openbao_hcl(self) -> dict:
+        return hcl.loads(self._pushed_openbao_hcl_raw())
+
+    def test_given_hsm_secret_and_lib_when_configure_then_pkcs11_stanza_is_generated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        plugin_sha = _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
+        hsm_dir = _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
+        hsm_archive = _make_hsm_lib_tarball(
+            tmp_path,
+            "pkcs11.so",
+            "libdep.so",
+            openbao_env="export SOFTHSM2_CONF=/var/snap/openbao/common/hsm/softhsm2.conf\n",
+        )
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "token-label": "OpenBao",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+                "key-id": "0x01",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_archive)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        self.mock_machine.extract_archive.assert_called_with(str(hsm_archive), str(hsm_dir))
+        assert (hsm_dir / "pkcs11.so").is_file()
+        assert (hsm_dir / "libdep.so").is_file()
+        assert (hsm_dir / "openbao.env").is_file()
+        assert (tmp_path / "openbao.env").is_file()
+        assert "SOFTHSM2_CONF" in (tmp_path / "openbao.env").read_text(encoding="utf-8")
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert actual_config_hcl["plugin_directory"] == str(tmp_path / "plugins")
+        assert actual_config_hcl["plugin_auto_register"] is True
+        pkcs11 = actual_config_hcl["seal"]["pkcs11"]
+        assert pkcs11["lib"] == str(hsm_dir / "pkcs11.so")
+        assert pkcs11["slot"] == "0"
+        assert pkcs11["token_label"] == "OpenBao"
+        assert pkcs11["pin"] == "1234"
+        assert pkcs11["key_label"] == "bao-root-key"
+        assert pkcs11["key_id"] == "0x01"
+        raw_config = self._pushed_openbao_hcl_raw()
+        assert 'plugin "kms" "pkcs11"' in raw_config
+        assert 'command   = "openbao-plugin-kms-pkcs11"' in raw_config
+        assert 'version   = "v0.1.0"' in raw_config
+        assert f'sha256sum = "{plugin_sha}"' in raw_config
+
+    def test_given_hsm_tarball_with_lib_secret_when_configure_then_named_module_is_used(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        _install_fake_pkcs11_plugin(tmp_path, monkeypatch)
+        hsm_dir = _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
+        hsm_archive = _make_hsm_lib_tarball(tmp_path, "yubihsm_pkcs11.so", "libyubihsm.so.2")
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+                "lib": "yubihsm_pkcs11.so",
+            },
+        )
+        peer_relation = testing.PeerRelation(endpoint="openbao-peers")
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_archive)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        pkcs11 = self._pushed_openbao_hcl()["seal"]["pkcs11"]
+        assert pkcs11["lib"] == str(hsm_dir / "yubihsm_pkcs11.so")
+
+    def test_given_hsm_ready_but_kms_plugin_missing_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
+        missing_dir = tmp_path / "missing-plugins"
+        monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
+        )
+        monkeypatch.setattr(
+            "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
+        )
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
+
+    def test_given_hsm_secret_without_lib_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        placeholder = tmp_path / "placeholder.so"
+        placeholder.write_text("placeholder")
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=placeholder)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
+        self.mock_machine.copy_file.assert_not_called()
+
+    def test_given_hsm_lib_without_secret_when_configure_then_pkcs11_stanza_is_not_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = None
+        self.mock_machine.pull.return_value = StringIO("")
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl
+        self.mock_machine.copy_file.assert_not_called()
+
+    def test_given_hsm_and_transit_autounseal_when_configure_then_neither_seal_is_generated(
+        self, tmp_path: Path
+    ):
+        self.mock_autounseal_requires_get_details.return_value = AutounsealDetails(
+            "1.2.3.4", "charm-autounseal", "key name", "role id", "secret id", "ca cert"
+        )
+        self.mock_machine.pull.return_value = StringIO("")
+        hsm_lib = tmp_path / "libykcs11.so"
+        hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
+        hsm_secret = testing.Secret(
+            tracked_content={
+                "slot": "0",
+                "pin": "1234",
+                "key-label": "bao-root-key",
+            },
+        )
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers",
+        )
+        state_in = testing.State(
+            unit_status=testing.ActiveStatus(),
+            leader=True,
+            relations=[peer_relation],
+            secrets=[hsm_secret],
+            config={"hsm-config-secret-id": hsm_secret.id},
+            resources=[testing.Resource(name="hsm-lib", path=hsm_lib)],
+            networks={
+                testing.Network(
+                    "openbao-peers",
+                    bind_addresses=[testing.BindAddress([testing.Address("1.2.1.2")])],
+                )
+            },
+        )
+
+        self.ctx.run(self.ctx.on.config_changed(), state_in)
+
+        actual_config_hcl = self._pushed_openbao_hcl()
+        assert "seal" not in actual_config_hcl

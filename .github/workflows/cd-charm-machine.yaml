@@ -53,13 +53,13 @@ jobs:
         suite:
           - test_acme
           - test_autounseal
-          - test_backup
           - test_backup_microceph
           - test_core
           - test_cos_integration
           - test_deploy_unseal
           - test_ingress
           - test_kv
+          - test_pkcs11_hsm
           - test_pki
           - test_pki_self_signed
           - test_upgrade_first
@@ -88,23 +88,6 @@ jobs:
         run: |
           echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
           echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-      - name: Install minio binaries and configure storage buckets for backup tests
-        if: matrix.suite == 'test_backup'
-        run: |
-          minio_binaries_path="/var/snap/lxd/common/minio"
-          sudo mkdir -p ${minio_binaries_path}
-          echo "Downloading and installing MinIO binaries to ${minio_binaries_path}"
-          sudo wget --quiet --no-clobber https://dl.min.io/server/minio/release/linux-amd64/minio -O ${minio_binaries_path}/minio && sudo chmod +x ${minio_binaries_path}/minio
-          sudo wget --quiet --no-clobber https://dl.min.io/client/mc/release/linux-amd64/mc -O ${minio_binaries_path}/mc && sudo chmod +x ${minio_binaries_path}/mc
-          sudo snap set lxd minio.path=${minio_binaries_path}
-          sudo snap restart lxd
-          lxd_bridge_addr=$(sudo lxc network list --format yaml | yq -r '.[] | select(.name == "lxdbr0") | .config["ipv4.address"]' | cut -d'/' -f1)
-          echo "Restricting bucket access to the lxd bridge. lxd_bridge_addr=${lxd_bridge_addr}"
-          sudo lxc config set core.storage_buckets_address ${lxd_bridge_addr}:8555
-          echo "Waiting for Juju to react to the buckets restriction..."
-          sleep 30 # For some reason, the Juju controller needs some time to make itself available after restricting the storage buckets address
-          sudo lxc storage bucket create default openbao-integration-test
-          sudo lxc storage bucket key create default openbao-integration-test openbao-integration-test --role admin --access-key baointegrationtest --secret-key baointegrationtest
       - name: Install MicroCeph and configure RGW for backup tests
         if: matrix.suite == 'test_backup_microceph'
         run: |
@@ -172,6 +155,14 @@ jobs:
 
           echo "MicroCeph RGW setup complete."
           sudo microceph status
+      - name: Install SoftHSM and OpenSC for PKCS#11 tests
+        if: matrix.suite == 'test_pkcs11_hsm'
+        run: |
+          sudo snap install softhsm
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq opensc
+          softhsm.softhsm2-util --version
+          pkcs11-tool --version || true
       - name: Run integration tests
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:

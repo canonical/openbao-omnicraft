@@ -10,7 +10,7 @@ This guide covers the upgrade path from any OpenBao charm 1.1x version (1.15, 1.
 
 ## Breaking changes
 
-OpenBao 2.0 is a major version upgrade of the OpenBao workload. Review the [HashiCorp OpenBao 2.0 upgrade guide](https://openbao.org/docs/upgrading) for details on upstream changes.
+OpenBao 2.0 is a major version upgrade of the OpenBao workload. Review the [OpenBao upgrade guide](https://openbao.org/docs/2.6.x/upgrading/) for details on upstream changes.
 
 Key points:
 
