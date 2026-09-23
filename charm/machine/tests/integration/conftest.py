@@ -161,7 +161,7 @@ def skip_deploy(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture(scope="module")
 def host_ip(juju: jubilant.Juju) -> str:
-    """Get the gateway IP of the unit, which should be the host IP where minio is running."""
+    """Get the gateway IP of the unit, which should be the host IP reachable from LXD."""
     result = juju.exec(
         "ip route | grep 'default via' | awk '{print $3}'",
         unit=f"{APP_NAME}/leader",

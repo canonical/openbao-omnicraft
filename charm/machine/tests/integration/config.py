@@ -18,10 +18,6 @@ GRAFANA_AGENT_REVISION = {"x86_64": 605, "aarch64": 606}.get(platform.machine(),
 HAPROXY_APPLICATION_NAME = "haproxy"
 HAPROXY_REVISION = 290
 INGRESS_RELATION_NAME = "ingress"
-MINIO_APPLICATION_NAME = "minio"
-MINIO_S3_ACCESS_KEY = "baointegrationtest"
-MINIO_S3_SECRET_KEY = "baointegrationtest"
-
 MICROCEPH_S3_ACCESS_KEY = "openbaomicrocephtest"
 MICROCEPH_S3_SECRET_KEY = "openbaomicrocephtest"
 MICROCEPH_S3_BUCKET = "openbao-microceph-test"
