@@ -95,10 +95,24 @@ jobs:
           minio_binaries_path="/var/snap/lxd/common/minio"
           sudo mkdir -p ${minio_binaries_path}
           echo "Downloading and installing MinIO binaries to ${minio_binaries_path}"
-          sudo wget --quiet --no-clobber https://dl.min.io/server/minio/release/linux-amd64/minio -O ${minio_binaries_path}/minio && sudo chmod +x ${minio_binaries_path}/minio
-          sudo wget --quiet --no-clobber https://dl.min.io/client/mc/release/linux-amd64/mc -O ${minio_binaries_path}/mc && sudo chmod +x ${minio_binaries_path}/mc
+          # Always re-download: --no-clobber can leave a stale/empty binary on self-hosted runners.
+          sudo rm -f ${minio_binaries_path}/minio ${minio_binaries_path}/mc
+          sudo wget --quiet https://dl.min.io/server/minio/release/linux-amd64/minio -O ${minio_binaries_path}/minio
+          sudo wget --quiet https://dl.min.io/client/mc/release/linux-amd64/mc -O ${minio_binaries_path}/mc
+          sudo chmod +x ${minio_binaries_path}/minio ${minio_binaries_path}/mc
+          test -x ${minio_binaries_path}/minio
+          test -x ${minio_binaries_path}/mc
           sudo snap set lxd minio.path=${minio_binaries_path}
           sudo snap restart lxd
+          # Wait until LXD is usable again after the daemon restart.
+          for i in $(seq 1 30); do
+            if sudo lxc network list >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for LXD after restart... (attempt $i/30)"
+            sleep 2
+          done
+          sudo lxc network list >/dev/null
           lxd_bridge_addr=$(sudo lxc network list --format yaml | yq -r '.[] | select(.name == "lxdbr0") | .config["ipv4.address"]' | cut -d'/' -f1)
           echo "Restricting bucket access to the lxd bridge. lxd_bridge_addr=${lxd_bridge_addr}"
           sudo lxc config set core.storage_buckets_address ${lxd_bridge_addr}:8555
