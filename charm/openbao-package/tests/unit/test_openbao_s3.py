@@ -391,6 +391,38 @@ class TestS3(unittest.TestCase):
             verify=None,
         )
 
+    @patch("openbao.openbao_s3.logger.warning")
+    @patch("boto3.session.Session")
+    def test_given_skip_verify_true_when_create_s3_session_then_insecure_warning_is_logged(
+        self,
+        patch_session: MagicMock,
+        patch_warning: MagicMock,
+    ):
+        S3(
+            access_key=self.VALID_S3_PARAMETERS["access-key"],
+            secret_key=self.VALID_S3_PARAMETERS["secret-key"],
+            region=self.VALID_S3_PARAMETERS["region"],
+            endpoint=self.VALID_S3_PARAMETERS["endpoint"],
+            skip_verify=True,
+        )
+        patch_warning.assert_called_once()
+
+    @patch("openbao.openbao_s3.logger.warning")
+    @patch("boto3.session.Session")
+    def test_given_skip_verify_false_when_create_s3_session_then_no_insecure_warning_is_logged(
+        self,
+        patch_session: MagicMock,
+        patch_warning: MagicMock,
+    ):
+        S3(
+            access_key=self.VALID_S3_PARAMETERS["access-key"],
+            secret_key=self.VALID_S3_PARAMETERS["secret-key"],
+            region=self.VALID_S3_PARAMETERS["region"],
+            endpoint=self.VALID_S3_PARAMETERS["endpoint"],
+            skip_verify=False,
+        )
+        patch_warning.assert_not_called()
+
     @patch.dict(
         "os.environ",
         {
