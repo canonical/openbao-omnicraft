@@ -31,7 +31,7 @@ OpenBao PKI will only allow issuing certificates depending on how it is configur
 4. Integrate OpenBao with its parent CA
 
    ```shell
-   juju integrate openbao:tls-certificates-pki self-signed-certificates
+   juju relate openbao:tls-certificates-pki self-signed-certificates
    ```
 
 5. Deploy `tls-certificates-requirer`
@@ -43,7 +43,7 @@ OpenBao PKI will only allow issuing certificates depending on how it is configur
 6. Integrate TLS Certificates Requirer with OpenBao
 
    ```shell
-   juju integrate tls-certificates-requirer openbao:openbao-pki
+   juju relate tls-certificates-requirer openbao:openbao-pki
    ```
 
 7. Retrieve the certificate

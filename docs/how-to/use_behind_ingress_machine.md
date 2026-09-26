@@ -41,23 +41,23 @@ juju deploy self-signed-certificates --channel 1/stable
 Establish the required integrations
 
 ```bash
-juju integrate openbao:tls-certificates-access self-signed-certificates
+juju relate openbao:tls-certificates-access self-signed-certificates
 ```
 
 ```bash
- juju integrate openbao:ingress ingress-configurator
+ juju relate openbao:ingress ingress-configurator
 ```
 
 ```bash
-juju integrate ingress-configurator:haproxy-route haproxy
+juju relate ingress-configurator:haproxy-route haproxy
 ```
 
 ```bash
-juju integrate self-signed-certificates haproxy:receive-ca-certs
+juju relate self-signed-certificates haproxy:receive-ca-certs
 ```
 
 ```bash
-juju integrate haproxy:certificates self-signed-certificates
+juju relate haproxy:certificates self-signed-certificates
 ```
 
 The `ingress` (between OpenBao and the ingress-configurator) and the `haproxy-route` (between ingress-configurator and HAProxy) integrations allow accessing OpenBao through the proxy.
@@ -120,14 +120,14 @@ ck0i0krq457c7bgte4l0:
   created: 2023-08-28T13:33:54Z
   updated: 2023-08-28T13:33:54Z
   content:
-    roottoken: hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+    roottoken: s.UdFZa2Gv4kKoHpYWSnNnYOZr
     unsealkeys: '["11bd448ccfec24db29ed5c14fdfe3d169589f5c5c6b57870e31d738aec623856"]'
 ```
 
 Set the openbao token for use in the client:
 
 ```bash
-export BAO_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+export BAO_TOKEN=s.UdFZa2Gv4kKoHpYWSnNnYOZr
 ```
 
 Read the `active-ca-certificates` secret content of `self-signed-certificates` as we used it to sign the access certificates of OpenBao:
@@ -181,6 +181,6 @@ export BAO_ADDR="https://<your hostname>"
 You can now run openbao commands against the openbao unit.
 
 ```bash
-openbao status
+bao status
 bao operator raft list-peers
 ```
