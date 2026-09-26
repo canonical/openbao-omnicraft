@@ -23,7 +23,7 @@ OpenBao ACME will allow issuing certificates depending on how it is configured, 
 3. Integrate OpenBao with its parent CA
 
    ```shell
-   juju integrate openbao:tls-certificates-acme self-signed-certificates
+   juju relate openbao:tls-certificates-acme self-signed-certificates
    ```
 
 Now the ACME server is accessible on `https://<OpenBao Address>:8200/v1/charm-acme/acme/directory`

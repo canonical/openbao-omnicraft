@@ -19,8 +19,8 @@ OpenBao should be deployed with a total of **5 units**.
 
 OpenBao should be integrated with Canonical Observability Stack:
 
-- OpenBao should be integrated with Grafana Agent using the `cos-agent` charm relation interface.
-- Grafana Agent should be integrated with COS using the `loki_push_api`, `prometheus_remote_write`, and `grafana_dashboard` charm relation interfaces.
+- OpenBao should be integrated with Opentelemetry Collector using the `cos-agent` charm relation interface.
+- Opentelemetry Collector should be integrated with COS using the `logging`, `send-remote-write`, and `grafana-dashboards-provider` charm relation interfaces.
 
 ## Storage
 

@@ -13,10 +13,10 @@ Run `juju status`:
 
 ```
 Model  Controller          Cloud/Region        Version  SLA          Timestamp
-demo   microk8s-localhost  microk8s/localhost  3.4.0    unsupported  12:52:32-04:00
+demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  12:52:32-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           waiting      1  openbao-k8s  2.0/edge  198  10.152.183.208  no       installing agent
+openbao           waiting      1  openbao-k8s  2/edge  2  10.152.183.208  no       installing agent
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
@@ -34,10 +34,10 @@ The new units will be sealed:
 
 ```
 Model  Controller          Cloud/Region        Version  SLA          Timestamp
-demo   microk8s-localhost  microk8s/localhost  3.4.0    unsupported  12:54:51-04:00
+demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  12:54:51-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           waiting      3  openbao-k8s  2.0/edge  198  10.152.183.208  no       installing agent
+openbao           waiting      3  openbao-k8s  2/edge  2  10.152.183.208  no       installing agent
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
@@ -77,10 +77,10 @@ All units should go to the `Active/Idle` Juju status:
 ```
 $ juju status
 Model  Controller          Cloud/Region        Version  SLA          Timestamp
-demo   microk8s-localhost  microk8s/localhost  3.4.0    unsupported  12:57:52-04:00
+demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  12:57:52-04:00
 
 App    Version  Status  Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           active      3  openbao-k8s  2.0/edge  198  10.152.183.208  no
+openbao           active      3  openbao-k8s  2/edge  2  10.152.183.208  no
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
