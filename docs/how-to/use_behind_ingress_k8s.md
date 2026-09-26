@@ -23,14 +23,14 @@ juju deploy self-signed-certificates --channel beta
 Integrate Traefik with Self-Signed-Certificates Operator
 
 ```bash
-juju integrate self-signed-certificates:certificates traefik-k8s:certificates
+juju relate self-signed-certificates:certificates traefik-k8s:certificates
 ```
 
 Integrate OpenBao with Traefik
 ```bash
-juju integrate openbao-k8s:send-ca-cert traefik-k8s:receive-ca-cert
-juju integrate openbao-k8s:ingress traefik-k8s:ingress
-juju integrate openbao:ingress-per-unit traefik-k8s:ingress-per-unit
+juju relate openbao-k8s:send-ca-cert traefik-k8s:receive-ca-cert
+juju relate openbao-k8s:ingress traefik-k8s:ingress
+juju relate openbao:ingress-per-unit traefik-k8s:ingress-per-unit
 ```
 
 The `ingress` integration will allow accessing OpenBao through a single endpoint while the `ingress-per-unit` integration will allow accessing each of the units individually.
@@ -88,14 +88,14 @@ ck0i0krq457c7bgte4l0:
   created: 2023-08-28T13:33:54Z
   updated: 2023-08-28T13:33:54Z
   content:
-    roottoken: hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+    roottoken: s.UdFZa2Gv4kKoHpYWSnNnYOZr
     unsealkeys: '["11bd448ccfec24db29ed5c14fdfe3d169589f5c5c6b57870e31d738aec623856"]'
 ```
 
 Set the openbao token for use in the client:
 
 ```bash
-export BAO_TOKEN=hvs.Z3CuzSQno3XMuUgUcm1CmjQK
+export BAO_TOKEN=s.UdFZa2Gv4kKoHpYWSnNnYOZr
 ```
 
 Read the Self Signed Certificates operator's `ca-certificates` secret content:

@@ -4,7 +4,7 @@ The following table lists the supported releases of the OpenBao charm, along wit
 
 | Channel      | Charm Base     | Architecture     |
 | ------------ | -------------- | ---------------- |
-| `2.0/stable` | `ubuntu@24.04` | `amd64`, `arm64` |
+| `2.0/stable` | `ubuntu@26.04` | `amd64`, `arm64` |
 
 ## Support commitment
 

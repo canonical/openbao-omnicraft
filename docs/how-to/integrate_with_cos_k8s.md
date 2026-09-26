@@ -22,9 +22,9 @@ juju deploy cos-lite --trust
 
 Create offers for integrating with COS:
 ```
-juju offer cos.prometheus:receive-remote-write
-juju offer cos.loki:logging
-juju offer cos.grafana:grafana-dashboard
+juju offer prometheus:receive-remote-write prometheus
+juju offer loki:logging loki
+juju offer grafana:grafana-dashboard grafana-dashboard
 ```
 
 ## 2. Integrate with COS
@@ -35,18 +35,16 @@ Switch to the model in which OpenBao is deployed:
 juju switch <openbao model>
 ```
 
-Deploy Grafana Agent:
+Deploy Opentelemetry Collector:
 
 ```
-juju deploy grafana-agent-k8s
+juju deploy opentelemetry-collector-k8s
 ```
 
-Integrate OpenBao K8s with Grafana Agent:
+Integrate OpenBao K8s with Opentelemetry Collector:
 
 ```
-juju integrate openbao-k8s:logging grafana-agent-k8s
-juju integrate openbao-k8s:metrics-endpoint grafana-agent-k8s
-juju integrate openbao-k8s:grafana-dashboard grafana-agent-k8s
+juju relate openbao-k8s:cos-agent opentelemetry-collector-k8s:cos-agent
 ```
 
 Consume the COS offers:
@@ -57,13 +55,13 @@ juju consume cos.loki
 juju consume cos.grafana
 ```
 
-Integrate Grafana Agent with COS:
+Integrate Opentelemetry Collector with COS:
 
 ```
-juju integrate prometheus:receive-remote-write grafana-agent-k8s:send-remote-write
-juju integrate loki:logging grafana-agent-k8s:logging-consumer
-juju integrate grafana:grafana-dashboard grafana-agent-k8s:grafana-dashboards-provider
-``` 
+juju relate prometheus:receive-remote-write opentelemetry-collector-k8s:send-remote-write
+juju relate loki:logging opentelemetry-collector-k8s:send-loki-logs
+juju relate grafana:grafana-dashboard opentelemetry-collector-k8s:grafana-dashboards-provider
+```
 
 ## 3. Access the OpenBao dashboard
 
