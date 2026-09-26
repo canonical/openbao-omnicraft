@@ -17,44 +17,37 @@
     },
     "description": "OpenBao Metrics",
     "editable": false,
-    "fiscalYearStartMonth": 0,
-    "gnetId": 12904,
     "graphTooltip": 1,
     "links": [],
-    "liveNow": false,
     "panels": [
-        {
-            "collapsed": false,
-            "gridPos": {
-                "h": 1,
-                "w": 24,
-                "x": 0,
-                "y": 0
-            },
-            "id": 79,
-            "panels": [],
-            "title": "General",
-            "type": "row"
-        },
         {
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Indicates whether all nodes are healthy",
             "fieldConfig": {
                 "defaults": {
+                    "custom": {
+                        "align": null
+                    },
                     "mappings": [
                         {
-                            "options": {
-                                "0": {
-                                    "text": "Standby"
-                                },
-                                "1": {
-                                    "text": "Active"
-                                }
-                            },
-                            "type": "value"
+                            "from": "",
+                            "id": 0,
+                            "operator": "",
+                            "text": "Standby",
+                            "to": "",
+                            "type": 1,
+                            "value": "0"
+                        },
+                        {
+                            "from": "",
+                            "id": 1,
+                            "operator": "",
+                            "text": "Active",
+                            "to": "",
+                            "type": 1,
+                            "value": "1"
                         }
                     ],
                     "thresholds": {
@@ -70,17 +63,17 @@
                             }
                         ]
                     },
-                    "unit": "none"
+                    "unit": "Misc"
                 },
                 "overrides": []
             },
             "gridPos": {
-                "h": 5,
-                "w": 3,
+                "h": 4,
+                "w": 9,
                 "x": 0,
-                "y": 1
+                "y": 0
             },
-            "id": 39,
+            "id": 1,
             "maxDataPoints": 100,
             "options": {
                 "colorMode": "value",
@@ -93,46 +86,315 @@
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
+                    "expr": "max(vault_autopilot_healthy{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "interval": "",
+                    "legendFormat": "{{ instance }}",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "max(vault_autopilot_healthy{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "hide": false,
-                    "legendFormat": "__auto",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
+            "timeFrom": null,
+            "timeShift": null,
             "title": "Healthy Status",
-            "type": "stat"
+            "type": "stat",
+            "description": "Indicates whether all nodes are healthy and active in the autopilot cluster"
         },
         {
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Indicates whether OpenBao is currently unsealed",
             "fieldConfig": {
                 "defaults": {
+                    "custom": {
+                        "align": null,
+                        "displayMode": "auto"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "none"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Mount Path"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 166
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 5,
+                "x": 9,
+                "y": 4
+            },
+            "id": 2,
+            "maxDataPoints": 100,
+            "options": {
+                "showHeader": true,
+                "sortBy": [
+                    {
+                        "desc": true,
+                        "displayName": "Number of Entries"
+                    }
+                ]
+            },
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "sum by (exported_namespace,mount_point) (vault_secret_kv_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "table",
+                    "instant": true,
+                    "interval": "",
+                    "legendFormat": "{{ mount_point }}",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Secrets",
+            "transformations": [
+                {
+                    "id": "seriesToColumns",
+                    "options": {
+                        "byField": "mount_point"
+                    }
+                },
+                {
+                    "id": "organize",
+                    "options": {
+                        "excludeByName": {
+                            "Time": true,
+                            "__name__": true,
+                            "cluster": true,
+                            "env": true,
+                            "instance": true,
+                            "job": true,
+                            "namespace": true,
+                            "project": true
+                        },
+                        "indexByName": {},
+                        "renameByName": {
+                            "Value": "Number of Entries",
+                            "mount_point": "Mount Path",
+                            "exported_namespace": "Namespace"
+                        }
+                    }
+                }
+            ],
+            "type": "table",
+            "description": "Number of key-value secrets per mount point and namespace"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 5,
+                "x": 14,
+                "y": 12
+            },
+            "id": 3,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "avg(vault_identity_num_entities{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Number of Identity Entities",
+            "type": "stat",
+            "description": "Total number of identity entities in the identity backend"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "align": null
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 5,
+                "x": 19,
+                "y": 16
+            },
+            "id": 4,
+            "legend": {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": true,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "links": [],
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "avg without(instance) (vault_identity_entity_alias_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "interval": "",
+                    "legendFormat": "{{ auth_method }}",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Identity Entities Aliases by Method",
+            "type": "graph",
+            "bars": true,
+            "lines": false,
+            "stack": false,
+            "fill": 1,
+            "yaxes": [
+                {
+                    "$$hashKey": "object:1",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:2",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "description": "Identity entity aliases grouped by authentication method"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
                     "mappings": [
                         {
-                            "options": {
-                                "1": {
-                                    "text": "SEALED"
-                                },
-                                "2": {
-                                    "text": "UNSEALED"
-                                }
-                            },
-                            "type": "value"
+                            "from": "",
+                            "id": 0,
+                            "operator": "",
+                            "text": "UNSEALED",
+                            "to": "",
+                            "type": 1,
+                            "value": "2"
+                        },
+                        {
+                            "from": "",
+                            "id": 1,
+                            "operator": "",
+                            "text": "SEALED",
+                            "to": "",
+                            "type": 1,
+                            "value": "1"
                         }
                     ],
                     "noValue": "N/A",
@@ -158,12 +420,12 @@
                 "overrides": []
             },
             "gridPos": {
-                "h": 5,
-                "w": 3,
-                "x": 3,
-                "y": 1
+                "h": 4,
+                "w": 9,
+                "x": 0,
+                "y": 24
             },
-            "id": 47,
+            "id": 5,
             "options": {
                 "colorMode": "value",
                 "graphMode": "none",
@@ -175,37 +437,36 @@
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${prometheusds}"
-                    },
                     "expr": "max(1 + vault_core_unsealed{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
                     "format": "time_series",
                     "interval": "",
                     "legendFormat": "{{ instance }}",
-                    "refId": "A"
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
                 }
             ],
+            "timeFrom": null,
+            "timeShift": null,
             "title": "Sealed Status",
-            "type": "stat"
+            "type": "stat",
+            "description": "Indicates whether OpenBao is currently unsealed"
         },
         {
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "The number of peers in the raft cluster configuration",
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "mode": "thresholds"
-                    },
+                    "custom": {},
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -216,11 +477,450 @@
                             },
                             {
                                 "color": "#EAB839",
-                                "value": 1
+                                "value": 100
                             },
                             {
+                                "color": "#EF843C",
+                                "value": 200
+                            },
+                            {
+                                "color": "red",
+                                "value": 400
+                            }
+                        ]
+                    },
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 5,
+                "x": 14,
+                "y": 28
+            },
+            "id": 6,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "avg(vault_expire_num_leases{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Number of Leases",
+            "type": "stat",
+            "description": "Total number of active leases (includes tokens and secrets)"
+        },
+        {
+            "collapsed": true,
+            "datasource": "${DS_PROMXY}",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 32
+            },
+            "id": 7,
+            "panels": [
+                {
+                    "aliasColors": {},
+                    "bars": true,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "decimals": 0,
+                    "fieldConfig": {
+                        "defaults": {
+                            "custom": {},
+                            "unit": "none"
+                        },
+                        "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                        "h": 9,
+                        "w": 12,
+                        "x": 0,
+                        "y": 9
+                    },
+                    "hiddenSeries": false,
+                    "id": 24,
+                    "legend": {
+                        "alignAsTable": true,
+                        "avg": false,
+                        "current": false,
+                        "hideEmpty": false,
+                        "hideZero": false,
+                        "max": true,
+                        "min": false,
+                        "rightSide": false,
+                        "show": true,
+                        "sort": null,
+                        "sortDesc": null,
+                        "total": true,
+                        "values": true
+                    },
+                    "lines": false,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                        "dataLinks": []
+                    },
+                    "percentage": false,
+                    "pointradius": 5,
+                    "points": false,
+                    "renderer": "flot",
+                    "scopedVars": {
+                        "mountpoint": {
+                            "selected": true,
+                            "text": "secret",
+                            "value": "secret"
+                        }
+                    },
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": true,
+                    "steppedLine": false,
+                    "targets": [
+                        {
+                            "expr": "avg(increase(vault_route_create_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+                            "format": "time_series",
+                            "hide": false,
+                            "interval": "5m",
+                            "legendFormat": "Create",
+                            "refId": "A",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(increase(vault_route_delete_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+                            "hide": false,
+                            "interval": "5m",
+                            "legendFormat": "Delete",
+                            "refId": "B",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(increase(vault_route_read_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+                            "format": "time_series",
+                            "hide": false,
+                            "instant": false,
+                            "interval": "5m",
+                            "intervalFactor": 1,
+                            "legendFormat": "Read",
+                            "refId": "C",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(increase(vault_route_list_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+                            "format": "time_series",
+                            "hide": false,
+                            "interval": "5m",
+                            "legendFormat": "List",
+                            "refId": "D",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(increase(vault_route_rollback_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[5m]))",
+                            "hide": true,
+                            "interval": "5m",
+                            "legendFormat": "Rollback",
+                            "refId": "E",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Number of Operations in \"$mountpoint\"",
+                    "tooltip": {
+                        "shared": true,
+                        "sort": 0,
+                        "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                        "buckets": null,
+                        "mode": "time",
+                        "name": null,
+                        "show": true,
+                        "values": []
+                    },
+                    "yaxes": [
+                        {
+                            "$$hashKey": "object:182",
+                            "decimals": 0,
+                            "format": "short",
+                            "label": "Operations in 5 minute",
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": true
+                        },
+                        {
+                            "$$hashKey": "object:183",
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                        }
+                    ],
+                    "yaxis": {
+                        "align": false,
+                        "alignLevel": null
+                    },
+                    "description": "Rate of operations handled per route in the selected mount point"
+                },
+                {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "decimals": 0,
+                    "fieldConfig": {
+                        "defaults": {
+                            "custom": {},
+                            "unit": "ms"
+                        },
+                        "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                        "h": 9,
+                        "w": 12,
+                        "x": 12,
+                        "y": 9
+                    },
+                    "hiddenSeries": false,
+                    "id": 35,
+                    "legend": {
+                        "alignAsTable": true,
+                        "avg": true,
+                        "current": false,
+                        "hideEmpty": false,
+                        "hideZero": false,
+                        "max": true,
+                        "min": false,
+                        "rightSide": false,
+                        "show": true,
+                        "sort": null,
+                        "sortDesc": null,
+                        "total": false,
+                        "values": true
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "links": [],
+                    "nullPointMode": "null as zero",
+                    "options": {
+                        "dataLinks": []
+                    },
+                    "percentage": false,
+                    "pointradius": 5,
+                    "points": false,
+                    "renderer": "flot",
+                    "scopedVars": {
+                        "mountpoint": {
+                            "selected": true,
+                            "text": "secret",
+                            "value": "secret"
+                        }
+                    },
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                        {
+                            "expr": "avg(rate(vault_route_create_${mountpoint}__sum{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) / rate(vault_route_create_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) * 1000)",
+                            "format": "time_series",
+                            "interval": "",
+                            "intervalFactor": 1,
+                            "legendFormat": "Create",
+                            "refId": "A",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(rate(vault_route_delete_${mountpoint}__sum{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) / rate(vault_route_delete_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) * 1000)",
+                            "interval": "",
+                            "legendFormat": "Delete",
+                            "refId": "B",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(rate(vault_route_read_${mountpoint}__sum{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) / rate(vault_route_read_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) * 1000)",
+                            "hide": false,
+                            "interval": "",
+                            "legendFormat": "Read",
+                            "refId": "C",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(rate(vault_route_list_${mountpoint}__sum{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) / rate(vault_route_list_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) * 1000)",
+                            "hide": false,
+                            "interval": "",
+                            "legendFormat": "List",
+                            "refId": "D",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        },
+                        {
+                            "expr": "avg(rate(vault_route_rollback_${mountpoint}__sum{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) / rate(vault_route_rollback_${mountpoint}__count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]) * 1000)",
+                            "hide": true,
+                            "interval": "",
+                            "legendFormat": "Rollback",
+                            "refId": "E",
+                            "datasource": {
+                                "type": "prometheus",
+                                "uid": "${prometheusds}"
+                            }
+                        }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Time of Operations in \"$mountpoint\"",
+                    "tooltip": {
+                        "shared": true,
+                        "sort": 0,
+                        "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                        "buckets": null,
+                        "mode": "time",
+                        "name": null,
+                        "show": true,
+                        "values": []
+                    },
+                    "yaxes": [
+                        {
+                            "$$hashKey": "object:82",
+                            "decimals": 0,
+                            "format": "\u00b5s",
+                            "label": "Time of one operation",
+                            "logBase": 1,
+                            "max": null,
+                            "min": "0",
+                            "show": true
+                        },
+                        {
+                            "$$hashKey": "object:83",
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                        }
+                    ],
+                    "yaxis": {
+                        "align": false,
+                        "alignLevel": null
+                    },
+                    "description": "Average time spent per operation in the selected mount point"
+                }
+            ],
+            "repeat": "mountpoint",
+            "title": "Path Info: $mountpoint",
+            "type": "row"
+        },
+        {
+            "collapsed": false,
+            "datasource": "${DS_PROMXY}",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 33
+            },
+            "id": 8,
+            "panels": [],
+            "repeat": null,
+            "title": "CPU/Mem Info",
+            "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "Total number of objects on the heap in memory",
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "mappings": [],
+                    "noValue": "N/A",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
                                 "color": "green",
-                                "value": 3
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 0.2
                             }
                         ]
                     },
@@ -230,14 +930,14 @@
             },
             "gridPos": {
                 "h": 5,
-                "w": 2,
-                "x": 6,
-                "y": 1
+                "w": 3,
+                "x": 0,
+                "y": 34
             },
-            "id": 77,
+            "id": 9,
             "options": {
                 "colorMode": "value",
-                "graphMode": "none",
+                "graphMode": "area",
                 "justifyMode": "auto",
                 "orientation": "auto",
                 "reduceOptions": {
@@ -246,23 +946,25 @@
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
+                    "expr": "avg(vault_runtime_heap_objects{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"} / vault_runtime_malloc_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "intervalFactor": 10,
+                    "legendFormat": "",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "max(vault_raft_peers{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
-            "title": "Raft Peers",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Heap Objects Used",
             "type": "stat"
         },
         {
@@ -270,12 +972,88 @@
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "The number of healthy nodes in excess of quorum",
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "mode": "thresholds"
+                    "custom": {},
+                    "mappings": [],
+                    "noValue": "N/A",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "#EAB839",
+                                "value": 70
+                            },
+                            {
+                                "color": "#EF843C",
+                                "value": 100
+                            },
+                            {
+                                "color": "#E24D42",
+                                "value": 150
+                            }
+                        ]
                     },
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 5,
+                "w": 3,
+                "x": 3,
+                "y": 39
+            },
+            "id": 10,
+            "options": {
+                "colorMode": "value",
+                "graphMode": "area",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "reduceOptions": {
+                    "calcs": [
+                        "last"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "avg(vault_runtime_num_goroutines{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Number of Goroutines",
+            "type": "stat",
+            "description": "Total number of Go routines running in memory"
+        },
+        {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 3,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -286,70 +1064,121 @@
                             },
                             {
                                 "color": "red",
-                                "value": 0
-                            },
-                            {
-                                "color": "#EAB839",
-                                "value": 1
-                            },
-                            {
-                                "color": "green",
-                                "value": 2
+                                "value": 80
                             }
                         ]
                     },
-                    "unit": "none"
+                    "unit": "decbytes"
                 },
                 "overrides": []
             },
+            "fill": 1,
+            "fillGradient": 0,
             "gridPos": {
                 "h": 5,
-                "w": 2,
-                "x": 8,
-                "y": 1
+                "w": 18,
+                "x": 6,
+                "y": 44
             },
-            "id": 78,
+            "hiddenSeries": false,
+            "id": 11,
+            "legend": {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "hideEmpty": false,
+                "hideZero": false,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null",
             "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "textMode": "auto"
+                "dataLinks": []
             },
-            "pluginVersion": "9.5.3",
+            "percentage": false,
+            "pluginVersion": "7.0.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
             "targets": [
                 {
+                    "expr": "avg(vault_runtime_alloc_bytes{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "intervalFactor": 5,
+                    "legendFormat": "{{juju_unit}}",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "max(vault_autopilot_failure_tolerance{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
-            "title": "Autopilot Failure Tolerance",
-            "type": "stat"
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Allocated MB",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:373",
+                    "format": "decbytes",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:374",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Space currently allocated to OpenBao processes"
         },
         {
             "collapsed": false,
+            "datasource": "${DS_PROMXY}",
             "gridPos": {
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 6
+                "y": 49
             },
-            "id": 80,
+            "id": 12,
             "panels": [],
-            "title": "Secrets",
+            "title": "Token",
             "type": "row"
         },
         {
@@ -357,15 +1186,11 @@
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Number of key-value secrets",
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "fixedColor": "blue",
-                        "mode": "fixed"
-                    },
+                    "custom": {},
                     "mappings": [],
-                    "noValue": "0",
+                    "noValue": "N/A",
                     "thresholds": {
                         "mode": "absolute",
                         "steps": [
@@ -380,12 +1205,12 @@
                 "overrides": []
             },
             "gridPos": {
-                "h": 6,
-                "w": 2,
+                "h": 4,
+                "w": 3,
                 "x": 0,
-                "y": 7
+                "y": 50
             },
-            "id": 81,
+            "id": 13,
             "options": {
                 "colorMode": "value",
                 "graphMode": "none",
@@ -397,42 +1222,454 @@
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
+                    "expr": "avg(vault_token_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "sum(vault_secret_kv_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
-            "title": "Total KV Secrets",
-            "type": "stat"
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Available Tokens",
+            "type": "stat",
+            "description": "Number of un-expired and un-revoked tokens in the token store"
         },
         {
+            "aliasColors": {},
+            "bars": true,
+            "dashLength": 10,
+            "dashes": false,
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Number of entries in each key-value secrets engine mounts",
+            "decimals": 0,
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "mode": "thresholds"
+                    "custom": {},
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 8,
+                "w": 21,
+                "x": 3,
+                "y": 54
+            },
+            "hiddenSeries": false,
+            "id": 14,
+            "legend": {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": true,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": false,
+            "linewidth": 1,
+            "nullPointMode": "connected",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg without(instance) (vault_token_count_by_policy{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "{{ policy }}",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Tokens by Policy",
+            "tooltip": {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "series",
+                "name": null,
+                "show": true,
+                "values": [
+                    "current"
+                ]
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:575",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:576",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Number of tokens grouped by policy"
+        },
+        {
+            "cacheTimeout": null,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "mappings": [],
+                    "noValue": "0",
+                    "nullValueMode": "connected",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "orange",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 3
+                            }
+                        ]
                     },
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 4,
+                "w": 3,
+                "x": 0,
+                "y": 62
+            },
+            "id": 15,
+            "interval": null,
+            "links": [],
+            "maxDataPoints": 100,
+            "options": {
+                "colorMode": "value",
+                "fieldOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                },
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "horizontal",
+                "reduceOptions": {
+                    "calcs": [
+                        "last"
+                    ],
+                    "fields": "",
+                    "values": false
+                }
+            },
+            "pluginVersion": "7.0.3",
+            "targets": [
+                {
+                    "expr": "avg(vault_token_create_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"} - vault_token_store_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Pending Tokens",
+            "type": "stat",
+            "description": "Number of tokens created but not yet stored"
+        },
+        {
+            "aliasColors": {},
+            "bars": true,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 0,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 66
+            },
+            "hiddenSeries": false,
+            "id": 16,
+            "legend": {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": true,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": false,
+            "linewidth": 1,
+            "nullPointMode": "connected",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg without(instance) (vault_token_count_by_ttl{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "interval": "",
+                    "legendFormat": "{{ creation_ttl }}",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Tokens by TTL",
+            "tooltip": {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "series",
+                "name": null,
+                "show": true,
+                "values": [
+                    "current"
+                ]
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:390",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:391",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Number of tokens grouped by creation TTL"
+        },
+        {
+            "aliasColors": {},
+            "bars": true,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 0,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 74
+            },
+            "hiddenSeries": false,
+            "id": 17,
+            "legend": {
+                "alignAsTable": true,
+                "avg": false,
+                "current": true,
+                "max": true,
+                "min": false,
+                "rightSide": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": false,
+            "linewidth": 1,
+            "nullPointMode": "connected",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg without(instance) (vault_token_count_by_auth{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "interval": "",
+                    "legendFormat": "{{ auth_method }}",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Tokens by Auth Method",
+            "tooltip": {
+                "shared": false,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "series",
+                "name": null,
+                "show": true,
+                "values": [
+                    "current"
+                ]
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:136",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:137",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Number of tokens grouped by authentication method"
+        },
+        {
+            "aliasColors": {},
+            "bars": true,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 0,
+            "fieldConfig": {
+                "defaults": {
                     "custom": {
-                        "align": "auto",
-                        "cellOptions": {
-                            "type": "auto"
-                        },
-                        "inspect": false
+                        "align": null
                     },
                     "mappings": [],
                     "thresholds": {
@@ -452,296 +1689,367 @@
                 },
                 "overrides": []
             },
+            "fill": 1,
+            "fillGradient": 0,
             "gridPos": {
                 "h": 6,
-                "w": 3,
-                "x": 2,
-                "y": 7
+                "w": 12,
+                "x": 0,
+                "y": 82
             },
-            "id": 89,
+            "hiddenSeries": false,
+            "id": 18,
+            "legend": {
+                "alignAsTable": false,
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "rightSide": false,
+                "show": true,
+                "total": false,
+                "values": false
+            },
+            "lines": false,
+            "linewidth": 1,
+            "maxDataPoints": 100,
+            "nullPointMode": "null as zero",
             "options": {
-                "cellHeight": "sm",
-                "footer": {
-                    "countRows": false,
-                    "fields": "",
-                    "reducer": [
-                        "sum"
-                    ],
-                    "show": false
-                },
-                "showHeader": true
+                "dataLinks": []
             },
-            "pluginVersion": "9.5.3",
+            "percentage": false,
+            "pluginVersion": "7.0.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
             "targets": [
                 {
+                    "expr": "avg by(auth_method, creation_ttl) (vault_token_creation{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "instant": false,
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "{{ auth_method }} - {{ creation_ttl }}",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "code",
-                    "exemplar": false,
-                    "expr": "avg without(instance) (vault_secret_kv_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "format": "table",
-                    "instant": true,
-                    "legendFormat": "{{mount_point}}",
-                    "range": false,
-                    "refId": "A"
-                }
-            ],
-            "title": "KV secrets",
-            "transformations": [
-                {
-                    "id": "groupBy",
-                    "options": {
-                        "fields": {
-                            "Value": {
-                                "aggregations": [],
-                                "operation": "groupby"
-                            },
-                            "mount_point": {
-                                "aggregations": [],
-                                "operation": "groupby"
-                            }
-                        }
                     }
                 }
             ],
-            "type": "table"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${prometheusds}"
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Tokens Creation by Method & TTL",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
             },
-            "description": "Number of charm generated TLS certificates",
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "fixedColor": "blue",
-                        "mode": "fixed"
-                    },
-                    "mappings": [],
-                    "noValue": "0",
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            }
-                        ]
-                    },
-                    "unit": "none"
-                },
-                "overrides": []
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
             },
-            "gridPos": {
-                "h": 6,
-                "w": 2,
-                "x": 5,
-                "y": 7
-            },
-            "id": 88,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "textMode": "auto"
-            },
-            "pluginVersion": "9.5.3",
-            "targets": [
+            "yaxes": [
                 {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "max(vault_charm_pki_sign_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "legendFormat": "__auto",
-                    "range": true,
-                    "refId": "A"
+                    "$$hashKey": "object:1956",
+                    "format": "short",
+                    "label": "",
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:1957",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": false
                 }
             ],
-            "title": "Charm PKI certificates",
-            "type": "stat"
-        },
-        {
-            "collapsed": false,
-            "gridPos": {
-                "h": 1,
-                "w": 24,
-                "x": 0,
-                "y": 13
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
             },
-            "id": 85,
-            "panels": [],
-            "title": "Tokens",
-            "type": "row"
+            "description": "Token creations grouped by authentication method and TTL"
         },
         {
+            "aliasColors": {
+                "Create": "rgb(84, 183, 90)",
+                "Store": "#0a437c"
+            },
+            "bars": true,
+            "dashLength": 10,
+            "dashes": false,
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Number of un-expired and un-revoked tokens available for use in the token store",
+            "decimals": 0,
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "fixedColor": "blue",
-                        "mode": "fixed"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            }
-                        ]
-                    },
+                    "custom": {},
                     "unit": "none"
                 },
                 "overrides": []
             },
+            "fill": 1,
+            "fillGradient": 0,
             "gridPos": {
                 "h": 6,
-                "w": 2,
-                "x": 0,
-                "y": 14
+                "w": 12,
+                "x": 12,
+                "y": 88
             },
-            "id": 84,
+            "hiddenSeries": false,
+            "id": 19,
+            "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+            },
+            "lines": false,
+            "linewidth": 1,
+            "links": [],
+            "nullPointMode": "null",
             "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "textMode": "auto"
+                "dataLinks": []
             },
-            "pluginVersion": "9.5.3",
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": true,
+            "steppedLine": false,
             "targets": [
                 {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "max(vault_token_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "legendFormat": "__auto",
-                    "range": true,
-                    "refId": "A"
-                }
-            ],
-            "title": "Tokens",
-            "type": "stat"
-        },
-        {
-            "collapsed": false,
-            "gridPos": {
-                "h": 1,
-                "w": 24,
-                "x": 0,
-                "y": 20
-            },
-            "id": 83,
-            "panels": [],
-            "title": "System",
-            "type": "row"
-        },
-        {
-            "datasource": {
-                "type": "prometheus",
-                "uid": "${prometheusds}"
-            },
-            "description": "Total number of Go routines running in memory",
-            "fieldConfig": {
-                "defaults": {
-                    "color": {
-                        "fixedColor": "purple",
-                        "mode": "fixed"
-                    },
-                    "mappings": [],
-                    "thresholds": {
-                        "mode": "absolute",
-                        "steps": [
-                            {
-                                "color": "green",
-                                "value": null
-                            }
-                        ]
-                    },
-                    "unit": "none"
-                },
-                "overrides": []
-            },
-            "gridPos": {
-                "h": 7,
-                "w": 4,
-                "x": 0,
-                "y": 21
-            },
-            "id": 82,
-            "options": {
-                "colorMode": "value",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                    "calcs": [
-                        "lastNotNull"
-                    ],
-                    "fields": "",
-                    "values": false
-                },
-                "textMode": "auto"
-            },
-            "pluginVersion": "9.5.3",
-            "targets": [
-                {
-                    "datasource": {
-                        "type": "prometheus",
-                        "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "exemplar": false,
-                    "expr": "sum(vault_runtime_num_goroutines{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "expr": "avg without(instance) (vault_token_create_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
                     "format": "time_series",
                     "instant": false,
-                    "legendFormat": "{{juju_unit}}",
-                    "range": true,
-                    "refId": "A"
+                    "interval": "",
+                    "intervalFactor": 10,
+                    "legendFormat": "Create",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "avg without(instance) (vault_token_store_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
+                    "format": "time_series",
+                    "hide": false,
+                    "instant": false,
+                    "interval": "",
+                    "intervalFactor": 10,
+                    "legendFormat": "Store",
+                    "refId": "B",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
                 }
             ],
-            "title": "Goroutines",
-            "type": "stat"
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Token Creation/Storage",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:877",
+                    "decimals": 0,
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:878",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": false
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Token creation and storage counts over time"
+        },
+        {
+            "aliasColors": {
+                "Lookup": "#0a50a1"
+            },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 3,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 6,
+                "w": 24,
+                "x": 0,
+                "y": 94
+            },
+            "hiddenSeries": false,
+            "id": 20,
+            "legend": {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "hideEmpty": false,
+                "hideZero": false,
+                "max": true,
+                "min": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [],
+            "nullPointMode": "null",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg(irate(vault_token_lookup_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "hide": false,
+                    "interval": "",
+                    "legendFormat": "Lookups",
+                    "refId": "B",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Token Lookups",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:330",
+                    "decimals": 0,
+                    "format": "short",
+                    "label": "Lookups per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:331",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": false
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Rate of token lookups per second"
+        },
+        {
+            "collapsed": false,
+            "datasource": "${DS_PROMXY}",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 100
+            },
+            "id": 21,
+            "panels": [],
+            "title": "Audit",
+            "type": "row"
         },
         {
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Total number of objects on the heap in memory",
+            "description": "Number of audit log request failures",
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "fixedColor": "purple",
-                        "mode": "fixed"
-                    },
+                    "custom": {},
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -749,6 +2057,10 @@
                             {
                                 "color": "green",
                                 "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 1
                             }
                         ]
                     },
@@ -757,12 +2069,13 @@
                 "overrides": []
             },
             "gridPos": {
-                "h": 7,
-                "w": 4,
-                "x": 4,
-                "y": 21
+                "h": 5,
+                "w": 3,
+                "x": 0,
+                "y": 101
             },
-            "id": 90,
+            "id": 22,
+            "maxDataPoints": 100,
             "options": {
                 "colorMode": "value",
                 "graphMode": "area",
@@ -770,42 +2083,319 @@
                 "orientation": "auto",
                 "reduceOptions": {
                     "calcs": [
-                        "lastNotNull"
+                        "max"
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
+                    "expr": "max(idelta(vault_audit_log_request_failure{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "interval": "",
+                    "legendFormat": "Request",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "sum(vault_runtime_heap_objects{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "legendFormat": "{{juju_unit}}",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
-            "title": "Heap objects used",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Log Request Failures",
             "type": "stat"
+        },
+        {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "decimals": 3,
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 10,
+                "w": 11,
+                "x": 3,
+                "y": 106
+            },
+            "hiddenSeries": false,
+            "id": 23,
+            "legend": {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "hideEmpty": false,
+                "hideZero": false,
+                "max": true,
+                "min": true,
+                "rightSide": false,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [],
+            "nullPointMode": "null",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg(irate(vault_audit_log_request_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "instant": false,
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "Request ",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "avg(irate(vault_audit_log_response_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "hide": false,
+                    "instant": false,
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "Response",
+                    "refId": "B",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "avg(irate(vault_core_handle_request_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "hide": false,
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "Handled",
+                    "refId": "C",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Log Requests",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:109",
+                    "decimals": 0,
+                    "format": "short",
+                    "label": "Requests per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:110",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": false
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Rate of audit log requests, responses and handled requests per second"
+        },
+        {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "none"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 10,
+                "w": 10,
+                "x": 14,
+                "y": 116
+            },
+            "hiddenSeries": false,
+            "id": 24,
+            "legend": {
+                "alignAsTable": true,
+                "avg": true,
+                "current": true,
+                "max": true,
+                "min": true,
+                "show": true,
+                "total": false,
+                "values": true
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null as zero",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg(irate(vault_consul_get_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "GET",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "avg(irate(vault_consul_put_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "interval": "",
+                    "legendFormat": "PUT",
+                    "refId": "B",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "avg(irate(vault_consul_delete_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "interval": "",
+                    "legendFormat": "DELETE",
+                    "refId": "C",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                },
+                {
+                    "expr": "irate(vault_consul_list_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m])",
+                    "interval": "",
+                    "legendFormat": "LIST",
+                    "refId": "D",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Consul Requests",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:949",
+                    "format": "short",
+                    "label": "Requests per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:950",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": false
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Rate of Consul backend operations per second"
         },
         {
             "datasource": {
                 "type": "prometheus",
                 "uid": "${prometheusds}"
             },
-            "description": "Space currently allocated to OpenBao processes",
+            "description": "Number of audit log response failures",
             "fieldConfig": {
                 "defaults": {
-                    "color": {
-                        "fixedColor": "purple",
-                        "mode": "fixed"
-                    },
+                    "custom": {},
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -813,20 +2403,25 @@
                             {
                                 "color": "green",
                                 "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 1
                             }
                         ]
                     },
-                    "unit": "decbytes"
+                    "unit": "none"
                 },
                 "overrides": []
             },
             "gridPos": {
-                "h": 7,
-                "w": 4,
-                "x": 8,
-                "y": 21
+                "h": 5,
+                "w": 3,
+                "x": 0,
+                "y": 126
             },
-            "id": 91,
+            "id": 25,
+            "maxDataPoints": 100,
             "options": {
                 "colorMode": "value",
                 "graphMode": "area",
@@ -834,33 +2429,270 @@
                 "orientation": "auto",
                 "reduceOptions": {
                     "calcs": [
-                        "lastNotNull"
+                        "max"
                     ],
                     "fields": "",
                     "values": false
-                },
-                "textMode": "auto"
+                }
             },
-            "pluginVersion": "9.5.3",
+            "pluginVersion": "7.0.3",
             "targets": [
                 {
+                    "expr": "max(idelta(vault_audit_log_response_failure{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "interval": "",
+                    "legendFormat": "Request",
+                    "refId": "A",
                     "datasource": {
                         "type": "prometheus",
                         "uid": "${prometheusds}"
-                    },
-                    "editorMode": "builder",
-                    "expr": "sum(vault_runtime_alloc_bytes{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"})",
-                    "legendFormat": "{{juju_unit}}",
-                    "range": true,
-                    "refId": "A"
+                    }
                 }
             ],
-            "title": "Allocated Bytes",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Log Response Failures",
             "type": "stat"
+        },
+        {
+            "collapsed": false,
+            "datasource": "${DS_PROMXY}",
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 131
+            },
+            "id": 26,
+            "panels": [],
+            "title": "Policy",
+            "type": "row"
+        },
+        {
+            "aliasColors": {
+                "set": "#629e51"
+            },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 0,
+                "y": 132
+            },
+            "hiddenSeries": false,
+            "id": 27,
+            "legend": {
+                "alignAsTable": false,
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [],
+            "nullPointMode": "null",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg(irate(vault_policy_set_policy_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "SET",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Policy Set",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:1834",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:1835",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Rate of policy create operations per second"
+        },
+        {
+            "aliasColors": {
+                "GET": "#1f78c1"
+            },
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {},
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+                "h": 6,
+                "w": 12,
+                "x": 12,
+                "y": 138
+            },
+            "hiddenSeries": false,
+            "id": 28,
+            "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "links": [],
+            "nullPointMode": "null",
+            "options": {
+                "dataLinks": []
+            },
+            "percentage": false,
+            "pointradius": 5,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+                {
+                    "expr": "avg(irate(vault_policy_get_policy_count{juju_application=~\"$juju_application\",juju_model=~\"$juju_model\",juju_model_uuid=~\"$juju_model_uuid\",juju_unit=~\"$juju_unit\"}[2m]))",
+                    "format": "time_series",
+                    "interval": "",
+                    "intervalFactor": 1,
+                    "legendFormat": "GET",
+                    "refId": "A",
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    }
+                }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Policy Get",
+            "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+                "buckets": null,
+                "mode": "time",
+                "name": null,
+                "show": true,
+                "values": []
+            },
+            "yaxes": [
+                {
+                    "$$hashKey": "object:2132",
+                    "decimals": 0,
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                },
+                {
+                    "$$hashKey": "object:2133",
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                }
+            ],
+            "yaxis": {
+                "align": false,
+                "alignLevel": null
+            },
+            "description": "Rate of policy read operations per second"
         }
     ],
-    "refresh": "",
-    "schemaVersion": 38,
+    "refresh": false,
+    "schemaVersion": 25,
     "style": "dark",
     "tags": [
         "openbao"
@@ -1034,6 +2866,32 @@
                 "tagsQuery": "",
                 "type": "query",
                 "useTags": false
+            },
+            {
+                "allValue": "",
+                "current": {},
+                "datasource": {
+                    "uid": "${prometheusds}"
+                },
+                "definition": "label_values(vault_secret_kv_count, mount_point)",
+                "hide": 0,
+                "includeAll": true,
+                "label": "Mount Point:",
+                "multi": true,
+                "name": "mountpoint",
+                "options": [],
+                "query": {
+                    "query": "label_values(vault_secret_kv_count, mount_point)",
+                    "refId": "StandardVariableQuery"
+                },
+                "refresh": 2,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 1,
+                "tags": [],
+                "tagsQuery": "",
+                "type": "query",
+                "useTags": false
             }
         ]
     },
@@ -1067,7 +2925,7 @@
     },
     "timezone": "",
     "title": "OpenBao",
-    "uid": "openbaos",
+    "uid": "openbao",
     "version": 1,
-    "weekStart": ""
+    "gnetId": 23725
 }
