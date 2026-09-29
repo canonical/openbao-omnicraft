@@ -28,10 +28,10 @@ jobs:
         with:
           working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
-      - name: Upload charm artifact
+      - name: Upload charm artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: charm-machine-amd64
+          name: packed-charms
           path: charm/machine/*.charm
           if-no-files-found: error
           retention-days: 14
@@ -73,10 +73,10 @@ jobs:
           TOOLCHAINS: python juju-machine
           JUJU_CHANNEL: 3.6/stable
         run: just setup
-      - name: Download charm artifact
+      - name: Download charm artifacts
         uses: actions/download-artifact@v8
         with:
-          name: charm-machine-amd64
+          name: packed-charms
           path: charm/machine
       - name: Download KV requirer charm artifact
         uses: actions/download-artifact@v8

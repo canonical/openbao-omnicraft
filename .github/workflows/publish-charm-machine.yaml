@@ -22,29 +22,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download charm artifact from CI run
+      - name: Download charm artifacts from CI run
         uses: actions/download-artifact@v8
         with:
-          name: charm-machine-amd64
+          name: packed-charms
           run-id: ${{ inputs.source-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: charm/machine
 
-      - name: List charm artifacts
+      - name: List charms to release
         id: charms
         run: |
-          shopt -s nullglob
-          files=(charm/machine/*.charm)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::No .charm files in charm/machine"
-            exit 1
-          fi
-          paths=""
-          for file in "${files[@]}"; do
-            paths+="${paths:+,}${GITHUB_WORKSPACE}/${file}"
-          done
-          echo "paths=${paths}" >> "$GITHUB_OUTPUT"
-          echo "Uploading ${paths}"
+          charms=$(ls "$PWD"/charm/machine/*.charm | tr '\n' ',' | sed 's/,$//')
+          echo "$charms"
+          echo "paths=${charms}" >> "$GITHUB_OUTPUT"
 
       - name: Upload charm to Charmhub
         uses: canonical/charming-actions/upload-charm@2.7.0
