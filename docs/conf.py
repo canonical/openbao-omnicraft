@@ -1,8 +1,6 @@
 import datetime
 import os
 
-import yaml
-
 # Configuration for the Sphinx documentation builder.
 # All configuration specific to your project should be done in this file.
 #
@@ -202,16 +200,16 @@ sitemap_show_lastmod = True
 # Redirects #
 #############
 
-# To set up redirects: https://documatt.gitlab.io/sphinx-reredirects/usage.html
-# For example: 'explanation/old-name.html': '../how-to/prettify.html',
+# To set up redirects: https://github.com/wpilibsuite/sphinx-rerediraffe
 
 # To set up redirects in the Read the Docs project dashboard:
 # https://docs.readthedocs.io/en/stable/guides/redirects.html
 
-# NOTE: If undefined, set to None, or empty,
-#       the sphinx_reredirects extension will be disabled.
+# NOTE: Redirects are listed one per line in 'redirects.txt' as
+#       "source-path" "destination-path", both relative to the docs root.
 
-redirects = {}
+rediraffe_redirects = "redirects.txt"
+rediraffe_dir_only = True
 
 
 ###########################
@@ -274,12 +272,15 @@ extensions = [
     "sphinx_last_updated_by_git",
     "sphinx.ext.intersphinx",
     "sphinx_sitemap",
+    "sphinx_rerediraffe",
 ]
 
 # Excludes files or directories from processing
 
 exclude_patterns = [
     "doc-cheat-sheet*",
+    ".venv",
+    "_build",
 ]
 
 # Adds custom CSS files, located under 'html_static_path'
@@ -291,13 +292,6 @@ exclude_patterns = [
 
 # html_js_files = []
 
-
-# Specifies a reST snippet to be appended to each .rst file
-
-rst_epilog = """
-.. include:: /reuse/links.txt
-.. include:: /reuse/substitutions.txt
-"""
 
 # Feedback button at the top; enabled by default
 #
@@ -338,12 +332,6 @@ rst_prolog = """
 
 if "discourse_prefix" not in html_context and "discourse" in html_context:
     html_context["discourse_prefix"] = html_context["discourse"] + "/t/"
-
-# Workaround for substitutions.yaml
-
-if os.path.exists("./reuse/substitutions.yaml"):
-    with open("./reuse/substitutions.yaml", "r") as fd:
-        myst_substitutions = yaml.safe_load(fd.read())
 
 # Add configuration for intersphinx mapping
 
