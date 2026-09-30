@@ -68,7 +68,7 @@ copyright = "%s CC-BY-SA, %s" % (datetime.date.today().year, author)
 # NOTE: The Open Graph Protocol (OGP) enhances page display in a social graph
 #       and is used by social media platforms; see https://ogp.me/
 
-ogp_site_url = "https://canonical.com/docs/openbao/"
+ogp_site_url = "https://ubuntu.com/docs/openbao/"
 
 
 # Preview name of the documentation website
@@ -172,7 +172,7 @@ slug = "docs/openbao"
 
 # Base URL of RTD hosted project
 
-html_baseurl = "https://canonical.com/docs/openbao/"
+html_baseurl = "https://ubuntu.com/docs/openbao/"
 
 # URL scheme.
 
