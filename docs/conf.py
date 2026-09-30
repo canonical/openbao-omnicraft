@@ -1,5 +1,4 @@
 import datetime
-import os
 
 # Configuration for the Sphinx documentation builder.
 # All configuration specific to your project should be done in this file.
@@ -69,7 +68,7 @@ copyright = "%s CC-BY-SA, %s" % (datetime.date.today().year, author)
 # NOTE: The Open Graph Protocol (OGP) enhances page display in a social graph
 #       and is used by social media platforms; see https://ogp.me/
 
-ogp_site_url = "https://canonical-openbao-charms.readthedocs-hosted.com/"
+ogp_site_url = "https://canonical.com/openbao/"
 
 
 # Preview name of the documentation website
@@ -165,7 +164,7 @@ html_context = {
 # TODO: If your documentation is hosted on https://docs.ubuntu.com/,
 #       uncomment and update as needed.
 
-# slug = ''
+slug = "openbao"
 
 #######################
 # Sitemap configuration: https://sphinx-sitemap.readthedocs.io/
@@ -173,16 +172,13 @@ html_context = {
 
 # Base URL of RTD hosted project
 
-html_baseurl = "https://canonical-openbao-charms.readthedocs-hosted.com/"
+html_baseurl = "https://canonical.com/openbao/"
 
-# URL scheme. Add language and version scheme elements.
-# When configured with RTD variables, check for RTD environment so manual runs succeed:
+# URL scheme.
 
-if "READTHEDOCS_VERSION" in os.environ:
-    version = os.environ["READTHEDOCS_VERSION"]
-    sitemap_url_scheme = "{version}{link}"
-else:
-    sitemap_url_scheme = "MANUAL/{link}"
+sitemap_url_scheme = "{link}"
+
+sitemap_filename = "doc-sitemap.xml"
 
 # Include `lastmod` dates in the sitemap:
 
@@ -192,8 +188,8 @@ sitemap_show_lastmod = True
 # Template and asset locations
 #######################
 
-# html_static_path = ["_static"]
-# templates_path = ["_templates"]
+html_static_path = [".sphinx/_static"]
+templates_path = [".sphinx/_templates"]
 
 
 #############
@@ -279,18 +275,23 @@ extensions = [
 
 exclude_patterns = [
     "doc-cheat-sheet*",
-    ".venv",
+    ".venv*",
     "_build",
 ]
 
 # Adds custom CSS files, located under 'html_static_path'
 
-# html_css_files = []
+html_css_files = [
+    "https://assets.ubuntu.com/v1/d86746ef-cookie_banner.css",
+]
 
 
 # Adds custom JavaScript files, located under 'html_static_path'
 
-# html_js_files = []
+html_js_files = [
+    "js/overwrite_links.js",
+    "https://assets.ubuntu.com/v1/287a5e8f-bundle.js",
+]
 
 
 # Feedback button at the top; enabled by default
