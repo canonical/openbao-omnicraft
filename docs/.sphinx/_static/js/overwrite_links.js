@@ -1,7 +1,7 @@
 // Replaces rtd-address with new-address in links
 
 const rtd_address = 'canonical-openbao.readthedocs-hosted.com';
-const new_address = 'canonical.com/openbao';
+const new_address = 'canonical.com/docs/openbao';
 const new_path = '/' + new_address.split('/').slice(1).join('/');
 
 function escapeRegExp(value) {

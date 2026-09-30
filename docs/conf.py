@@ -68,7 +68,7 @@ copyright = "%s CC-BY-SA, %s" % (datetime.date.today().year, author)
 # NOTE: The Open Graph Protocol (OGP) enhances page display in a social graph
 #       and is used by social media platforms; see https://ogp.me/
 
-ogp_site_url = "https://canonical.com/openbao/"
+ogp_site_url = "https://canonical.com/docs/openbao/"
 
 
 # Preview name of the documentation website
@@ -164,7 +164,7 @@ html_context = {
 # TODO: If your documentation is hosted on https://docs.ubuntu.com/,
 #       uncomment and update as needed.
 
-slug = "openbao"
+slug = "docs/openbao"
 
 #######################
 # Sitemap configuration: https://sphinx-sitemap.readthedocs.io/
@@ -172,7 +172,7 @@ slug = "openbao"
 
 # Base URL of RTD hosted project
 
-html_baseurl = "https://canonical.com/openbao/"
+html_baseurl = "https://canonical.com/docs/openbao/"
 
 # URL scheme.
 
