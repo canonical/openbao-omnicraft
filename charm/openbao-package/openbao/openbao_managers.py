@@ -2082,8 +2082,18 @@ class ACMEManager:
             )
 
     def _enable_acme(self) -> None:
-        """Configure ACME to be enabled in OpenBao."""
-        self._openbao_client.write(path=f"{self._mount_point}/config/acme", data={"enabled": True})
+        """Configure ACME to be enabled in OpenBao.
+        
+        The default directory policy is bound to the charm's ACME role so that
+        the role's allowed_domains / allow_any_name restrictions are enforced.
+        """
+        self._openbao_client.write(
+            path=f"{self._mount_point}/config/acme",
+            data={
+                "enabled": True,
+                "default_directory_policy": f"role:{self._role_name}",
+            },
+        )
 
     def make_latest_acme_issuer_default(self):
         """Make the latest issuer the default issuer."""
