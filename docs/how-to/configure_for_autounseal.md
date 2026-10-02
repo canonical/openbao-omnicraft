@@ -1,4 +1,4 @@
-# Configure a OpenBao for auto-unseal 
+# Configure a OpenBao for auto-unseal
 
 **WARNING: There is currently no way to remove the auto-unseal configuration once it has been set on OpenBao Charms. Removing the integration may put OpenBao Charms in a bad state which requires manual intervention.**
 
@@ -15,7 +15,7 @@ Transit auto-unseal cannot be combined with [PKCS#11 HSM auto-unseal](configure_
 Integrate the *autounsealed* OpenBao instance with the *unsealer* OpenBao instance.
 
 ```bash
-juju integrate openbao-unsealer:openbao-autounseal-provides openbao-autounsealed:openbao-autounseal-requires
+juju relate openbao-unsealer:openbao-autounseal-provides openbao-autounsealed:openbao-autounseal-requires
 ```
 
 ## 2. Configure the OpenBao CLI to interact with the *autounsealed* OpenBao.
@@ -46,11 +46,11 @@ bao operator init
 Use the root token to create a temporary token, and authorize the OpenBao charm with it.
 
 ```console
-$ openbao token create -ttl=10m
+$ bao token create -ttl=10m
 Key                  Value
 ---                  -----
-token                hvs.mmMXCLNZ2X7OcqCM38WYDnoX
-token_accessor       eXzWoD1ajA5YtNgfopj1DP1r
+token                s.UdFZa2Gv4kKoHpYWSnNnYOZr
+token_accessor       kKFFEWKFe5FDRdIxpP4Yz7mm
 token_duration       10m
 token_renewable      true
 token_policies       ["root"]
@@ -60,7 +60,7 @@ policies             ["root"]
 
 Create a secret that contains the token above
 ```console
-$ juju add-secret approle_authorization_token token="hvs.mmMXCLNZ2X7OcqCM38WYDnoX"
+$ juju add-secret approle_authorization_token token="s.UdFZa2Gv4kKoHpYWSnNnYOZr"
 secret:cqgj49fmp25c7796r0pg
 ```
 
