@@ -18,19 +18,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up SSH Key for Signing Commits
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.BOT_PRIVATE_SIGNING_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo "${{ secrets.BOT_PUBLIC_SIGNING_KEY }}" > ~/.ssh/id_rsa.pub
-          chmod 644 ~/.ssh/id_rsa.pub
-          git config --global user.email "telco-engineers@lists.canonical.com"
-          git config --global user.name "telcobot"
-          git config --global user.signingkey ~/.ssh/id_rsa.pub
-          git config --global commit.gpgsign true
-          git config --global gpg.format ssh
-      
       - name: Install charmcraft
         run: |
           sudo snap install charmcraft --classic --channel latest/stable
@@ -40,22 +27,21 @@ jobs:
           cd charm/k8s
           charmcraft fetch-lib
         env:
-          CHARMCRAFT_AUTH: "${{ secrets.CHARMCRAFT_AUTH }}"
-      
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
+
       - name: Fetch charm libraries (machine)
         run: |
           cd charm/machine
           charmcraft fetch-lib
         env:
-          CHARMCRAFT_AUTH: "${{ secrets.CHARMCRAFT_AUTH }}"
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
 
       - name: Create a PR for local changes
         uses: peter-evans/create-pull-request@v8.1.1
         with:
-          token: ${{ secrets.TELCO_GITHUB_BOT_TOKEN }}
+          token: ${{ github.token }}
+          sign-commits: true
           commit-message: "chore: update charm libraries"
-          committer: "Telcobot <telco-engineers@lists.canonical.com>"
-          author: "Telcobot <telco-engineers@lists.canonical.com>"
           title: "chore: Update charm libraries"
           body: |
             Automated action to fetch latest version of charm libraries. The branch of this PR 
