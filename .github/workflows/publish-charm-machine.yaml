@@ -22,13 +22,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download charm artifact from CI run
+      - name: Download charm artifacts from CI run
         uses: actions/download-artifact@v8
         with:
-          name: charm-machine-amd64
+          name: packed-charms
           run-id: ${{ inputs.source-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: charm/machine
+
+      - name: List charms to release
+        id: charms
+        run: |
+          charms=$(ls "$PWD"/charm/machine/*.charm | tr '\n' ',' | sed 's/,$//')
+          echo "$charms"
+          echo "paths=${charms}" >> "$GITHUB_OUTPUT"
 
       - name: Upload charm to Charmhub
         uses: canonical/charming-actions/upload-charm@2.7.0
@@ -37,7 +44,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           channel: latest/edge
           destructive-mode: false
-          built-charm-path: charm/machine
+          charm-path: charm/machine
+          built-charm-path: ${{ steps.charms.outputs.paths }}
           tag-prefix: machine
 
       - name: Archive charmcraft logs
