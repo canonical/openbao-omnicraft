@@ -78,7 +78,7 @@ class S3:
         self.region = region
         self._security_logger = _OWASPLogger(application=application)
 
-        if skip_verify is False:
+        if skip_verify is True:
             logger.warning(
                 "S3 client is configured to skip SSL certificate verification. "
                 "This is insecure and should only be used in development environments."
