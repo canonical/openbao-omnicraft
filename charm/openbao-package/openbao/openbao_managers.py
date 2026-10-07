@@ -2083,7 +2083,7 @@ class ACMEManager:
 
     def _enable_acme(self) -> None:
         """Configure ACME to be enabled in OpenBao.
-        
+
         The default directory policy is bound to the charm's ACME role so that
         the role's allowed_domains / allow_any_name restrictions are enforced.
         """
