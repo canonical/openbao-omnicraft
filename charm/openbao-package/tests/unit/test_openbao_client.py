@@ -426,7 +426,7 @@ def test_given_role_config_matches_given_config_when_role_config_matches_given_c
                 "allow_any_name": True,
                 "allow_ip_sans": True,
                 "organization": "test-organization",
-                "organizational_unit": "test-organizational-unit",
+                "ou": "test-organizational-unit",
                 "country": "test-country",
                 "province": "test-province",
                 "locality": "test-locality",
@@ -724,7 +724,7 @@ def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_pas
             "province": "CA",
             "locality": "San Francisco",
             "organization": "Test Org",
-            "organizational_unit": "Test Unit",
+            "ou": "Test Unit",
         },
     )
 

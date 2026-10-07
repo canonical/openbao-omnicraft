@@ -501,7 +501,7 @@ class OpenBaoClient:
         if organization:
             extra_params["organization"] = organization
         if organizational_unit:
-            extra_params["organizational_unit"] = organizational_unit
+            extra_params["ou"] = organizational_unit
         try:
             response = self._client.post(
                 f"/v1/{mount}/root/generate/exported",
@@ -620,7 +620,7 @@ class OpenBaoClient:
         if organization:
             extra_params["organization"] = organization
         if organizational_unit:
-            extra_params["organizational_unit"] = organizational_unit
+            extra_params["ou"] = organizational_unit
         if country:
             extra_params["country"] = country
         if province:
@@ -798,7 +798,7 @@ class OpenBaoClient:
                 "allow_any_name": allow_any_name,
                 "allow_ip_sans": allow_ip_sans,
                 "organization": organization,
-                "organizational_unit": organizational_unit,
+                "ou": organizational_unit,
                 "country": country,
                 "province": province,
                 "locality": locality,
