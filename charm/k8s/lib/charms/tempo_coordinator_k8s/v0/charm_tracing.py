@@ -4,233 +4,11 @@
 
 """This charm library contains utilities to instrument your Charm with opentelemetry tracing data collection.
 
-(yes! charm code, not workload code!)
+WARNING this library is deprecated and will be discontinued in 27.04.
+Instead, please use the new `ops[tracing]` library.
 
-This means that, if your charm is related to, for example, COS' Tempo charm, you will be able to inspect
-in real time from the Grafana dashboard the execution flow of your charm.
-
-# Quickstart
-Fetch the following charm libs:
-
-    charmcraft fetch-lib charms.tempo_coordinator_k8s.v0.tracing
-    charmcraft fetch-lib charms.tempo_coordinator_k8s.v0.charm_tracing
-
-Then edit your charm code to include:
-
-```python
-# import the necessary charm libs
-from charms.tempo_coordinator_k8s.v0.tracing import (
-    TracingEndpointRequirer,
-    charm_tracing_config,
-)
-from charms.tempo_coordinator_k8s.v0.charm_tracing import charm_tracing
-
-
-# decorate your charm class with charm_tracing:
-@charm_tracing(
-    # forward-declare the instance attributes that the instrumentor will look up to obtain the
-    # tempo endpoint and server certificate
-    tracing_endpoint="tracing_endpoint",
-    server_cert="server_cert",
-)
-class MyCharm(CharmBase):
-    _path_to_cert = "/path/to/cert.crt"
-    # path to cert file **in the charm container**. Its presence will be used to determine whether
-    # the charm is ready to use tls for encrypting charm traces. If your charm does not support tls,
-    # you can ignore this and pass None to charm_tracing_config.
-    # If you do support TLS, you'll need to make sure that the server cert is copied to this location
-    # and kept up to date so the instrumentor can use it.
-
-    def __init__(self, framework):
-        # ...
-        self.tracing = TracingEndpointRequirer(self)
-        self.tracing_endpoint, self.server_cert = charm_tracing_config(
-            self.tracing, self._path_to_cert
-        )
-```
-
-# Detailed usage
-To use this library, you need to do two things:
-1) decorate your charm class with
-
-`@trace_charm(tracing_endpoint="my_tracing_endpoint")`
-
-2) add to your charm a "my_tracing_endpoint" (you can name this attribute whatever you like)
-**property**, **method** or **instance attribute** that returns an otlp http/https endpoint url.
-If you are using the ``charms.tempo_coordinator_k8s.v0.tracing.TracingEndpointRequirer`` as
-``self.tracing = TracingEndpointRequirer(self)``, the implementation could be:
-
-```
-    @property
-    def my_tracing_endpoint(self) -> Optional[str]:
-        '''Tempo endpoint for charm tracing'''
-        if self.tracing.is_ready():
-            return self.tracing.get_endpoint("otlp_http")
-        else:
-            return None
-```
-
-At this point your charm will be automatically instrumented so that:
-- charm execution starts a trace, containing
-    - every event as a span (including custom events)
-    - every charm method call (except dunders) as a span
-
-We recommend that you scale up your tracing provider and relate it to an ingress so that your tracing requests
-go through the ingress and get load balanced across all units. Otherwise, if the provider's leader goes down, your tracing goes down.
-
-
-## TLS support
-If your charm integrates with a TLS provider which is also trusted by the tracing provider (the Tempo charm),
-you can configure ``charm_tracing`` to use TLS by passing a ``server_cert`` parameter to the decorator.
-
-If your charm is not trusting the same CA as the Tempo endpoint it is sending traces to,
-you'll need to implement a cert-transfer relation to obtain the CA certificate from the same
-CA that Tempo is using.
-
-For example:
-```
-from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
-@trace_charm(
-    tracing_endpoint="my_tracing_endpoint",
-    server_cert="_server_cert"
-)
-class MyCharm(CharmBase):
-    self._server_cert = "/path/to/server.crt"
-    ...
-
-    def on_tls_changed(self, e) -> Optional[str]:
-        # update the server cert on the charm container for charm tracing
-        Path(self._server_cert).write_text(self.get_server_cert())
-
-    def on_tls_broken(self, e) -> Optional[str]:
-        # remove the server cert so charm_tracing won't try to use tls anymore
-        Path(self._server_cert).unlink()
-```
-
-
-## More fine-grained manual instrumentation
-if you wish to add more spans to the trace, you can do so by getting a hold of the tracer like so:
-```
-import opentelemetry
-...
-def get_tracer(self) -> opentelemetry.trace.Tracer:
-    return opentelemetry.trace.get_tracer(type(self).__name__)
-```
-
-By default, the tracer is named after the charm type. If you wish to override that, you can pass
-a different ``service_name`` argument to ``trace_charm``.
-
-See the official opentelemetry Python SDK documentation for usage:
-https://opentelemetry-python.readthedocs.io/en/latest/
-
-
-## Caching traces
-The `trace_charm` machinery will buffer any traces collected during charm execution and store them
-to a file on the charm container until a tracing backend becomes available. At that point, it will
-flush them to the tracing receiver.
-
-By default, the buffer is configured to start dropping old traces if any of these conditions apply:
-
-- the storage size exceeds 10 MiB
-- the number of buffered events exceeds 100
-
-You can configure this by, for example:
-
-```python
-@trace_charm(
-    tracing_endpoint="my_tracing_endpoint",
-    server_cert="_server_cert",
-    # only cache up to 42 events
-    buffer_max_events=42,
-    # only cache up to 42 MiB
-    buffer_max_size_mib=42,  # minimum 10!
-)
-class MyCharm(CharmBase):
-    ...
-```
-
-Note that setting `buffer_max_events` to 0 will effectively disable the buffer.
-
-The path of the buffer file is by default in the charm's execution root, which for k8s charms means
-that in case of pod churn, the cache will be lost. The recommended solution is to use an existing storage
-(or add a new one) such as:
-
-```yaml
-storage:
-  data:
-    type: filesystem
-    location: /charm-traces
-```
-
-and then configure the `@trace_charm` decorator to use it as path for storing the buffer:
-```python
-@trace_charm(
-    tracing_endpoint="my_tracing_endpoint",
-    server_cert="_server_cert",
-    # store traces to a PVC so they're not lost on pod restart.
-    buffer_path="/charm-traces/buffer.file",
-)
-class MyCharm(CharmBase):
-    ...
-```
-
-## Upgrading from `tempo_k8s.v0`
-
-If you are upgrading from `tempo_k8s.v0.charm_tracing` (note that since then, the charm library moved to
-`tempo_coordinator_k8s.v0.charm_tracing`), you need to take the following steps (assuming you already
-have the newest version of the library in your charm):
-1) If you need the dependency for your tests, add the following dependency to your charm project
-(or, if your project had a dependency on `opentelemetry-exporter-otlp-proto-grpc` only because
-of `charm_tracing` v0, you can replace it with):
-
-`opentelemetry-exporter-otlp-proto-http>=1.21.0`.
-
-2) Update the charm method referenced to from ``@trace`` and ``@trace_charm``,
-to return from ``TracingEndpointRequirer.get_endpoint("otlp_http")`` instead of ``grpc_http``.
-For example:
-
-```
-    from charms.tempo_k8s.v0.charm_tracing import trace_charm
-
-    @trace_charm(
-        tracing_endpoint="my_tracing_endpoint",
-    )
-    class MyCharm(CharmBase):
-
-    ...
-
-        @property
-        def my_tracing_endpoint(self) -> Optional[str]:
-            '''Tempo endpoint for charm tracing'''
-            if self.tracing.is_ready():
-                return self.tracing.otlp_grpc_endpoint() #  OLD API, DEPRECATED.
-            else:
-                return None
-```
-
-needs to be replaced with:
-
-```
-    from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
-
-    @trace_charm(
-        tracing_endpoint="my_tracing_endpoint",
-    )
-    class MyCharm(CharmBase):
-
-    ...
-
-        @property
-        def my_tracing_endpoint(self) -> Optional[str]:
-            '''Tempo endpoint for charm tracing'''
-            if self.tracing.is_ready():
-                return self.tracing.get_endpoint("otlp_http")  # NEW API, use this.
-            else:
-                return None
-```
-
-3) If you were passing a certificate (str) using `server_cert`, you need to change it to
-provide an *absolute* path to the certificate file instead.
+See this migration guide: https://discourse.charmhub.io/t/18076
+See this deprecation announcement: https://discourse.charmhub.io/t/19669
 """
 
 
@@ -252,32 +30,41 @@ def _remove_stale_otel_sdk_packages():
         return
 
     import logging
+    import re
     import shutil
     from collections import defaultdict
 
-    from importlib_metadata import distributions
+    from importlib.metadata import distributions
+
+    def _normalize_name(name: str) -> str:
+        """Normalize package name to underscore format (matching importlib_metadata behavior)."""
+        return re.sub(r"[-_.]+", "_", name).lower()
 
     otel_logger = logging.getLogger("charm_tracing_otel_patcher")
     otel_logger.debug("Applying _remove_stale_otel_sdk_packages patch on charm upgrade")
     # group by name all distributions starting with "opentelemetry_"
     otel_distributions = defaultdict(list)
     for distribution in distributions():
-        name = distribution._normalized_name  # type: ignore
+        name = _normalize_name(distribution.name)
         if name.startswith("opentelemetry_"):
             otel_distributions[name].append(distribution)
 
-    otel_logger.debug(f"Found {len(otel_distributions)} opentelemetry distributions")
+    otel_logger.debug("Found %d opentelemetry distributions", len(otel_distributions))
 
     # If we have multiple distributions with the same name, remove any that have 0 associated files
     for name, distributions_ in otel_distributions.items():
         if len(distributions_) <= 1:
             continue
 
-        otel_logger.debug(f"Package {name} has multiple ({len(distributions_)}) distributions.")
+        otel_logger.debug(
+            "Package %s has multiple (%d) distributions.", name, len(distributions_)
+        )
         for distribution in distributions_:
             if not distribution.files:  # Not None or empty list
-                path = distribution._path  # type: ignore
-                otel_logger.info(f"Removing empty distribution of {name} at {path}.")
+                path = getattr(distribution, "_path", None)
+                if path is None:
+                    continue
+                otel_logger.info("Removing empty distribution of %s at %s.", name, path)
                 shutil.rmtree(path)
 
     otel_logger.debug("Successfully applied _remove_stale_otel_sdk_packages patch. ")
@@ -313,10 +100,10 @@ from typing import (
 
 import opentelemetry
 import ops
-from opentelemetry.exporter.otlp.proto.common._internal.trace_encoder import (
-    encode_spans # type: ignore
+from opentelemetry.exporter.otlp.proto.common._internal.trace_encoder import (  # type: ignore
+    encode_spans,  # type: ignore
 )
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -339,6 +126,21 @@ from opentelemetry.trace import (
 from ops.charm import CharmBase
 from ops.framework import Framework
 
+
+if os.getenv("CHARM_TRACING_DEPRECATION_NOTICE_DISABLED"):
+    import warnings
+
+    warnings.warn(
+        "The `charm_tracing` library is deprecated and will be discontinued in 27.04. "
+        "Please migrate to the new `ops[tracing]` library. "
+        "See this migration guide: https://discourse.charmhub.io/t/18076 "
+        "See this deprecation announcement: https://discourse.charmhub.io/t/19669 "
+        "To disable this warning, set the CHARM_TRACING_DEPRECATION_NOTICE_DISABLED "
+        "environment variable. ",
+        DeprecationWarning,
+    )
+
+
 # The unique Charmhub library identifier, never change it
 LIBID = "01780f1e588c42c3976d26780fdf9b89"
 
@@ -348,7 +150,7 @@ LIBAPI = 0
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
 
-LIBPATCH = 8
+LIBPATCH = 14
 
 PYDEPS = ["opentelemetry-exporter-otlp-proto-http==1.21.0"]
 
@@ -394,10 +196,14 @@ class _Buffer:
 
     _SPANSEP = b"__CHARM_TRACING_BUFFER_SPAN_SEP__"
 
-    def __init__(self, db_file: Path, max_event_history_length: int, max_buffer_size_mib: int):
+    def __init__(
+        self, db_file: Path, max_event_history_length: int, max_buffer_size_mib: int
+    ):
         self._db_file = db_file
         self._max_event_history_length = max_event_history_length
-        self._max_buffer_size_mib = max(max_buffer_size_mib, _BUFFER_CACHE_FILE_SIZE_LIMIT_MiB_MIN)
+        self._max_buffer_size_mib = max(
+            max_buffer_size_mib, _BUFFER_CACHE_FILE_SIZE_LIMIT_MiB_MIN
+        )
 
         # set by caller
         self.exporter: Optional[OTLPSpanExporter] = None
@@ -424,7 +230,8 @@ class _Buffer:
         if overflow > 0:
             n_dropped_spans += overflow
             logger.warning(
-                f"charm tracing buffer exceeds max history length ({self._max_event_history_length} events)"
+                "charm tracing buffer exceeds max history length (%d events)",
+                self._max_event_history_length,
             )
 
         new_spans = deque(queue[-self._max_event_history_length :])
@@ -440,19 +247,21 @@ class _Buffer:
             # only do this once
             if not logged_drop:
                 logger.warning(
-                    f"charm tracing buffer exceeds size limit ({self._max_buffer_size_mib}MiB)."
+                    "charm tracing buffer exceeds size limit (%dMiB).",
+                    self._max_buffer_size_mib,
                 )
             logged_drop = True
 
         if n_dropped_spans > 0:
             dev_logger.debug(
-                f"charm tracing buffer overflow: dropped {n_dropped_spans} older spans. "
-                f"Please increase the buffer limits, or ensure the spans can be flushed."
+                "charm tracing buffer overflow: dropped %d older spans. "
+                "Please increase the buffer limits, or ensure the spans can be flushed.",
+                n_dropped_spans,
             )
         return new_spans
 
     def _save(self, spans: Sequence[ReadableSpan], replace: bool = False):
-        dev_logger.debug(f"saving {len(spans)} new spans to buffer")
+        dev_logger.debug("saving %d new spans to buffer", len(spans))
         old = [] if replace else self.load()
         queue = old + [self._serialize(spans)]
         new_buffer = self._prune(queue)
@@ -474,7 +283,7 @@ class _Buffer:
         # ensure the destination folder exists
         db_file_dir = self._db_file.parent
         if not db_file_dir.exists():
-            dev_logger.info(f"creating buffer dir: {db_file_dir}")
+            dev_logger.info("creating buffer dir: %s", db_file_dir)
             db_file_dir.mkdir(parents=True)
 
         self._db_file.write_bytes(self._SPANSEP.join(spans))
@@ -490,7 +299,7 @@ class _Buffer:
         try:
             spans = self._db_file.read_bytes().split(self._SPANSEP)
         except Exception:
-            logger.exception(f"error parsing {self._db_file}")
+            logger.exception("error parsing %s", self._db_file)
             return []
         return spans
 
@@ -498,7 +307,7 @@ class _Buffer:
         """Drop some currently buffered spans from the cache file."""
         current = self.load()
         if n_spans:
-            dev_logger.debug(f"dropping {n_spans} spans from buffer")
+            dev_logger.debug("dropping %d spans from buffer", n_spans)
             new = current[n_spans:]
         else:
             dev_logger.debug("emptying buffer")
@@ -535,7 +344,9 @@ class _Buffer:
                 )
                 errors = True
             except Exception:
-                logger.exception("unexpected error while flushing span batch from buffer")
+                logger.exception(
+                    "unexpected error while flushing span batch from buffer"
+                )
                 errors = True
 
         if not errors:
@@ -684,7 +495,9 @@ def _get_tracing_endpoint(
             f"got {tracing_endpoint} instead."
         )
 
-    dev_logger.debug(f"Setting up span exporter to endpoint: {tracing_endpoint}/v1/traces")
+    dev_logger.debug(
+        "Setting up span exporter to endpoint: %s/v1/traces", tracing_endpoint
+    )
     return f"{tracing_endpoint}/v1/traces"
 
 
@@ -701,13 +514,17 @@ def _get_server_cert(
 
     if server_cert is None:
         logger.warning(
-            f"{charm_type}.{server_cert_attr} is None; sending traces over INSECURE connection."
+            "%s.%s is None; sending traces over INSECURE connection.",
+            charm_type,
+            server_cert_attr,
         )
         return
     if not isinstance(server_cert, (str, Path)):
         logger.warning(
-            f"{charm_type}.{server_cert_attr} has unexpected type {type(server_cert)}; "
-            f"sending traces over INSECURE connection."
+            "%s.%s has unexpected type %s; sending traces over INSECURE connection.",
+            charm_type,
+            server_cert_attr,
+            type(server_cert),
         )
         return
     path = Path(server_cert)
@@ -765,7 +582,9 @@ def _setup_root_span_initializer(
         provider = TracerProvider(resource=resource)
 
         # if anything goes wrong with retrieving the endpoint, we let the exception bubble up.
-        tracing_endpoint = _get_tracing_endpoint(tracing_endpoint_attr, self, charm_type)
+        tracing_endpoint = _get_tracing_endpoint(
+            tracing_endpoint_attr, self, charm_type
+        )
 
         buffer_only = False
         # whether we're only exporting to buffer, or also to the otlp exporter.
@@ -776,10 +595,14 @@ def _setup_root_span_initializer(
             buffer_only = True
 
         server_cert: Optional[Union[str, Path]] = (
-            _get_server_cert(server_cert_attr, self, charm_type) if server_cert_attr else None
+            _get_server_cert(server_cert_attr, self, charm_type)
+            if server_cert_attr
+            else None
         )
 
-        if (tracing_endpoint and tracing_endpoint.startswith("https://")) and not server_cert:
+        if (
+            tracing_endpoint and tracing_endpoint.startswith("https://")
+        ) and not server_cert:
             logger.error(
                 "Tracing endpoint is https, but no server_cert has been passed."
                 "Please point @trace_charm to a `server_cert` attr. "
@@ -810,7 +633,9 @@ def _setup_root_span_initializer(
             # and retry the next time
             otlp_exporter = _OTLPSpanExporter(
                 endpoint=tracing_endpoint,
-                certificate_file=str(Path(server_cert).absolute()) if server_cert else None,
+                certificate_file=str(Path(server_cert).absolute())
+                if server_cert
+                else None,
                 timeout=_OTLP_SPAN_EXPORTER_TIMEOUT,  # give individual requests 1 second to succeed
             )
             exporters.append(otlp_exporter)
@@ -825,10 +650,16 @@ def _setup_root_span_initializer(
         _tracer = get_tracer(_service_name)  # type: ignore
         _tracer_token = tracer.set(_tracer)
 
-        dispatch_path = os.getenv("JUJU_DISPATCH_PATH", "")  # something like hooks/install
-        event_name = dispatch_path.split("/")[1] if "/" in dispatch_path else dispatch_path
+        dispatch_path = os.getenv(
+            "JUJU_DISPATCH_PATH", ""
+        )  # something like hooks/install
+        event_name = (
+            dispatch_path.split("/")[1] if "/" in dispatch_path else dispatch_path
+        )
         root_span_name = f"{unit_name}: {event_name} event"
-        span = _tracer.start_span(root_span_name, attributes={"juju.dispatch_path": dispatch_path})
+        span = _tracer.start_span(
+            root_span_name, attributes={"juju.dispatch_path": dispatch_path}
+        )
 
         # all these shenanigans are to work around the fact that the opentelemetry tracing API is built
         # on the assumption that spans will be used as contextmanagers.
@@ -838,13 +669,13 @@ def _setup_root_span_initializer(
 
         # log a trace id, so we can pick it up from the logs (and jhack) to look it up in tempo.
         root_trace_id = hex(span.get_span_context().trace_id)[2:]  # strip 0x prefix
-        logger.debug(f"Starting root trace with id={root_trace_id!r}.")
+        logger.debug("Starting root trace with id=%r.", root_trace_id)
 
         span_token = opentelemetry.context.attach(ctx)  # type: ignore
 
         @contextmanager
         def wrap_event_context(event_name: str):
-            dev_logger.debug(f"entering event context: {event_name}")
+            dev_logger.debug("entering event context: %s", event_name)
             # when the framework enters an event context, we create a span.
             with _span("event: " + event_name) as event_context_span:
                 if event_context_span:
@@ -863,13 +694,17 @@ def _setup_root_span_initializer(
             opentelemetry.context.detach(span_token)  # type: ignore
             tracer.reset(_tracer_token)
             tp = cast(TracerProvider, get_tracer_provider())
-            flush_successful = tp.force_flush(timeout_millis=1000)  # don't block for too long
+            flush_successful = tp.force_flush(
+                timeout_millis=1000
+            )  # don't block for too long
 
             if buffer_only:
                 # if we're in buffer_only mode, it means we couldn't even set up the exporter for
                 # tempo as we're missing some data.
                 # so attempting to flush the buffer doesn't make sense
-                dev_logger.debug("tracing backend unavailable: all spans pushed to buffer")
+                dev_logger.debug(
+                    "tracing backend unavailable: all spans pushed to buffer"
+                )
 
             else:
                 dev_logger.debug("tracing backend found: attempting to flush buffer...")
@@ -885,7 +720,9 @@ def _setup_root_span_initializer(
                     if not previous_spans_buffered:
                         # if the buffer was empty to begin with, any spans we collected now can be discarded
                         buffer.drop()
-                        dev_logger.debug("buffer dropped: this trace has been sent already")
+                        dev_logger.debug(
+                            "buffer dropped: this trace has been sent already"
+                        )
                     else:
                         # if the buffer was nonempty, we can attempt to flush it
                         dev_logger.debug("attempting buffer flush...")
@@ -1029,7 +866,7 @@ def _autoinstrument(
         Minimum 10MiB.
     :param buffer_path: path to buffer file to use for saving buffered spans.
     """
-    dev_logger.debug(f"instrumenting {charm_type}")
+    dev_logger.debug("instrumenting %s", charm_type)
     _setup_root_span_initializer(
         charm_type,
         tracing_endpoint_attr,
@@ -1053,12 +890,12 @@ def trace_type(cls: _T) -> _T:
     It assumes that this class is only instantiated after a charm type decorated with `@trace_charm`
     has been instantiated.
     """
-    dev_logger.debug(f"instrumenting {cls}")
+    dev_logger.debug("instrumenting %s", cls)
     for name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
-        dev_logger.debug(f"discovered {method}")
+        dev_logger.debug("discovered %s", method)
 
         if method.__name__.startswith("__"):
-            dev_logger.debug(f"skipping {method} (dunder)")
+            dev_logger.debug("skipping %s (dunder)", method)
             continue
 
         # the span title in the general case should be:
@@ -1104,7 +941,7 @@ def trace_function(function: _F, name: Optional[str] = None) -> _F:
 
 
 def _trace_callable(callable: _F, qualifier: str, name: Optional[str] = None) -> _F:
-    dev_logger.debug(f"instrumenting {callable}")
+    dev_logger.debug("instrumenting %s", callable)
 
     # sig = inspect.signature(callable)
     @functools.wraps(callable)
