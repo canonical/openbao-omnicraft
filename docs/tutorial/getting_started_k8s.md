@@ -79,7 +79,7 @@ To communicate with OpenBao via CLI, we need to install the OpenBao CLI client a
 - `BAO_TOKEN`
 - `BAO_CAPATH`
 
-Install the [OpenBao client](https://snapcraft.io/openbao) and [yq](https://snapcraft.io/yq):
+Install the [OpenBao client](https://openbao.org/docs/install/) and [yq](https://github.com/mikefarah/yq):
 
 ```shell
 sudo snap install openbao
