@@ -18,8 +18,8 @@ OpenBao should be deployed with a total of **5 units**.
 ## Observability
 
 OpenBao should be integrated with Canonical Observability Stack:
-- OpenBao should be integrated with Opentelemetry Collector using the `cos-agent` charm relation interface.
-- Opentelemetry Collector should be integrated with COS using the `logging`, `send-remote-write`, and `grafana-dashboards-provider` charm relation interfaces.
+- OpenBao should be integrated with OpenTelemetry Collector using the `cos-agent` charm relation interface.
+- OpenTelemetry Collector should be integrated with COS using the `logging`, `send-remote-write`, and `grafana-dashboards-provider` charm relation interfaces.
 
 ## Backup and Restore
 

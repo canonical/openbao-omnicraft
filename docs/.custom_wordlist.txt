@@ -33,6 +33,7 @@ configurability
 OpenBao
 OpenBao's
 openbao
+OpenTelemetry
 PKCS
 HSM
 Shamir

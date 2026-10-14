@@ -35,13 +35,13 @@ Switch to the machine model in which OpenBao is deployed:
 juju switch <openbao model>
 ```
 
-Deploy Opentelemetry Collector:
+Deploy OpenTelemetry Collector:
 
 ```
 juju deploy opentelemetry-collector
 ```
 
-Integrate OpenBao with Opentelemetry Collector:
+Integrate OpenBao with OpenTelemetry Collector:
 
 ```
 juju relate openbao:cos-agent opentelemetry-collector:cos-agent
@@ -56,7 +56,7 @@ juju consume cos.loki
 juju consume cos.grafana
 ```
 
-Integrate Opentelemetry Collector with COS:
+Integrate OpenTelemetry Collector with COS:
 
 ```
 juju relate prometheus:receive-remote-write opentelemetry-collector:send-remote-write
