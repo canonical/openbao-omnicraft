@@ -1,7 +1,8 @@
 ui = true
 
-storage "file" {
-  path = "/var/snap/openbao/common/data"
+storage "raft" {
+  path    = "/var/snap/openbao/common/raft"
+  node_id = "openbao-0"
 }
 
 # HTTP listener
