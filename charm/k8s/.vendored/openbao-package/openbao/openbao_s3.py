@@ -15,6 +15,7 @@ Add the following dependencies to the charm's requirements.txt file:
 """
 
 import logging
+import tempfile
 from typing import IO, List, MutableMapping, cast
 
 import boto3
@@ -71,18 +72,35 @@ class S3:
         application: str = "openbao",
         region: str | None = AWS_DEFAULT_REGION,
         skip_verify: bool = False,
+        ca_chain: list[str] | str | None = None,
     ):
         self.access_key = access_key
         self.secret_key = secret_key
         self.endpoint = endpoint
         self.region = region
         self._security_logger = _OWASPLogger(application=application)
+        self._ca_bundle_file: "tempfile._TemporaryFileWrapper[str] | None" = None
 
+        verify: bool | str | None
         if skip_verify is True:
             logger.warning(
                 "S3 client is configured to skip SSL certificate verification. "
                 "This is insecure and should only be used in development environments."
             )
+            verify = False
+        elif ca_chain:
+            # Write the CA chain to a bundle file so boto3 can verify against
+            # it, instead of skipping verification or using the system store.
+            bundle = ca_chain if isinstance(ca_chain, str) else "\n".join(ca_chain)
+            self._ca_bundle_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
+                mode="w", suffix=".pem", prefix="openbao-s3-ca-"
+            )
+            self._ca_bundle_file.write(bundle)
+            self._ca_bundle_file.flush()
+            verify = self._ca_bundle_file.name
+        else:
+            verify = None
+
         try:
             self.session = boto3.session.Session(
                 aws_access_key_id=self.access_key,
@@ -101,7 +119,7 @@ class S3:
                 "s3",
                 endpoint_url=self.endpoint,
                 config=custom_config,
-                verify=False if skip_verify else None,
+                verify=verify,
             )
         except (ClientError, BotoCoreError, ValueError) as e:
             raise S3Error(f"Error creating session: {e}")

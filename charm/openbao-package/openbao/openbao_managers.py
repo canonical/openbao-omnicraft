@@ -1753,6 +1753,7 @@ class BackupManager:
                 region=s3_parameters.get("region"),
                 skip_verify=skip_verify,
                 application=self._charm.app.name,
+                ca_chain=s3_parameters.get("tls-ca-chain"),
             )
         except S3Error as e:
             logger.error("Failed to create S3 session. %s", e)
@@ -1797,6 +1798,7 @@ class BackupManager:
                 region=s3_parameters.get("region"),
                 skip_verify=skip_verify,
                 application=self._charm.app.name,
+                ca_chain=s3_parameters.get("tls-ca-chain"),
             )
         except S3Error:
             raise ManagerError("Failed to create S3 session")
@@ -1831,6 +1833,7 @@ class BackupManager:
                 region=s3_parameters.get("region"),
                 skip_verify=skip_verify,
                 application=self._charm.app.name,
+                ca_chain=s3_parameters.get("tls-ca-chain"),
             )
         except S3Error:
             raise ManagerError("Failed to create S3 session")
