@@ -1,17 +1,17 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: OpenBao Machine Charm Publish
+name: OpenBao Charm Publish
 
 on:
   workflow_call:
     inputs:
       source-run-id:
-        description: CI workflow run ID containing the machine charm artifact
+        description: CI workflow run ID containing the charm artifact
         type: string
         required: true
 
 jobs:
   publish:
-    name: Publish machine charm
+    name: Publish charm
     runs-on: [self-hosted, linux, X64, large, noble]
     permissions:
       actions: read
@@ -28,12 +28,12 @@ jobs:
           name: packed-charms
           run-id: ${{ inputs.source-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path: charm/machine
+          path: charm
 
       - name: List charms to release
         id: charms
         run: |
-          charms=$(ls "$PWD"/charm/machine/*.charm | tr '\n' ',' | sed 's/,$//')
+          charms=$(ls "$PWD"/charm/*.charm | tr '\n' ',' | sed 's/,$//')
           echo "$charms"
           echo "paths=${charms}" >> "$GITHUB_OUTPUT"
 
@@ -44,13 +44,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           channel: latest/edge
           destructive-mode: false
-          charm-path: charm/machine
+          charm-path: charm
           built-charm-path: ${{ steps.charms.outputs.paths }}
-          tag-prefix: machine
+          tag-prefix: charm
 
       - name: Archive charmcraft logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: charmcraft-logs-machine
+          name: charmcraft-logs
           path: /home/runner/.local/state/charmcraft/log/*.log

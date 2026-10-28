@@ -17,7 +17,7 @@ You may need to use a combination of `--force` and `--no-wait` to remove units i
 On the Kubernetes charm, you can scale the deployment down using the scale-application command.
 
 ```shell
-juju scale-application openbao-k8s 1
+juju scale-application openbao 1
 ```
 
 ## 2. Run the `bootstrap-raft` Action
@@ -47,5 +47,5 @@ juju add-unit openbao -n 4
 Or, on the Kubernetes charm:
 
 ```shell
-juju scale-application openbao-k8s 5
+juju scale-application openbao 5
 ```

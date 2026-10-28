@@ -15,6 +15,7 @@ resource "juju_application" "openbao" {
   constraints = var.constraints
   units       = var.units
   model_uuid  = var.model
+  trust       = var.trust
 
   storage_directives = var.storage_directives
 }

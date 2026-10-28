@@ -18,12 +18,14 @@ lint-grafana:
     rm -rf "$tmpdir"
 
 # Override the shared test-integration-charm recipe: our charm integration tests
-# take the built artifact under test (the snap or the rock) via --resource-path.
+# take the built artifact under test (the snap or the rock) via --resource-path,
+# and SUBSTRATE (machine or k8s) selects the suite under tests/integration.
 [private]
 test-integration-charm:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "running integration test for $CHARM_FILE_NAME"
+    SUBSTRATE="${SUBSTRATE:?SUBSTRATE must be machine or k8s}"
+    echo "running $SUBSTRATE integration test for $CHARM_FILE_NAME"
 
     uv tool install tox --with tox-uv
     args=(--charm_path "$CHARM_FILE_NAME")
@@ -36,9 +38,9 @@ test-integration-charm:
     if [ -n "${TEST_MODULES:-}" ]; then
         # Run only the suites named in TEST_MODULES (space-separated module
         # names, with or without the .py suffix) by ignoring every other
-        # module under tests/integration. tox always passes the whole
-        # directory to pytest, so restriction must happen via --ignore.
-        for f in tests/integration/test_*.py; do
+        # module of the suite. tox always passes the whole directory to
+        # pytest, so restriction must happen via --ignore.
+        for f in tests/integration/"$SUBSTRATE"/test_*.py; do
             name="$(basename "$f" .py)"
             keep=false
             for m in ${TEST_MODULES}; do
@@ -51,7 +53,7 @@ test-integration-charm:
             fi
         done
     fi
-    tox -e integration -- "${args[@]}"
+    SUBSTRATE="$SUBSTRATE" tox -e integration -- "${args[@]}"
 
 # Run custom tests for the rock
 test-integration-rock:

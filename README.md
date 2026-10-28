@@ -1,15 +1,14 @@
 # OpenBao Omnicraft
 
-This repo contains a monorepo for the Rock, Snap and the Charms for OpenBao.
+This repo contains a monorepo for the Rock, Snap and the Charm for OpenBao.
 
-# OpenBao Operators (Kubernetes and Machine)
+# OpenBao Operator (Kubernetes and Machine)
 
-[![CharmHub Badge](https://charmhub.io/openbao-k8s/badge.svg)](https://charmhub.io/openbao-k8s)
 [![CharmHub Badge](https://charmhub.io/openbao/badge.svg)](https://charmhub.io/openbao)
 
 OpenBao is a tool for securely managing secrets used in modern computing (e.g. passwords, certificates, API keys).
 
-The OpenBao Operators deploy and initialize OpenBao on Kubernetes and Machine models. They run in high availability mode using the Raft backend.
+The OpenBao Operator is a single charm that deploys and initializes OpenBao on both Kubernetes and Machine models. It runs in high availability mode using the Raft backend.
 
 For more information, including guides, integrations, and configuration options, read the [OpenBao Charms documentation](https://canonical-openbao-charms.readthedocs-hosted.com).
 

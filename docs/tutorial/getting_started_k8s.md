@@ -47,7 +47,7 @@ juju add-model demo
 Deploy the OpenBao K8s operator:
 
 ```shell
-juju deploy openbao-k8s openbao --channel=latest/edge --trust
+juju deploy openbao --channel=latest/edge --trust
 ```
 
 ```{tip}
@@ -65,7 +65,7 @@ Model  Controller          Cloud/Region        Version  SLA          Timestamp
 demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  12:31:45-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           blocked      1  openbao-k8s  latest/edge  2  10.152.183.183  no       Please initialize OpenBao or integrate with an auto-unseal provider
+openbao           blocked      1  openbao      latest/edge  2  10.152.183.183  no       Please initialize OpenBao or integrate with an auto-unseal provider
 
 Unit      Workload  Agent  Address     Ports  Message
 openbao/0*  blocked   idle   10.1.0.237         Please initialize OpenBao or integrate with an auto-unseal provider

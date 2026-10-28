@@ -54,3 +54,9 @@ variable "storage_directives" {
   type        = map(string)
   default     = {}
 }
+
+variable "trust" {
+  description = "Whether to grant the charm access to the cloud credentials. Required on Kubernetes."
+  type        = bool
+  default     = false
+}

@@ -80,7 +80,7 @@ def wait_for_status_message(
 
     Args:
         juju: Jubilant Juju instance.
-        app_name: Application name of the OpenBao, defaults to "openbao-k8s"
+        app_name: Application name of the OpenBao, defaults to "openbao"
         count: How many units are expected to be emitting the message
         expected_message: The message that openbao units should be setting as a status message
         timeout: Wait time, in seconds, before giving up
@@ -197,7 +197,7 @@ def authorize_charm_and_wait(
     Args:
         juju: Jubilant Juju instance.
         root_token: The root token for the openbao
-        app_name: Application name of the OpenBao, defaults to "openbao-k8s"
+        app_name: Application name of the OpenBao, defaults to "openbao"
 
     Returns:
         Any | Dict: The result of the authorization

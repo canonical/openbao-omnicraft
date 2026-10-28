@@ -10,7 +10,7 @@ Model  Controller          Cloud/Region        Version  SLA          Timestamp
 demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  13:02:12-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           waiting      3  openbao-k8s  latest/edge  2  10.152.183.208  no       installing agent
+openbao           waiting      3  openbao      latest/edge  2  10.152.183.208  no       installing agent
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
@@ -38,7 +38,7 @@ Model  Controller          Cloud/Region        Version  SLA          Timestamp
 demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  13:03:26-04:00
 
 App    Version  Status  Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           active      3  openbao-k8s  latest/edge  2  10.152.183.208  no
+openbao           active      3  openbao      latest/edge  2  10.152.183.208  no
 
 Unit      Workload  Agent  Address      Ports  Message
 openbao/0*  active    idle   10.1.182.38
