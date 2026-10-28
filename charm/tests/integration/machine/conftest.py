@@ -10,7 +10,6 @@ from pathlib import Path
 
 import jubilant
 import pytest
-
 from config import APP_NAME, MICROCEPH_RGW_PORT
 
 logger = logging.getLogger(__name__)

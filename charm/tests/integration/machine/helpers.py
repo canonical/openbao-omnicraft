@@ -15,10 +15,8 @@ import time
 from pathlib import Path
 from typing import Any, List, Tuple
 
-import jubilant
-from cryptography import x509
-
 import config
+import jubilant
 from config import (
     APP_NAME,
     JUJU_FAST_INTERVAL,
@@ -28,6 +26,7 @@ from config import (
     SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
     SHORT_TIMEOUT,
 )
+from cryptography import x509
 from openbao_helpers import OpenBao
 
 logger = logging.getLogger(__name__)

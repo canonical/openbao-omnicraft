@@ -7,7 +7,7 @@ audit "file" "charm-stdout" {
 }
 storage "raft" {
   path= "/openbao/raft"
-  node_id = "whatever-openbao-k8s/0"
+  node_id = "whatever-openbao/0"
 }
 log_level = info
 listener "tcp" {

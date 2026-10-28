@@ -23,7 +23,7 @@ path "auth/approle/role/" {
 
 # Allow charm- prefixes secrets backends to be mounted and managed
 path "sys/mounts/charm-*" {
-  capabilities = ["create", "read", "update", "delete", "sudo"]
+  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
 }
 
 # Allow discovery of secrets backends

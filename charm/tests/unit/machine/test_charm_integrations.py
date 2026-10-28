@@ -1,7 +1,7 @@
 import ops.testing as testing
 from ops.testing import Context
 
-from charm import OpenBaoOperatorCharm
+from charm import OpenBaoCharm
 
 
 class TestCharmIntegrations:
@@ -12,16 +12,21 @@ class TestCharmIntegrations:
         "tls-certificates-acme",
         "s3-parameters",
         "ingress",
+        "ingress-per-unit",
+        "logging",
+        "tracing",
         "openbao-autounseal-provides",
         "openbao-kv",
         "openbao-pki",
         "cos-agent",
+        "metrics-endpoint",
+        "grafana-dashboard",
         "send-ca-cert",
     ]
 
     def test_given_integrations_when_start_then_integrations_are_complete(self):
         """Ensure no integrations were removed from the charmcraft.yaml."""
-        ctx = Context(OpenBaoOperatorCharm)
+        ctx = Context(OpenBaoCharm)
         relations = []
         for integration in self.integration_endpoints:
             relation = testing.Relation(
@@ -36,7 +41,7 @@ class TestCharmIntegrations:
 
     def test_given_integrations_when_start_then_no_extra_integrations(self):
         """Ensure no integrations were added to the charmcraft.yaml without being added to the test."""
-        ctx = Context(OpenBaoOperatorCharm)
+        ctx = Context(OpenBaoCharm)
         with ctx(ctx.on.start(), testing.State()) as manager:
             missing_relations = set(manager.charm.meta.relations.keys()).difference(
                 set(self.integration_endpoints)

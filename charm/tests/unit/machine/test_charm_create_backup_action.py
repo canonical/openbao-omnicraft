@@ -5,10 +5,10 @@
 
 import ops.testing as testing
 import pytest
-from openbao.openbao_managers import ManagerError
+from fixtures import OpenBaoCharmFixtures
 from ops.testing import ActionFailed
 
-from fixtures import OpenBaoCharmFixtures
+from openbao.openbao_managers import ManagerError
 
 
 class TestCharmCreateBackupAction(OpenBaoCharmFixtures):

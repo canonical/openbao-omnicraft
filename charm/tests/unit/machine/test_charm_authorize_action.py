@@ -5,9 +5,8 @@
 
 import ops.testing as testing
 import pytest
-from ops.testing import ActionFailed
-
 from fixtures import OpenBaoCharmFixtures
+from ops.testing import ActionFailed
 
 
 class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
@@ -18,7 +17,7 @@ class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
 
         with pytest.raises(ActionFailed) as e:
             self.ctx.run(self.ctx.on.action("authorize-charm"), state_in)
-        assert e.value.message == "This action can only be run by the leader unit"
+        assert e.value.message == "This action must be run on the leader unit."
 
     def test_given_secret_id_not_found_when_authorize_charm_then_fails(self):
         state_in = testing.State(
@@ -61,7 +60,7 @@ class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
                 self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
                 state_in,
             )
-        assert e.value.message == "API address is not available."
+        assert e.value.message == "The OpenBao API address or CA certificate is not available yet."
 
     def test_given_ca_certificate_unavailable_when_authorize_charm_then_fails(self):
         self.mock_tls.configure_mock(
@@ -93,9 +92,7 @@ class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
                 self.ctx.on.action("authorize-charm", params={"secret-id": token_secret.id}),
                 state_in,
             )
-        assert (
-            e.value.message == "CA certificate is not available in the charm. Something is wrong."
-        )
+        assert e.value.message == "The OpenBao API address or CA certificate is not available yet."
 
     def test_given_when_authorize_charm_then_charm_is_authorized(self):
         self.mock_openbao.configure_mock(

@@ -11,16 +11,15 @@ from typing import Any, Dict, Generator, List, Tuple
 
 import hvac
 import jubilant
-from cryptography import x509
-from lightkube.core.client import Client as KubernetesClient
-from lightkube.resources.core_v1 import Pod
-
 from config import (
     APPLICATION_NAME,
     JUJU_FAST_INTERVAL,
     OPENBAO_RESOURCES,
     SELF_SIGNED_CERTIFICATES_APPLICATION_NAME,
 )
+from cryptography import x509
+from lightkube.core.client import Client as KubernetesClient
+from lightkube.resources.core_v1 import Pod
 from openbao_helpers import OpenBao
 
 logger = logging.getLogger(__name__)

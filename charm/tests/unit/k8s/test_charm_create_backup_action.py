@@ -5,9 +5,9 @@
 
 import ops.testing as testing
 import pytest
-from openbao.openbao_managers import ManagerError
-
 from fixtures import OpenBaoCharmFixtures
+
+from openbao.openbao_managers import ManagerError
 
 
 class TestCharmCreateBackupAction(OpenBaoCharmFixtures):
@@ -74,7 +74,7 @@ class TestCharmCreateBackupAction(OpenBaoCharmFixtures):
         state_in = testing.State(
             containers=[container],
             leader=True,
-            relations=[s3_relation],
+            relations=[s3_relation, testing.PeerRelation(endpoint="openbao-peers")],
             secrets=[approle_secret],
         )
         with pytest.raises(testing.ActionFailed) as e:

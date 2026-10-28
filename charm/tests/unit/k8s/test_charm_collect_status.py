@@ -6,10 +6,10 @@
 from unittest.mock import MagicMock, patch
 
 import ops.testing as testing
-from openbao.openbao_client import OpenBaoClientError
+from fixtures import OpenBaoCharmFixtures, running_container
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
-from fixtures import OpenBaoCharmFixtures
+from openbao.openbao_client import OpenBaoClientError
 
 
 class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
@@ -26,10 +26,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         _: MagicMock,
         __: MagicMock,
     ):
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
             interface="openbao-peer",
@@ -66,10 +63,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         _: MagicMock,
         __: MagicMock,
     ):
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
             interface="openbao-peer",
@@ -106,11 +100,9 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         _: MagicMock,
         __: MagicMock,
     ):
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         state_in = testing.State(
+            leader=True,
             containers=[container],
         )
 
@@ -123,6 +115,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         self,
     ):
         state_in = testing.State(
+            leader=True,
             config={"log_level": "not valid"},
         )
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
@@ -153,10 +146,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -182,6 +172,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             can_connect=False,
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
         )
 
@@ -192,11 +183,9 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         )
 
     def test_given_peer_relation_not_created_when_collect_unit_status_then_status_is_waiting(self):
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         state_in = testing.State(
+            leader=True,
             containers=[container],
         )
 
@@ -212,15 +201,13 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "tls_file_available_in_charm.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
 
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -230,32 +217,6 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         assert state_out.unit_status == WaitingStatus(
             "Waiting for CA certificate to be accessible in the charm"
         )
-
-    def test_given_tls_ca_secret_doesnt_exist_when_collect_unit_status_then_status_is_waiting(
-        self,
-    ):
-        self.mock_tls.configure_mock(
-            **{
-                "tls_file_available_in_charm.return_value": True,
-                "ca_certificate_secret_exists.return_value": False,
-                "tls_file_pushed_to_workload.return_value": False,
-            },
-        )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
-        peer_relation = testing.PeerRelation(
-            endpoint="openbao-peers",
-        )
-        state_in = testing.State(
-            containers=[container],
-            relations=[peer_relation],
-        )
-
-        state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
-
-        assert state_out.unit_status == WaitingStatus("Waiting for CA certificate secret")
 
     def test_given_tls_ca_not_pushed_to_workload_when_collect_unit_status_then_status_is_waiting(
         self,
@@ -267,21 +228,19 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "tls_file_pushed_to_workload.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == WaitingStatus("Waiting for CA certificate to be shared")
+        assert state_out.unit_status == WaitingStatus("Waiting for CA certificate in workload")
 
     def test_given_openbao_api_not_available_when_then_status_is_waiting(self):
         self.mock_tls.configure_mock(
@@ -296,21 +255,19 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == WaitingStatus("Waiting for openbao to be available")
+        assert state_out.unit_status == WaitingStatus("Waiting for OpenBao API to be available")
 
     def test_given_tls_certificates_access_relation_and_access_sans_dns_is_invalid_when_collect_unit_status_then_status_is_blocked(  # noqa: E501
         self,
@@ -327,10 +284,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -338,6 +292,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-access",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, access_relation],
             config={
@@ -366,10 +321,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -377,6 +329,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-pki",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, pki_relation],
         )
@@ -402,10 +355,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -413,6 +363,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-pki",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, pki_relation],
             config={
@@ -442,10 +393,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -453,6 +401,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-pki",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, pki_relation],
             config={
@@ -482,10 +431,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -493,6 +439,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-acme",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, acme_relation],
         )
@@ -518,10 +465,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -529,6 +473,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-acme",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, acme_relation],
             config={
@@ -558,10 +503,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_api_available.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -569,6 +511,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             endpoint="tls-certificates-acme",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation, acme_relation],
             config={
@@ -598,14 +541,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_seal_type_transit.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -629,14 +570,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_seal_type_transit.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -663,14 +602,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "needs_migration.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -696,14 +633,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_seal_type_transit.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -731,14 +666,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "is_seal_type_transit.return_value": True,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -763,14 +696,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -799,14 +730,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
                 "needs_migration.return_value": False,
             },
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
         )
@@ -838,14 +767,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
             secrets=[approle_secret],
@@ -878,14 +805,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
             label="openbao-approle-auth-details",
             tracked_content={"role-id": "role id", "secret-id": "secret id"},
         )
-        container = testing.Container(
-            name="openbao",
-            can_connect=True,
-        )
+        container = running_container()
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
         state_in = testing.State(
+            leader=True,
             containers=[container],
             relations=[peer_relation],
             secrets=[approle_secret],

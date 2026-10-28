@@ -7,7 +7,6 @@ from pathlib import Path
 
 import jubilant
 import pytest
-
 from config import (
     APPLICATION_NAME,
     MINIO_APPLICATION_NAME,

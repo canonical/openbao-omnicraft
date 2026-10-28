@@ -13,6 +13,9 @@ description: |
   network encryption-as-a-service, or generate AWS IAM/STS
   credentials, SQL/NoSQL databases, X.509 certificates,
   SSH credentials, and more.
+
+  This charm deploys OpenBao on Kubernetes (from the OCI image) and on
+  machines (from the openbao snap).
 links:
   website:
     - https://canonical-openbao-charms.readthedocs-hosted.com
@@ -21,10 +24,25 @@ links:
   issues:
     - https://github.com/canonical/openbao-omnicraft/issues
   documentation: https://discourse.charmhub.io/t/openbao-operator-machine/12983
+  contact: https://matrix.to/#/!yAkGlrYcBFYzYRvOlQ:ubuntu.com?via=ubuntu.com&via=matrix.org&via=mozilla.org
 
 assumes:
   - juju >= 3.1.8
 
+# Only used on Kubernetes.
+containers:
+  openbao:
+    resource: openbao-image
+    mounts:
+      - storage: openbao
+        location: /openbao/raft
+      - storage: config
+        location: /openbao/config
+      - storage: certs
+        location: /openbao/certs
+
+# The locations are those of machines; on Kubernetes they are mounted in the
+# openbao container at the locations above.
 storage:
   openbao:
     type: filesystem
@@ -68,16 +86,30 @@ peers:
 provides:
   openbao-autounseal-provides:
     interface: openbao-autounseal
+    optional: true
   openbao-kv:
     interface: openbao-kv
+    optional: true
   openbao-pki:
     interface: tls-certificates
-  cos-agent:
-    interface: cos_agent
+    optional: true
   send-ca-cert:
     interface: certificate_transfer
     description: |
       Send our CA certificate so clients can trust the CA by means of forming a relation.
+    optional: true
+  cos-agent:
+    description: Observability through the COS agent, on machines.
+    interface: cos_agent
+    optional: true
+  metrics-endpoint:
+    description: Prometheus scraping, on Kubernetes.
+    interface: prometheus_scrape
+    optional: true
+  grafana-dashboard:
+    description: Grafana dashboards, on Kubernetes.
+    interface: grafana_dashboard
+    optional: true
 
 requires:
   openbao-autounseal-requires:
@@ -108,7 +140,23 @@ requires:
     interface: s3
     optional: true
   ingress:
+    description: |
+      Ingress relation for the openbao app (ingress per app).
     interface: ingress
+    limit: 1
+    optional: true
+  ingress-per-unit:
+    description: |
+      Ingress relation for the openbao units (ingress per unit).
+    interface: ingress_per_unit
+    limit: 1
+    optional: true
+  logging:
+    description: Log forwarding to Loki, on Kubernetes.
+    interface: loki_push_api
+    optional: true
+  tracing:
+    interface: tracing
     limit: 1
     optional: true
 
@@ -154,7 +202,39 @@ config:
     logrotate_frequency:
       type: string
       default: "daily"
-      description: "How often to rotate syslog (daily, weekly, monthly)"
+      description: "How often to rotate syslog (daily, weekly, monthly). Only used on machines."
+    cpu-limit:
+      description: |
+        K8s cpu resource limit, e.g. "1" or "500m". Default is unset (no limit).
+        If you set a limit below the request, the limit will be automatically raised to the request.
+        If you set a limit above the request, that limit is used while the request remains unchanged.
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        Using this option requires the juju trust status of the charm to be set to True.
+        Only used on Kubernetes.
+      type: string
+    memory-limit:
+      description: |
+        K8s memory resource limit, e.g. "1Gi". Default is unset (no limit).
+        If you set a limit below the request, the limit will be automatically raised to the request.
+        If you set a limit above the request, that limit is used while the request remains unchanged.
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        Using this option requires the juju trust status of the charm to be set to True.
+        Only used on Kubernetes.
+      type: string
+    cpu-request:
+      description: |
+        K8s cpu resource request, e.g. "750m". Default is unset (no request).
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        Using this option requires the juju trust status of the charm to be set to True.
+        Only used on Kubernetes.
+      type: string
+    memory-request:
+      description: |
+        K8s memory resource request, e.g. "1.5Gi". Default is unset (no request).
+        See https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        Using this option requires the juju trust status of the charm to be set to True.
+        Only used on Kubernetes.
+      type: string
     # Access interface options
     access_sans_dns:
       type: string
@@ -462,8 +542,13 @@ config:
         the module plus shared-library dependencies).
         Enabling PKCS#11 is one-way: after OpenBao is initialized with this seal, you
         cannot go back to Shamir by unsetting this option.
+        Only supported on machines.
 
 resources:
+  openbao-image:
+    type: oci-image
+    description: OCI image for OpenBao, only used on Kubernetes.
+    upstream-source: ghcr.io/canonical/openbao:2.5.2
   hsm-lib:
     type: file
     filename: hsm-lib.tar.gz
@@ -473,7 +558,7 @@ resources:
       `tar czf hsm-lib.tar.gz -C ./hsm-libs .` then
       `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`.
       A single `.so` is still accepted for simple providers. Use secret key `lib` when
-      the archive contains multiple shared objects.
+      the archive contains multiple shared objects. Only used on machines.
 
 actions:
   authorize-charm:
@@ -481,12 +566,12 @@ actions:
       Authorizes the charm to be able to interact with OpenBao to manage its
       operations. A token is required for OpenBao to use to create the app role and
       the policy the charm will use to interact with OpenBao. This token must be
-      placed in juju secret, and this secret should be granted to the charm.
+      placed in a juju secret, and access to this secret should be granted to the charm.
     params:
       secret-id:
         type: string
         description: >-
-          A secret id from juju that contains a token for OpenBao that can create
+          The Juju secret ID for the secret containing a token for OpenBao that can create
           new policies, such as the root token that is provided upon initializing
           OpenBao. Used to create the app role and policy for the charm. It is not
           stored by the charm.

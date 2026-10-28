@@ -10,7 +10,6 @@ from typing import Iterator
 from unittest.mock import patch
 
 from charms.data_platform_libs.v0.s3 import S3Requirer
-
 from openbao.openbao_client import OpenBaoClient
 from openbao.openbao_managers import (
     ACMEManager,
