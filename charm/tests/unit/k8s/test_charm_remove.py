@@ -7,9 +7,8 @@ import os
 import tempfile
 
 import ops.testing as testing
-from ops.pebble import Layer, ServiceStatus
-
 from fixtures import OpenBaoCharmFixtures
+from ops.pebble import Layer, ServiceStatus
 
 
 class TestCharmRemove(OpenBaoCharmFixtures):
@@ -44,6 +43,7 @@ class TestCharmRemove(OpenBaoCharmFixtures):
                 containers=[container],
                 secrets=[approle_secret],
                 model=testing.Model(name=model_name),
+                relations=[testing.PeerRelation(endpoint="openbao-peers")],
             )
             with open(f"{temp_dir}/vault.db", "w") as f:
                 f.write("data")
@@ -52,7 +52,7 @@ class TestCharmRemove(OpenBaoCharmFixtures):
                 f.write("data")
 
             self.ctx.run(self.ctx.on.remove(), state_in)
-            self.mock_openbao.remove_raft_node.assert_called_with(f"{model_name}-openbao-k8s/0")
+            self.mock_openbao.remove_raft_node.assert_called_with(id=f"{model_name}-openbao/0")
             assert not os.path.exists(f"{temp_dir}/vault.db")
             assert not os.path.exists(f"{temp_dir}/raft/raft.db")
 

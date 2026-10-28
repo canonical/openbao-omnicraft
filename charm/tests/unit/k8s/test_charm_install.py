@@ -6,7 +6,6 @@ import os
 import tempfile
 
 import ops.testing as testing
-
 from fixtures import OpenBaoCharmFixtures
 
 

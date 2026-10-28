@@ -1,8 +1,8 @@
 import ops.testing as testing
+from fixtures import OpenBaoCharmFixtures
 from ops.testing import Context
 
 from charm import OpenBaoCharm
-from fixtures import OpenBaoCharmFixtures
 
 
 class TestCharmIntegrations(OpenBaoCharmFixtures):
@@ -20,6 +20,7 @@ class TestCharmIntegrations(OpenBaoCharmFixtures):
         "openbao-pki",
         "openbao-autounseal-provides",
         "send-ca-cert",
+        "cos-agent",
         "grafana-dashboard",
         "metrics-endpoint",
     ]

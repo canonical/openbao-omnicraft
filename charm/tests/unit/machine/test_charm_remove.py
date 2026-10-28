@@ -3,10 +3,9 @@
 # See LICENSE file for licensing details.
 
 
-from unittest.mock import MagicMock, call
+from unittest.mock import call
 
 import ops.testing as testing
-
 from fixtures import OpenBaoCharmFixtures
 
 
@@ -50,11 +49,7 @@ class TestCharmRemove(OpenBaoCharmFixtures):
     def test_given_openbao_service_active_when_remove_then_service_is_stopped(
         self,
     ):
-        self.mock_machine.get_service.return_value = MagicMock(
-            is_running=MagicMock(
-                return_value=True,
-            ),
-        )
+        self.mock_machine.is_running.return_value = True
         self.mock_openbao.configure_mock(
             **{
                 "is_api_available.return_value": True,
@@ -80,4 +75,4 @@ class TestCharmRemove(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.remove(), state_in)
 
-        self.mock_machine.stop.assert_has_calls([call("openbao")])
+        self.mock_machine.stop.assert_called_once_with()

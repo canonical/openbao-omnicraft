@@ -6,7 +6,6 @@ from pathlib import Path
 
 import jubilant
 import pytest
-
 from config import (
     APPLICATION_NAME,
     JUJU_FAST_INTERVAL,

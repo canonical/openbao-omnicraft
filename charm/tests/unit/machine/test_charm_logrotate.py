@@ -2,14 +2,24 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+from unittest.mock import MagicMock
+
 import ops.testing as testing
 import pytest
+from fixtures import OpenBaoCharmFixtures
 from scenario.errors import UncaughtCharmError
 
-from fixtures import OpenBaoCharmFixtures
+from workload_vm import OpenBaoVMWorkload
 
 
 class TestCharmLogrotate(OpenBaoCharmFixtures):
+    @pytest.fixture(autouse=True)
+    def real_log_rotation(self, setup: None, monkeypatch: pytest.MonkeyPatch):
+        self.mock_logrotate_path = MagicMock()
+        monkeypatch.setattr("workload_vm.LOGROTATE_PATH", self.mock_logrotate_path)
+        real = OpenBaoVMWorkload()
+        self.mock_machine.configure_log_rotation.side_effect = real.configure_log_rotation
+
     @pytest.mark.parametrize("frequency", ["daily", "weekly", "monthly"])
     def test_given_valid_logrotate_frequency_when_configure_then_logrotate_conf_is_written(
         self, frequency: str

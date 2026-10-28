@@ -4,9 +4,9 @@
 
 import ops.testing as testing
 import pytest
-from openbao.openbao_client import OpenBaoClientError
-
 from fixtures import MockBinding, OpenBaoCharmFixtures
+
+from openbao.openbao_client import OpenBaoClientError
 
 
 class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
@@ -89,6 +89,7 @@ class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
         state_in = testing.State(
             containers=[container],
             leader=True,
+            relations=[testing.PeerRelation(endpoint="openbao-peers")],
             secrets=[user_provided_secret],
         )
         with pytest.raises(testing.ActionFailed) as exc:
@@ -121,6 +122,7 @@ class TestCharmAuthorizeAction(OpenBaoCharmFixtures):
         state_in = testing.State(
             containers=[container],
             leader=True,
+            relations=[testing.PeerRelation(endpoint="openbao-peers")],
             secrets=[user_provided_secret],
         )
         with pytest.raises(testing.ActionFailed) as exc:

@@ -9,7 +9,6 @@ from pathlib import Path
 
 import jubilant
 import pytest
-
 from config import APP_NAME
 from helpers import (
     authorize_charm_and_wait,

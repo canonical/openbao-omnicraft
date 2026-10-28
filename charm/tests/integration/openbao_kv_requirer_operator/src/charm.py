@@ -8,17 +8,18 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from openbao_client import OpenBaoClient
+from ops.charm import ActionEvent, CharmBase
+from ops.framework import EventBase
+from ops.main import main
+from ops.model import ActiveStatus
+
 from charms.vault_k8s.v0.vault_kv import (
     VaultKvConnectedEvent,
     VaultKvReadyEvent,
     VaultKvRequires,
 )
 from openbao.juju_facade import JujuFacade, NoSuchStorageError
-from openbao_client import OpenBaoClient
-from ops.charm import ActionEvent, CharmBase
-from ops.framework import EventBase
-from ops.main import main
-from ops.model import ActiveStatus
 
 NONCE_SECRET_LABEL = "openbao-kv-nonce"
 OPENBAO_KV_SECRET_LABEL = "openbao-kv"

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import jubilant
 import pytest
-
 from config import (
     APP_NAME,
     GRAFANA_AGENT_APPLICATION_NAME,

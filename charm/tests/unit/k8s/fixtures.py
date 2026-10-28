@@ -6,10 +6,11 @@ from unittest.mock import patch
 
 import ops.testing as testing
 import pytest
-from openbao.testing.mocks import OpenBaoCharmFixturesBase
 from ops.model import ActiveStatus
+from ops.pebble import Layer, ServiceStatus
 
 from charm import OpenBaoCharm
+from openbao.testing.mocks import OpenBaoCharmFixturesBase
 
 
 class OpenBaoCharmFixtures(OpenBaoCharmFixturesBase):
@@ -36,7 +37,8 @@ class OpenBaoCharmFixtures(OpenBaoCharmFixturesBase):
             yield
 
     @pytest.fixture(autouse=True)
-    def context(self):
+    def context(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.152.183.1")
         self.ctx = testing.Context(charm_type=OpenBaoCharm)
 
 
@@ -44,8 +46,21 @@ class MockNetwork:
     def __init__(self, bind_address: str, ingress_address: str):
         self.bind_address = bind_address
         self.ingress_address = ingress_address
+        self.ingress_addresses = [ingress_address]
 
 
 class MockBinding:
     def __init__(self, bind_address: str, ingress_address: str):
         self.network = MockNetwork(bind_address=bind_address, ingress_address=ingress_address)
+
+
+def running_container() -> testing.Container:
+    """Return the openbao container with its service running."""
+    return testing.Container(
+        name="openbao",
+        can_connect=True,
+        layers={
+            "openbao": Layer({"services": {"openbao": {"override": "replace", "command": "bao"}}})
+        },
+        service_statuses={"openbao": ServiceStatus.ACTIVE},
+    )

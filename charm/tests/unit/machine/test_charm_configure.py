@@ -13,13 +13,12 @@ from unittest.mock import MagicMock, patch
 import hcl
 import ops.testing as testing
 import pytest
-from charms.operator_libs_linux.v2.snap import Snap, SnapState
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import AppRole
-
 from certificates import generate_example_provider_certificate
 from fixtures import OpenBaoCharmFixtures
-from machine import Machine
+
+from openbao.openbao_autounseal import AutounsealDetails
+from openbao.openbao_client import AppRole
+from workload_vm import OpenBaoVMWorkload
 
 
 def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
@@ -30,46 +29,24 @@ def _install_fake_pkcs11_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     plugin_bytes = b"fake-kms-plugin"
     plugin_bin.write_bytes(plugin_bytes)
     (plugin_dir / "pkcs11.version").write_text("v0.1.0\n")
-    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(plugin_dir))
-    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
-    monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version"))
+    monkeypatch.setattr("workload_vm.PKCS11_KMS_PLUGIN_DIR", str(plugin_dir))
+    monkeypatch.setattr("workload_vm.PKCS11_KMS_PLUGIN_PATH", str(plugin_bin))
+    monkeypatch.setattr(
+        "workload_vm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(plugin_dir / "pkcs11.version")
+    )
     return sha256(plugin_bytes).hexdigest()
 
 
 def _wire_real_hsm_machine_fs(
     mock_machine: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    """Use real Machine filesystem helpers for hsm-lib install into tmp_path/hsm."""
-    real = Machine()
+    """Use the real hsm-lib install of the machine workload, into tmp_path/hsm."""
     hsm_dir = tmp_path / "hsm"
-    openbao_env = tmp_path / "openbao.env"
-    monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
-    monkeypatch.setattr("charm.OPENBAO_ENV_PATH", str(openbao_env))
-    mock_machine.replace_directory.side_effect = real.replace_directory
-    mock_machine.extract_archive.side_effect = real.extract_archive
-    mock_machine.copy_file.side_effect = real.copy_file
-
-    def exists(path: str) -> bool:
-        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
-            str(hsm_dir)
-        ):
-            return real.exists(path)
-        return False
-
-    def pull(path: str):
-        if path in {str(openbao_env), str(hsm_dir / "openbao.env")} or path.startswith(
-            str(hsm_dir)
-        ):
-            return real.pull(path)
-        return StringIO("")
-
-    def push(path: str, source: str) -> None:
-        if path == str(openbao_env) or path.startswith(str(hsm_dir)):
-            real.push(path, source)
-
-    mock_machine.exists.side_effect = exists
-    mock_machine.pull.side_effect = pull
-    mock_machine.push.side_effect = push
+    monkeypatch.setattr("workload_vm.HSM_LIB_DIR", str(hsm_dir))
+    monkeypatch.setattr("workload_vm.OPENBAO_ENV_PATH", str(tmp_path / "openbao.env"))
+    real = OpenBaoVMWorkload()
+    mock_machine.install_hsm_lib.side_effect = real.install_hsm_lib
+    mock_machine.pkcs11_kms_plugin.side_effect = real.pkcs11_kms_plugin
     return hsm_dir
 
 
@@ -151,7 +128,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        with open("tests/unit/config.hcl", "r") as f:
+        with open("tests/unit/machine/config.hcl", "r") as f:
             expected_config = f.read()
 
         openbao_hcl_call = None
@@ -167,10 +144,6 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
     def test_given_leader_when_configure_then_openbao_service_is_started(self):
         self.mock_autounseal_requires_get_details.return_value = None
         self.mock_machine.pull.return_value = StringIO("")
-        openbao_snap = MagicMock(spec=Snap)
-        openbao_snap.state = SnapState.Present
-        snap_cache = {"openbao": openbao_snap}
-        self.mock_snap_cache.return_value = snap_cache
         peer_relation = testing.PeerRelation(
             endpoint="openbao-peers",
         )
@@ -188,7 +161,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        openbao_snap.start.assert_called_with(services=["server"])
+        self.mock_machine.start.assert_called_once()
 
     # PKI
 
@@ -718,7 +691,6 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         self.ctx.run(self.ctx.on.config_changed(), state_in)
 
-        self.mock_machine.extract_archive.assert_called_with(str(hsm_archive), str(hsm_dir))
         assert (hsm_dir / "pkcs11.so").is_file()
         assert (hsm_dir / "libdep.so").is_file()
         assert (hsm_dir / "openbao.env").is_file()
@@ -784,12 +756,12 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         self.mock_machine.pull.return_value = StringIO("")
         _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
         missing_dir = tmp_path / "missing-plugins"
-        monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
+        monkeypatch.setattr("workload_vm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
         monkeypatch.setattr(
-            "charm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
+            "workload_vm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
         )
         monkeypatch.setattr(
-            "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
+            "workload_vm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
         )
         hsm_lib = tmp_path / "libykcs11.so"
         hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
@@ -859,7 +831,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         actual_config_hcl = self._pushed_openbao_hcl()
         assert "seal" not in actual_config_hcl
-        self.mock_machine.copy_file.assert_not_called()
+        self.mock_machine.install_hsm_lib.assert_not_called()
 
     def test_given_hsm_lib_without_secret_when_configure_then_pkcs11_stanza_is_not_generated(
         self, tmp_path: Path
@@ -888,7 +860,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
 
         actual_config_hcl = self._pushed_openbao_hcl()
         assert "seal" not in actual_config_hcl
-        self.mock_machine.copy_file.assert_not_called()
+        self.mock_machine.install_hsm_lib.assert_not_called()
 
     def test_given_hsm_and_transit_autounseal_when_configure_then_neither_seal_is_generated(
         self, tmp_path: Path

@@ -2,17 +2,15 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+"""Charm for OpenBao, deployable on both Kubernetes and machines.
 
-"""A machine charm for OpenBao."""
+For more information on OpenBao, please visit https://openbao.org/.
+"""
 
-import hashlib
 import json
 import logging
-import platform
+import os
 import socket
-import subprocess
-from contextlib import contextmanager, suppress
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -22,12 +20,39 @@ from charmlibs.interfaces.tls_certificates import (
     TLSCertificatesProvidesV4,
     TLSCertificatesRequiresV4,
 )
+from ops import (
+    ActionEvent,
+    ActiveStatus,
+    BlockedStatus,
+    CharmBase,
+    CollectStatusEvent,
+    EventBase,
+    InstallEvent,
+    MaintenanceStatus,
+    ModelError,
+    Relation,
+    StatusBase,
+    WaitingStatus,
+    main,
+)
+
 from charms.data_platform_libs.v0.s3 import S3Requirer
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
-from charms.operator_libs_linux.v2 import snap
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
+from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.observability_libs.v0.kubernetes_compute_resources_patch import (
+    KubernetesComputeResourcesPatch,
+    ResourceRequirements,
+    adjust_resource_requirements,
+)
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tempo_coordinator_k8s.v0.charm_tracing import trace_charm
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer, charm_tracing_config
+from charms.traefik_k8s.v1.ingress_per_unit import IngressPerUnitRequirer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from charms.vault_k8s.v0.vault_kv import VaultKvClientDetachedEvent, VaultKvProvides
-from jinja2 import Environment, FileSystemLoader
+from core.base_workload import WorkloadBase, WorkloadError
+from literals import Substrate
 from openbao.juju_facade import (
     JujuFacade,
     NoSuchSecretError,
@@ -53,12 +78,9 @@ from openbao.openbao_helpers import (
     get_env_var,
     hsm_config_secret_validation_error,
     hsm_lib_module_relative_path,
-    is_elf_shared_object,
-    is_hsm_lib_archive,
     is_hsm_lib_resource_usable,
     pkcs11_seal_config_from_secret,
     render_openbao_config_file,
-    resolve_hsm_pkcs11_module,
     sans_dns_config_is_valid,
     sans_ip_config_is_valid,
     seal_type_has_changed,
@@ -66,6 +88,7 @@ from openbao.openbao_helpers import (
 from openbao.openbao_managers import (
     TLS_CERTIFICATE_ACCESS_RELATION_NAME,
     TLS_CERTIFICATES_ACME_RELATION_NAME,
+    TLS_CERTIFICATES_PKI_RELATION_NAME,
     ACMEManager,
     AutounsealProviderManager,
     AutounsealRequirerManager,
@@ -78,145 +101,84 @@ from openbao.openbao_managers import (
     RaftManager,
     TLSManager,
 )
-from ops import ActionEvent, BlockedStatus, ErrorStatus
-from ops.charm import CharmBase, CollectStatusEvent, RemoveEvent
-from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, ModelError, Relation, WaitingStatus
-
-from machine import Machine
-from systemd_creds import SystemdCreds
+from workload_k8s import OpenBaoK8sWorkload
+from workload_vm import PKCS11_KMS_PLUGIN_COMMAND, OpenBaoVMWorkload
 
 logger = logging.getLogger(__name__)
 
 ACME_MOUNT = "charm-acme"
 ACME_ROLE_NAME = "charm-acme"
+APPROLE_ROLE_NAME = "charm"
 AUTOUNSEAL_MOUNT_PATH = "charm-autounseal"
 AUTOUNSEAL_PROVIDES_RELATION_NAME = "openbao-autounseal-provides"
 AUTOUNSEAL_REQUIRES_RELATION_NAME = "openbao-autounseal-requires"
-BACKUP_KEY_PREFIX = "openbao-backup"
+CHARM_POLICY_NAME = "charm-access"
+CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
+CONFIG_TEMPLATE_DIR_PATH = "src/templates/"
 CONFIG_TEMPLATE_NAME = "openbao.hcl.j2"
-INGRESS_RELATION_NAME = "ingress"
-KV_RELATION_NAME = "openbao-kv"
-KV_SECRET_PREFIX = "kv-creds-"
-LOGROTATE_PATH = Path("/etc/logrotate.d/rsyslog")
-LOGROTATE_DEFAULT_COUNT = 7
-LOGROTATE_DEFAULT_MAXSIZE = "10M"
-MACHINE_TLS_FILE_DIRECTORY_PATH = "/var/snap/openbao/common/certs"
-METRICS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
-PEER_RELATION_NAME = "openbao-peers"
-PKI_RELATION_NAME = "openbao-pki"
-REQUIRED_S3_PARAMETERS = ["bucket", "access-key", "secret-key", "endpoint"]
-S3_RELATION_NAME = "s3-parameters"
-SYSTEMD_DROP_IN_DIR = "/etc/systemd/system/snap.openbao.server.service.d"
-SYSTEMD_DROP_IN_FILE_PATH = f"{SYSTEMD_DROP_IN_DIR}/10-charm.conf"
-SYSTEMD_CRED_EXTERNAL_BAO_TOKEN_NAME = "external_openbao_token"
-TEMPLATE_PATH = "src/templates/"
-TEMPLATE_SYSTEMD_DROP_IN_CREDS = "systemd_dropin_creds.conf.j2"
-TEMPLATE_OPENBAO_ENV_LOAD_SYSTEMD_CREDS = "openbao_load_systemd_creds.env.j2"
-TLS_CERTIFICATES_PKI_RELATION_NAME = "tls-certificates-pki"
-OPENBAO_CHARM_APPROLE_SECRET_LABEL = "openbao-approle-auth-details"
-OPENBAO_CHARM_POLICY_NAME = "charm-access"
-OPENBAO_CHARM_POLICY_PATH = "src/templates/charm_policy.hcl"
-OPENBAO_CLUSTER_PORT = 8201
-OPENBAO_CONFIG_FILE_NAME = "openbao-config.hcl"
-OPENBAO_CONFIG_PATH = "/var/snap/openbao/common"
-OPENBAO_ENV_PATH = f"{OPENBAO_CONFIG_PATH}/openbao.env"
-OPENBAO_DEFAULT_POLICY_NAME = "default"
-OPENBAO_PKI_MOUNT = "charm-pki"
-OPENBAO_PKI_ROLE = "charm-pki"
-OPENBAO_PORT = 8200
-OPENBAO_SNAP_NAME = "openbao"
-# Bump OPENBAO_SNAP_REVISIONS after publishing a snap that ships
-# plugins/openbao-plugin-kms-pkcs11 (required for PKCS#11 HSM auto-unseal).
-OPENBAO_SNAP_REVISIONS = {
-    "x86_64": "36",
-}
-OPENBAO_SNAP_CHANNELS = {
-    "x86_64": "2/edge",
-}
-OPENBAO_SNAP_REVISION = OPENBAO_SNAP_REVISIONS.get(platform.machine(), "")
-OPENBAO_SNAP_CHANNEL_FOR_ARCH = OPENBAO_SNAP_CHANNELS.get(platform.machine(), "2/stable")
-OPENBAO_SNAP_SERVICE_NAME = "server"
-OPENBAO_PROCESS_NAME = "bao"
+CONTAINER_NAME = "openbao"
+DEFAULT_POLICY_NAME = "default"
+GRAFANA_DASHBOARDS_PATH = "./src/grafana_dashboards"
 HSM_CONFIG_SECRET_ID_CONFIG_KEY = "hsm-config-secret-id"
 HSM_LIB_RESOURCE_NAME = "hsm-lib"
-HSM_LIB_DIR = "/var/snap/openbao/common/hsm"
-PKCS11_KMS_PLUGIN_DIR = "/snap/openbao/current/plugins"
-PKCS11_KMS_PLUGIN_COMMAND = "openbao-plugin-kms-pkcs11"
-PKCS11_KMS_PLUGIN_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/{PKCS11_KMS_PLUGIN_COMMAND}"
-PKCS11_KMS_PLUGIN_VERSION_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/pkcs11.version"
-OPENBAO_STORAGE_PATH = "/var/snap/openbao/common/raft"
+INGRESS_PER_APP_RELATION_NAME = "ingress"
+INGRESS_PER_UNIT_RELATION_NAME = "ingress-per-unit"
+KV_RELATION_NAME = "openbao-kv"
+LOG_FORWARDING_RELATION_NAME = "logging"
+LOG_LEVELS = ("trace", "debug", "info", "warn", "error")
+OPENBAO_CHARM_APPROLE_SECRET_LABEL = "openbao-approle-auth-details"
+OPENBAO_CLUSTER_PORT = 8201
+OPENBAO_PORT = 8200
+PEER_RELATION_NAME = "openbao-peers"
+PKI_MOUNT = "charm-pki"
+PKI_RELATION_NAME = "openbao-pki"
+PKI_ROLE_NAME = "charm-pki"
+PKI_SELF_SIGNED_CA_DEFAULT_VALIDITY_HOURS = 87600
+PROMETHEUS_ALERT_RULES_PATH = "./src/prometheus_alert_rules"
+RESOURCE_CONFIG_KEYS = ("cpu-limit", "memory-limit", "cpu-request", "memory-request")
+S3_RELATION_NAME = "s3-parameters"
 
 
-class OpenBaoOperatorCharm(CharmBase):
-    """Machine Charm for OpenBao."""
+@trace_charm(
+    tracing_endpoint="_tracing_endpoint",
+    server_cert="_tracing_server_cert",
+    extra_types=(TLSCertificatesProvidesV4,),
+)
+class OpenBaoCharm(CharmBase):
+    """Charm for OpenBao on Kubernetes and on machines."""
 
     def __init__(self, *args: Any):
         super().__init__(*args)
         self.juju_facade = JujuFacade(self)
-        self.juju_facade.set_unit_ports(OPENBAO_PORT)
-        self.machine = Machine()
-        self._cos_agent = COSAgentProvider(
-            self,
-            refresh_events=[
-                self.on[PEER_RELATION_NAME].relation_changed,
-            ],
-            scrape_configs=self.generate_openbao_scrape_configs,
-            dashboard_dirs=["./src/grafana_dashboards"],
-            metrics_rules_dir=METRICS_ALERT_RULES_PATH,
-        )
-        access_sans_dns = self.juju_facade.get_string_config("access_sans_dns")
-        access_sans_dns_list = [socket.getfqdn()]
-        if access_sans_dns:
-            if not sans_dns_config_is_valid(access_sans_dns):
-                logger.warning("access_sans_dns is not valid, it must be a comma separated list")
-                access_sans_dns_list = []
-            else:
-                access_sans_dns_list.extend([name.strip() for name in access_sans_dns.split(",")])
-        ip_addresses = set()
-        if self._bind_address:
-            ip_addresses.add(self._bind_address)
-        ingress_addresses = self.juju_facade.get_ingress_addresses(PEER_RELATION_NAME)
-        ip_addresses.update(ingress_addresses)
-        access_sans_ip = self.juju_facade.get_string_config("access_sans_ip")
-        if access_sans_ip:
-            if not sans_ip_config_is_valid(access_sans_ip):
-                logger.warning(
-                    "access_sans_ip is not valid, it must be a comma separated list of IP addresses"
-                )
-            else:
-                ip_addresses.update([ip.strip() for ip in access_sans_ip.split(",")])
+        if os.environ.get("KUBERNETES_SERVICE_HOST"):
+            self.substrate = Substrate.K8S
+            self.workload: WorkloadBase = OpenBaoK8sWorkload(
+                self.unit.get_container(CONTAINER_NAME)
+            )
+        else:
+            self.substrate = Substrate.VM
+            self.workload = OpenBaoVMWorkload()
+        self.unit.set_ports(OPENBAO_PORT)
+        self._setup_observability()
         self.tls = TLSManager(
             charm=self,
-            workload=self.machine,
-            service_name=OPENBAO_SNAP_NAME,
-            tls_directory_path=MACHINE_TLS_FILE_DIRECTORY_PATH,
-            common_name=self._bind_address if self._bind_address else "",
-            sans_dns=frozenset(access_sans_dns_list),
-            sans_ip=frozenset(ip_addresses),
-            country_name=self.juju_facade.get_string_config("access_country_name"),
-            state_or_province_name=self.juju_facade.get_string_config(
-                "access_state_or_province_name"
-            ),
-            locality_name=self.juju_facade.get_string_config("access_locality_name"),
-            organization=self.juju_facade.get_string_config("access_organization"),
-            organizational_unit=self.juju_facade.get_string_config("access_organizational_unit"),
-            email_address=self.juju_facade.get_string_config("access_email_address"),
+            workload=self.workload,
+            common_name=self._bind_address or "",
+            sans_dns=self._access_sans_dns(),
+            sans_ip=self._access_sans_ip(),
+            country_name=self._config("access_country_name"),
+            state_or_province_name=self._config("access_state_or_province_name"),
+            locality_name=self._config("access_locality_name"),
+            organization=self._config("access_organization"),
+            organizational_unit=self._config("access_organizational_unit"),
+            email_address=self._config("access_email_address"),
         )
         self.openbao_kv = VaultKvProvides(self, KV_RELATION_NAME)
         self.openbao_pki = TLSCertificatesProvidesV4(
             charm=self,
             relationship_name=PKI_RELATION_NAME,
         )
-        self.ingress = IngressPerAppRequirer(
-            charm=self,
-            relation_name=INGRESS_RELATION_NAME,
-            port=OPENBAO_PORT,
-            strip_prefix=True,
-            scheme=lambda: "https",
-            redirect_https=True,
-        )
-        pki_certificate_request = self._get_pki_certificate_request()
+        pki_certificate_request = self._get_ca_certificate_request("pki")
         self.tls_certificates_pki = TLSCertificatesRequiresV4(
             charm=self,
             relationship_name=TLS_CERTIFICATES_PKI_RELATION_NAME,
@@ -224,7 +186,7 @@ class OpenBaoOperatorCharm(CharmBase):
             mode=Mode.APP,
             refresh_events=[self.on.config_changed],
         )
-        acme_certificate_request = self._get_acme_certificate_request()
+        acme_certificate_request = self._get_ca_certificate_request("acme")
         self.tls_certificates_acme = TLSCertificatesRequiresV4(
             charm=self,
             relationship_name=TLS_CERTIFICATES_ACME_RELATION_NAME,
@@ -232,119 +194,485 @@ class OpenBaoOperatorCharm(CharmBase):
             mode=Mode.APP,
             refresh_events=[self.on.config_changed],
         )
-        self.s3_requirer = S3Requirer(self, S3_RELATION_NAME)
-        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
-        self.framework.observe(self.on.remove, self._on_remove)
         self.openbao_autounseal_provides = OpenBaoAutounsealProvides(
             self, AUTOUNSEAL_PROVIDES_RELATION_NAME
         )
         self.openbao_autounseal_requires = OpenBaoAutounsealRequires(
             self, AUTOUNSEAL_REQUIRES_RELATION_NAME
         )
+        self.ingress_per_app = IngressPerAppRequirer(
+            charm=self,
+            relation_name=INGRESS_PER_APP_RELATION_NAME,
+            port=OPENBAO_PORT,
+            strip_prefix=True,
+            scheme=lambda: "https",
+            redirect_https=True,
+        )
+        self.ingress_per_unit = IngressPerUnitRequirer(
+            self,
+            relation_name=INGRESS_PER_UNIT_RELATION_NAME,
+            port=OPENBAO_PORT,
+            strip_prefix=True,
+            redirect_https=True,
+            scheme=lambda: "https",
+        )
+        self.s3_requirer = S3Requirer(self, S3_RELATION_NAME)
+
         configure_events = [
             self.on.config_changed,
+            self.on.update_status,
+            self.on.upgrade_charm,
+            self.on.secret_changed,
+            self.on.openbao_pebble_ready,
             self.on[PEER_RELATION_NAME].relation_created,
             self.on[PEER_RELATION_NAME].relation_changed,
-            self.on.install,
-            self.on.upgrade_charm,
-            self.on.update_status,
-            self.on.secret_changed,
-            self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_broken,
+            self.on.openbao_pki_relation_changed,
+            self.on.tls_certificates_pki_relation_joined,
+            self.tls_certificates_pki.on.certificate_available,
             self.openbao_autounseal_requires.on.openbao_autounseal_details_ready,
             self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_created,
             self.openbao_autounseal_requires.on.openbao_autounseal_provider_relation_broken,
-            self.tls_certificates_pki.on.certificate_available,
-            self.on.tls_certificates_pki_relation_joined,
-            self.on.openbao_pki_relation_changed,
+            self.openbao_autounseal_provides.on.openbao_autounseal_requirer_relation_broken,
             self.openbao_kv.on.new_vault_kv_client_attached,
         ]
         for event in configure_events:
             self.framework.observe(event, self._configure)
+        self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
+        self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(
             self.openbao_kv.on.vault_kv_client_detached, self._on_openbao_kv_client_detached
         )
-
-        # Actions
         self.framework.observe(self.on.authorize_charm_action, self._on_authorize_charm_action)
         self.framework.observe(self.on.bootstrap_raft_action, self._on_bootstrap_raft_action)
         self.framework.observe(self.on.create_backup_action, self._on_create_backup_action)
         self.framework.observe(self.on.list_backups_action, self._on_list_backups_action)
         self.framework.observe(self.on.restore_backup_action, self._on_restore_backup_action)
 
-    def _on_openbao_kv_client_detached(self, event: VaultKvClientDetachedEvent):
-        KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
+    def _setup_observability(self) -> None:
+        """Integrate with COS: directly on Kubernetes, through the COS agent on machines."""
+        self.tracing = TracingEndpointRequirer(self, protocols=["otlp_http"])
+        self._tracing_endpoint, self._tracing_server_cert = charm_tracing_config(
+            self.tracing, cert_path=None
+        )
+        if self.substrate == Substrate.VM:
+            self.resources_patch = None
+            self._cos_agent = COSAgentProvider(
+                self,
+                refresh_events=[self.on[PEER_RELATION_NAME].relation_changed],
+                scrape_configs=self.generate_openbao_scrape_configs,
+                dashboard_dirs=[GRAFANA_DASHBOARDS_PATH],
+                metrics_rules_dir=PROMETHEUS_ALERT_RULES_PATH,
+            )
+            return
+        self.resources_patch = KubernetesComputeResourcesPatch(
+            self, CONTAINER_NAME, resource_reqs_func=self._resource_reqs_from_config
+        )
+        self.grafana_dashboards = GrafanaDashboardProvider(self)
+        self._metrics_endpoint = MetricsEndpointProvider(
+            self,
+            jobs=[
+                {
+                    "scheme": "https",
+                    "tls_config": {"insecure_skip_verify": True},
+                    "metrics_path": "/v1/sys/metrics",
+                    "static_configs": [{"targets": [f"*:{OPENBAO_PORT}"]}],
+                }
+            ],
+            alert_rules_path=PROMETHEUS_ALERT_RULES_PATH,
+        )
+        self._logging = LogForwarder(charm=self, relation_name=LOG_FORWARDING_RELATION_NAME)
 
-    def _get_active_openbao_client(self) -> OpenBaoClient | None:
-        """Return a client for the _active_ openbao service.
-
-        This may not be the OpenBao service running on this unit.
-        """
-        addresses = self._get_peer_relation_node_api_addresses()
-        for address in addresses:
-            try:
-                openbao = OpenBaoClient(
-                    address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
-                )
-            except OpenBaoCertsError as e:
-                logger.warning("Failed to get OpenBao client: %s", e)
-                continue
-            if openbao.is_active():
-                if not openbao.is_api_available():
-                    return None
-                if not (approle := self._get_openbao_approle_secret()):
-                    return None
-                try:
-                    if not openbao.authenticate(approle):
-                        return None
-                except OpenBaoAuthenticationError:
-                    logger.warning(
-                        "OpenBao rejected the charm's credentials. "
-                        "Removing stored credentials to prevent lockout."
-                    )
-                    self.juju_facade.remove_secret(label=OPENBAO_CHARM_APPROLE_SECRET_LABEL)
-                    return None
-                return openbao
-        return None
-
-    def _get_authenticated_openbao_client(self) -> OpenBaoClient | None:
-        """Return an authenticate openbao client.
+    def generate_openbao_scrape_configs(self) -> List[Dict] | None:
+        """Generate the scrape configs for the COS agent.
 
         Returns:
-            OpenBao: An active OpenBao client configured with the cluster address
-                   and CA certificate, and authorized with the AppRole
-                   credentials set upon initial authorization of the charm, or
-                   `None` if the client could not be successfully created or
-                   has not been authorized.
+            The scrape configs for the COS agent or an empty list.
         """
-        openbao = self._get_openbao_client()
-        if not openbao:
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
+            return []
+        return [
+            {
+                "scheme": "https",
+                "tls_config": {
+                    "insecure_skip_verify": False,
+                    "ca": self.tls.pull_tls_file_from_workload(File.CA),
+                },
+                "metrics_path": "/v1/sys/metrics",
+                "static_configs": [{"targets": [f"{self._bind_address}:{OPENBAO_PORT}"]}],
+            }
+        ]
+
+    def _resource_reqs_from_config(self) -> ResourceRequirements:
+        limits = {
+            "cpu": self._config("cpu-limit"),
+            "memory": self._config("memory-limit"),
+        }
+        requests = {
+            "cpu": self._config("cpu-request"),
+            "memory": self._config("memory-request"),
+        }
+        return adjust_resource_requirements(
+            {k: v for k, v in limits.items() if v},
+            {k: v for k, v in requests.items() if v},
+            adhere_to_requests=True,
+        )
+
+    def _get_resources_patch_status(self) -> StatusBase | None:
+        """Return why the Kubernetes resource limits are not applied yet, if they are not."""
+        if (
+            not self.resources_patch
+            or not any(self._config(key) for key in RESOURCE_CONFIG_KEYS)
+            or self.resources_patch.is_ready()
+        ):
             return None
+        if isinstance(self.resources_patch.get_status(), BlockedStatus):
+            return BlockedStatus(
+                "Failed to apply resources patch. Please monitor the logs for errors."
+            )
+        return WaitingStatus(
+            "Waiting for resources patch to be ready. Please monitor the logs for errors."
+        )
+
+    def _on_install(self, event: InstallEvent) -> None:
+        """Handle the install event."""
+        if self.substrate == Substrate.K8S:
+            if not self.workload.is_accessible():
+                event.defer()
+                return
+            # The volume claim of a removed pod is kept and reused by the next pod
+            # with the same ordinal, so a new unit must not inherit its raft data.
+            self._delete_openbao_data()
+        self._configure(event)
+
+    def _on_collect_status(self, event: CollectStatusEvent) -> None:
+        """Handle the collect status event."""
+        event.add_status(self._get_unit_status())
+
+    def _get_unit_status(self) -> StatusBase:  # noqa: C901
+        """Return the status of the first unmet requirement, or Active."""
+        if status := self._get_resources_patch_status():
+            return status
+        if config_error := self._get_config_error():
+            return BlockedStatus(config_error)
+        if hsm_status := self._get_hsm_blocked_status():
+            return hsm_status
+        if not self.workload.is_accessible():
+            return WaitingStatus("Waiting to be able to connect to openbao unit")
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
+            return WaitingStatus("Waiting for peer relation")
+        if not self._api_address:
+            return WaitingStatus("Waiting for bind address")
+        if not self.unit.is_leader() and not self._other_peer_node_api_addresses():
+            return WaitingStatus("Waiting for other units to provide their addresses")
+        if not self.tls.tls_file_available_in_charm(File.CA):
+            return WaitingStatus("Waiting for CA certificate to be accessible in the charm")
+        if not self.tls.tls_file_pushed_to_workload(File.CA):
+            return WaitingStatus("Waiting for CA certificate in workload")
+        if not self.workload.is_running():
+            return WaitingStatus("Waiting for OpenBao service to start")
+        openbao = OpenBaoClient(
+            url=self._api_address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
+        )
         if not openbao.is_api_available():
-            return None
-        approle = self._get_openbao_approle_secret()
-        if not approle:
-            return None
+            return WaitingStatus("Waiting for OpenBao API to be available")
+        if not openbao.is_initialized():
+            if openbao.is_seal_type_transit() or openbao.get_seal_type() == "pkcs11":
+                return BlockedStatus("Please initialize OpenBao")
+            return BlockedStatus(
+                "Please initialize OpenBao or integrate with an auto-unseal provider"
+            )
+        try:
+            if openbao.is_sealed():
+                if openbao.needs_migration():
+                    return BlockedStatus("Please migrate OpenBao")
+                if openbao.is_seal_type_transit():
+                    return WaitingStatus("Waiting for transit auto-unseal")
+                if openbao.get_seal_type() == "pkcs11":
+                    return WaitingStatus("Waiting for PKCS#11 auto-unseal")
+                return BlockedStatus("Please unseal OpenBao")
+        except OpenBaoClientError:
+            return MaintenanceStatus("Seal check failed, waiting for OpenBao to recover")
+        if not (approle := self._get_approle_auth_secret()):
+            return BlockedStatus("Please authorize charm (see `authorize-charm` action)")
         try:
             if not openbao.authenticate(approle):
-                return None
+                return WaitingStatus("Waiting for OpenBao to become available")
         except OpenBaoAuthenticationError:
-            logger.warning(
-                "OpenBao rejected the charm's credentials. "
-                "Removing stored credentials to prevent lockout."
-            )
-            self.juju_facade.remove_secret(label=OPENBAO_CHARM_APPROLE_SECRET_LABEL)
-            return None
+            return BlockedStatus("Please authorize charm (see `authorize-charm` action)")
         if not openbao.is_active_or_standby():
+            return WaitingStatus("Waiting for openbao to finish raft leader election")
+        return ActiveStatus()
+
+    def _get_config_error(self) -> str | None:
+        """Return why the config is invalid for the current integrations, if it is."""
+        if self.juju_facade.relation_exists(TLS_CERTIFICATE_ACCESS_RELATION_NAME):
+            if not sans_dns_config_is_valid(self._config("access_sans_dns")):
+                return "Config value for access_sans_dns is not valid, it must be a comma separated list"
+            if not sans_ip_config_is_valid(self._config("access_sans_ip")):
+                return "Config value for access_sans_ip is not valid, it must be a comma separated list of IP addresses"
+        if self.juju_facade.relation_exists(
+            TLS_CERTIFICATES_PKI_RELATION_NAME
+        ) or self.juju_facade.relation_exists(PKI_RELATION_NAME):
+            if error := self._get_ca_config_error("pki", "PKI secrets engine"):
+                return error
+        if self.juju_facade.relation_exists(TLS_CERTIFICATES_ACME_RELATION_NAME):
+            if error := self._get_ca_config_error("acme", "ACME server"):
+                return error
+        if not self._log_level_is_valid():
+            return "log_level config is not valid"
+        return None
+
+    def _get_ca_config_error(self, prefix: str, feature: str) -> str | None:
+        """Return why the config of the `pki` or `acme` intermediate CA is invalid, if it is."""
+        if not common_name_config_is_valid(self._config(f"{prefix}_ca_common_name")):
+            return f"{prefix}_ca_common_name is not set in the charm config, cannot configure {feature}"
+        if not allowed_domains_config_is_valid(self._config(f"{prefix}_allowed_domains")):
+            return f"Config value for {prefix}_allowed_domains is not valid, it must be a comma separated list"
+        if not sans_dns_config_is_valid(self._config(f"{prefix}_ca_sans_dns")):
+            return f"Config value for {prefix}_ca_sans_dns is not valid, it must be a comma separated list"
+        return None
+
+    def _configure(self, _: EventBase) -> None:  # noqa: C901
+        """Install and configure OpenBao, then sync the integrations that need OpenBao."""
+        if not self.workload.is_accessible():
+            return
+        self.workload.configure_log_rotation(self._config("logrotate_frequency"))
+        try:
+            self.workload.install()
+        except WorkloadError as e:
+            logger.error("Failed to install OpenBao: %s", e)
+            return
+        if self._get_resources_patch_status():
+            return
+        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
+            return
+        if not self._api_address:
+            return
+        if not all(
+            self.tls.tls_file_pushed_to_workload(file) for file in (File.CA, File.CERT, File.KEY)
+        ):
+            return
+        if not self._log_level_is_valid():
+            return
+        # A unit that is not the leader can only join the cluster once another
+        # unit has shared its address in the peer relation.
+        if not self.juju_facade.is_leader and not self._other_peer_node_api_addresses():
+            logger.debug("Not leader and no peers, waiting for a peer")
+            return
+
+        self._set_peer_relation_node_api_address()
+        config_changed, seal_changed = self._generate_openbao_config_file()
+        environment_changed = self.workload.configure_service(
+            self._get_openbao_autounseal_token(), self._juju_proxy_environment
+        )
+        # A raft node completes its join to the cluster using the retry_join
+        # targets read at startup, so restart an uninitialized node when the
+        # config changes to pick up the current active node. Restarting is
+        # harmless at that point since the node holds no data. A seal type
+        # change also requires a restart so OpenBao can pick up PKCS#11 or
+        # transit auto-unseal. Any PKCS#11 config rewrite (secret/lib ready or
+        # updated) must restart so the new seal stanza is read.
+        restart_needed = (
+            environment_changed
+            or seal_changed
+            or (
+                config_changed
+                and (self._openbao_is_uninitialized() or self._hsm_config_requested())
+            )
+        )
+        if restart_needed and self.workload.is_running():
+            self.workload.restart()
+        else:
+            try:
+                self.workload.start()
+            except WorkloadError as e:
+                logger.error("Failed to start OpenBao service: %s", e)
+                return
+
+        if (openbao := self._get_openbao_client()) and self._is_sealed_with_auto_unseal(openbao):
+            logger.info("OpenBao is sealed with an auto-unseal type, restarting to trigger unseal")
+            self.workload.restart()
+            return
+
+        if not (openbao := self._get_authenticated_openbao_client()):
+            return
+        pki_manager = self._get_pki_manager(openbao)
+        if pki_manager:
+            pki_manager.configure()
+        if acme_manager := self._get_acme_manager(openbao):
+            acme_manager.configure()
+        self._sync_openbao_autounseal(openbao)
+        self._sync_openbao_kv(openbao)
+        if pki_manager:
+            pki_manager.sync()
+
+        if openbao.is_active() and not openbao.is_raft_cluster_healthy():
+            logger.warning("Raft cluster is not healthy: %s", openbao.get_raft_cluster_state())
+
+    @staticmethod
+    def _is_sealed_with_auto_unseal(openbao: OpenBaoClient) -> bool:
+        """Return whether OpenBao is sealed although it unseals itself on start."""
+        try:
+            return (
+                openbao.is_api_available()
+                and openbao.is_initialized()
+                and openbao.is_sealed()
+                and (openbao.is_seal_type_transit() or openbao.get_seal_type() == "pkcs11")
+            )
+        except OpenBaoClientError:
+            return False
+
+    def _on_remove(self, _: EventBase) -> None:
+        """Remove the node from the raft cluster, then stop OpenBao and delete its data."""
+        if not self.workload.is_accessible():
+            return
+        self._remove_node_from_raft_cluster()
+        if self.workload.is_running():
+            try:
+                self.workload.stop()
+            except WorkloadError:
+                logger.warning("Failed to stop OpenBao service")
+        self._delete_openbao_data()
+
+    def _remove_node_from_raft_cluster(self) -> None:
+        """Remove the node from the raft cluster."""
+        if not (approle := self._get_approle_auth_secret()):
+            logger.error("Failed to authenticate to OpenBao")
+            return
+        if not self._api_address:
+            logger.error("Can't remove node from cluster - OpenBao API address is not available")
+            return
+        openbao = OpenBaoClient(url=self._api_address, ca_cert_path=None)
+        if not openbao.is_api_available():
+            logger.error("Can't remove node from cluster - OpenBao API is not available")
+            return
+        if not openbao.is_initialized():
+            logger.error("Can't remove node from cluster - OpenBao is not initialized")
+            return
+        try:
+            if openbao.is_sealed():
+                logger.error("Can't remove node from cluster - OpenBao is sealed")
+                return
+        except OpenBaoClientError as e:
+            logger.error("Can't remove node from cluster - OpenBao status check failed: %s", e)
+            return
+        try:
+            openbao.authenticate(approle)
+        except OpenBaoAuthenticationError:
+            logger.warning("OpenBao rejected the charm's credentials during raft node removal")
+            return
+        if openbao.is_node_in_raft_peers(id=self._node_id) and openbao.get_num_raft_peers() > 1:
+            openbao.remove_raft_node(id=self._node_id)
+
+    def _delete_openbao_data(self) -> None:
+        """Delete OpenBao's data."""
+        for path, name in (
+            (f"{self.workload.raft_storage_path}/vault.db", "main"),
+            (f"{self.workload.raft_storage_path}/raft/raft.db", "Raft"),
+        ):
+            try:
+                self.workload.remove_path(path=path)
+                logger.info("Removed OpenBao's %s database", name)
+            except ValueError:
+                logger.info("No OpenBao %s database to remove", name)
+
+    def _on_openbao_kv_client_detached(self, event: VaultKvClientDetachedEvent) -> None:
+        KVManager.remove_unit_credentials(self.juju_facade, event.unit_name)
+
+    def _get_ca_certificate_request(self, prefix: str) -> CertificateRequestAttributes | None:
+        """Return the CSR attributes of the `pki` or `acme` intermediate CA, if configured."""
+        common_name = self._config(f"{prefix}_ca_common_name")
+        if not common_name:
+            logger.warning("%s_ca_common_name is not set in the charm config", prefix)
             return None
-        return openbao
+        sans_dns = self._config(f"{prefix}_ca_sans_dns")
+        if not sans_dns_config_is_valid(sans_dns):
+            logger.warning("%s_ca_sans_dns is not valid", prefix)
+            return None
+        return CertificateRequestAttributes(
+            common_name=common_name,
+            sans_dns=frozenset(name.strip() for name in sans_dns.split(","))
+            if sans_dns
+            else frozenset(),
+            country_name=self._config(f"{prefix}_ca_country_name") or None,
+            state_or_province_name=self._config(f"{prefix}_ca_state_or_province_name") or None,
+            locality_name=self._config(f"{prefix}_ca_locality_name") or None,
+            organization=self._config(f"{prefix}_ca_organization") or None,
+            organizational_unit=self._config(f"{prefix}_ca_organizational_unit") or None,
+            email_address=self._config(f"{prefix}_ca_email_address") or None,
+            is_ca=True,
+        )
+
+    def _get_pki_manager(self, openbao: OpenBaoClient) -> PKIManager | None:
+        """Return the manager of the PKI secrets engine, if the config allows one."""
+        if error := self._get_ca_config_error("pki", "PKI secrets engine"):
+            logger.warning("Skipping PKI secrets engine configuration: %s", error)
+            return None
+        if not (certificate_request := self._get_ca_certificate_request("pki")):
+            return None
+        return PKIManager(
+            charm=self,
+            openbao_client=openbao,
+            certificate_request_attributes=certificate_request,
+            mount_point=PKI_MOUNT,
+            role_name=PKI_ROLE_NAME,
+            openbao_pki=self.openbao_pki,
+            # Without the relation, PKIManager uses a self-signed CA.
+            tls_certificates_pki=self.tls_certificates_pki
+            if self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME)
+            else None,
+            allowed_domains=self._config("pki_allowed_domains"),
+            allow_bare_domains=self.juju_facade.get_bool_config("pki_allow_bare_domains"),
+            allow_subdomains=self.juju_facade.get_bool_config("pki_allow_subdomains"),
+            allow_wildcard_certificates=self.juju_facade.get_bool_config(
+                "pki_allow_wildcard_certificates"
+            ),
+            allow_any_name=self.juju_facade.get_bool_config("pki_allow_any_name"),
+            allow_ip_sans=self.juju_facade.get_bool_config("pki_allow_ip_sans"),
+            organization=self._config("pki_organization"),
+            organizational_unit=self._config("pki_organizational_unit"),
+            country=self._config("pki_country"),
+            province=self._config("pki_province"),
+            locality=self._config("pki_locality"),
+            self_signed_ca_validity_hours=self.juju_facade.get_int_config(
+                "pki_self_signed_ca_validity"
+            )
+            or PKI_SELF_SIGNED_CA_DEFAULT_VALIDITY_HOURS,
+        )
+
+    def _get_acme_manager(self, openbao: OpenBaoClient) -> ACMEManager | None:
+        """Return the manager of the ACME server, if the config allows one."""
+        if error := self._get_ca_config_error("acme", "ACME server"):
+            logger.warning("Skipping ACME server configuration: %s", error)
+            return None
+        if not (certificate_request := self._get_ca_certificate_request("acme")):
+            return None
+        return ACMEManager(
+            charm=self,
+            openbao_client=openbao,
+            mount_point=ACME_MOUNT,
+            tls_certificates_acme=self.tls_certificates_acme,
+            certificate_request_attributes=certificate_request,
+            role_name=ACME_ROLE_NAME,
+            openbao_address=f"https://{self._ingress_address}:{OPENBAO_PORT}",
+            allowed_domains=self._config("acme_allowed_domains"),
+            allow_bare_domains=self.juju_facade.get_bool_config("acme_allow_bare_domains"),
+            allow_subdomains=self.juju_facade.get_bool_config("acme_allow_subdomains"),
+            allow_wildcard_certificates=self.juju_facade.get_bool_config(
+                "acme_allow_wildcard_certificates"
+            ),
+            allow_any_name=self.juju_facade.get_bool_config("acme_allow_any_name"),
+            allow_ip_sans=self.juju_facade.get_bool_config("acme_allow_ip_sans"),
+            organization=self._config("acme_organization"),
+            organizational_unit=self._config("acme_organizational_unit"),
+            country=self._config("acme_country"),
+            province=self._config("acme_province"),
+            locality=self._config("acme_locality"),
+        )
 
     def _sync_openbao_autounseal(self, openbao_client: OpenBaoClient) -> None:
-        """Go through all the openbao-autounseal relations and send necessary credentials.
-
-        This looks for any outstanding requests for auto-unseal that may have
-        been missed. If there are any, it generates the credentials and sets
-        them in the relation databag.
-        """
+        """Send credentials to the auto-unseal requirers that miss them."""
         if not self.unit.is_leader():
             logger.debug("Only leader unit can handle a openbao-autounseal request")
             return
@@ -368,559 +696,6 @@ class OpenBaoOperatorCharm(CharmBase):
             autounseal_provider_manager.create_credentials(relation, relation_address)
         autounseal_provider_manager.clean_up_credentials()
 
-    def generate_openbao_scrape_configs(self) -> List[Dict] | None:
-        """Generate the scrape configs for the COS agent.
-
-        Returns:
-            The scrape configs for the COS agent or an empty list.
-        """
-        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
-            return []
-        return [
-            {
-                "scheme": "https",
-                "tls_config": {
-                    "insecure_skip_verify": False,
-                    "ca": self.tls.pull_tls_file_from_workload(File.CA),
-                },
-                "metrics_path": "/v1/sys/metrics",
-                "static_configs": [{"targets": [f"{self._bind_address}:{OPENBAO_PORT}"]}],
-            }
-        ]
-
-    @contextmanager
-    def temp_maintenance_status(self, message: str):
-        """Context manager to set the charm status temporarily.
-
-        Useful around long-running operations to indicate that the charm is
-        busy.
-        """
-        previous_status = self.unit.status
-        self.unit.status = MaintenanceStatus(message)
-        yield
-        self.unit.status = previous_status
-
-    def _on_authorize_charm_action(self, event: ActionEvent):
-        """Handle the authorize-charm action.
-
-        Grants the charm access to interact with OpenBao
-        """
-        if not self.unit.is_leader():
-            event.fail("This action can only be run by the leader unit")
-            return
-
-        secret_id = event.params.get("secret-id", "")
-        try:
-            if not (
-                token := self.juju_facade.get_latest_secret_content(id=secret_id).get("token", "")
-            ):
-                logger.warning("Token not found in the secret when authorizing charm.")
-                event.fail("Token not found in the secret. Please provide a valid token secret.")
-                return
-        except (NoSuchSecretError, SecretRemovedError):
-            logger.warning(
-                "Secret id provided could not be found by the charm when authorizing charm."
-            )
-            event.fail(
-                "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
-            )
-            return
-
-        logger.info("Authorizing the charm to interact with OpenBao")
-        if not self._api_address:
-            logger.warning("API address is not available when authorizing charm")
-            event.fail("API address is not available.")
-            return
-        if not self.tls.tls_file_available_in_charm(File.CA):
-            event.fail("CA certificate is not available in the charm. Something is wrong.")
-            return
-        openbao = self._get_openbao_client()
-        if not openbao:
-            logger.warning("Failed to initialize the OpenBao client when authorizing charm")
-            event.fail("Failed to initialize the OpenBao client")
-            return
-        try:
-            if not openbao.authenticate(Token(token)):
-                logger.warning("Failed to authenticate with OpenBao when authorizing charm")
-                event.fail("Failed to authenticate with OpenBao")
-                return
-        except OpenBaoAuthenticationError:
-            logger.warning("Failed to authenticate with OpenBao when authorizing charm")
-            event.fail("Failed to authenticate with OpenBao")
-            return
-        try:
-            openbao.enable_approle_auth_method()
-            openbao.create_or_update_policy_from_file(
-                name=OPENBAO_CHARM_POLICY_NAME, path=OPENBAO_CHARM_POLICY_PATH
-            )
-            role_id = openbao.create_or_update_approle(
-                name="charm",
-                policies=[OPENBAO_CHARM_POLICY_NAME, OPENBAO_DEFAULT_POLICY_NAME],
-                token_ttl="1h",
-                token_max_ttl="1h",
-            )
-            openbao_secret_id = openbao.generate_role_secret_id(name="charm")
-            self.juju_facade.set_app_secret_content(
-                content={"role-id": role_id, "secret-id": openbao_secret_id},
-                label=OPENBAO_CHARM_APPROLE_SECRET_LABEL,
-                description="The authentication details for the charm's access to openbao.",
-            )
-            event.set_results(
-                {"result": "Charm authorized successfully. You may now remove the secret."}
-            )
-        except OpenBaoClientError as e:
-            logger.exception("OpenBao returned an error while authorizing the charm")
-            event.fail(f"OpenBao returned an error while authorizing the charm: {str(e)}")
-            return
-
-    def _on_bootstrap_raft_action(self, event: ActionEvent):
-        """Bootstraps the raft cluster when a single node is present.
-
-        This is useful when OpenBao has lost quorum. The application must first
-        be reduced to a single unit.
-        """
-        if not self._api_address:
-            event.fail(message="Network bind address is not available")
-            return
-
-        try:
-            manager = RaftManager(self, self.machine, OPENBAO_SNAP_NAME, OPENBAO_STORAGE_PATH)
-            manager.bootstrap(self._node_id, self._api_address)
-        except ManagerError as e:
-            logger.error("Failed to bootstrap raft: %s", e)
-            event.fail(message=f"Failed to bootstrap raft: {e}")
-            return
-        event.set_results({"result": "Raft cluster bootstrapped successfully."})
-
-    def _get_openbao_client(self) -> OpenBaoClient | None:
-        if not self._api_address:
-            return None
-        if not self.tls.tls_file_available_in_charm(File.CA):
-            return None
-        return OpenBaoClient(
-            url=self._api_address,
-            ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
-        )
-
-    def _on_collect_status(self, event: CollectStatusEvent):  # noqa: C901
-        """Handle the collect status event."""
-        if self.juju_facade.relation_exists(TLS_CERTIFICATE_ACCESS_RELATION_NAME):
-            if not sans_dns_config_is_valid(self.juju_facade.get_string_config("access_sans_dns")):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for access_sans_dns is not valid, it must be a comma separated list"
-                    )
-                )
-                return
-            if not sans_ip_config_is_valid(self.juju_facade.get_string_config("access_sans_ip")):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for access_sans_ip is not valid, it must be a comma separated list of IP addresses"
-                    )
-                )
-                return
-        pki_config_needed = self.juju_facade.relation_exists(
-            TLS_CERTIFICATES_PKI_RELATION_NAME
-        ) or self.juju_facade.relation_exists(PKI_RELATION_NAME)
-        if pki_config_needed:
-            if not common_name_config_is_valid(
-                self.juju_facade.get_string_config("pki_ca_common_name")
-            ):
-                event.add_status(
-                    BlockedStatus(
-                        "pki_ca_common_name is not set in the charm config, cannot configure PKI secrets engine"
-                    )
-                )
-                return
-            if not allowed_domains_config_is_valid(
-                self.juju_facade.get_string_config("pki_allowed_domains")
-            ):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for pki_allowed_domains is not valid, it must be a comma separated list"
-                    )
-                )
-                return
-            if not sans_dns_config_is_valid(self.juju_facade.get_string_config("pki_ca_sans_dns")):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for pki_ca_sans_dns is not valid, it must be a comma separated list"
-                    )
-                )
-                return
-        if self.juju_facade.relation_exists(TLS_CERTIFICATES_ACME_RELATION_NAME):
-            if not common_name_config_is_valid(
-                self.juju_facade.get_string_config("acme_ca_common_name")
-            ):
-                event.add_status(
-                    BlockedStatus(
-                        "acme_ca_common_name is not set in the charm config, cannot configure ACME server"
-                    )
-                )
-                return
-            if not allowed_domains_config_is_valid(
-                self.juju_facade.get_string_config("acme_allowed_domains")
-            ):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for acme_allowed_domains is not valid, it must be a comma separated list"
-                    )
-                )
-                return
-            if not sans_dns_config_is_valid(
-                self.juju_facade.get_string_config("acme_ca_sans_dns")
-            ):
-                event.add_status(
-                    BlockedStatus(
-                        "Config value for acme_ca_sans_dns is not valid, it must be a comma separated list"
-                    )
-                )
-                return
-
-        if not self._log_level_is_valid(self._get_log_level()):
-            event.add_status(BlockedStatus("log_level config is not valid"))
-            return
-        if hsm_status := self._get_hsm_blocked_status():
-            event.add_status(hsm_status)
-            return
-        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
-            event.add_status(WaitingStatus("Waiting for peer relation"))
-            return
-        if not self._bind_address:
-            event.add_status(WaitingStatus("Waiting for bind address"))
-            return
-        if not self.unit.is_leader() and len(self._other_peer_node_api_addresses()) == 0:
-            event.add_status(WaitingStatus("Waiting for other units to provide their addresses"))
-            return
-        if not self.tls.tls_file_pushed_to_workload(File.CA):
-            event.add_status(WaitingStatus("Waiting for CA certificate in workload"))
-            return
-        if not self._api_address:
-            event.add_status(WaitingStatus("No address received from Juju yet"))
-            return
-        if not self.tls.tls_file_available_in_charm(File.CA):
-            event.add_status(WaitingStatus("Certificate is unavailable in the charm"))
-            return
-        if not self._is_openbao_service_started():
-            event.add_status(WaitingStatus("Waiting for OpenBao service to start"))
-            return
-        openbao = self._get_openbao_client()
-        if not openbao:
-            event.add_status(ErrorStatus("Failed to initialize the OpenBao client"))
-            return
-        if not openbao.is_api_available():
-            event.add_status(WaitingStatus("OpenBao API is not yet available"))
-            return
-        if not openbao.is_initialized():
-            if openbao.is_seal_type_transit() or openbao.get_seal_type() == "pkcs11":
-                event.add_status(BlockedStatus("Please initialize OpenBao"))
-                return
-
-            event.add_status(
-                BlockedStatus(
-                    "Please initialize OpenBao or integrate with an auto-unseal provider"
-                )
-            )
-            return
-        try:
-            if openbao.is_sealed():
-                if openbao.needs_migration():
-                    event.add_status(BlockedStatus("Please migrate OpenBao"))
-                    return
-                if openbao.is_seal_type_transit():
-                    event.add_status(WaitingStatus("Waiting for transit auto-unseal"))
-                    return
-                if openbao.get_seal_type() == "pkcs11":
-                    event.add_status(WaitingStatus("Waiting for PKCS#11 auto-unseal"))
-                    return
-                event.add_status(BlockedStatus("Please unseal OpenBao"))
-                return
-        except OpenBaoClientError:
-            event.add_status(
-                MaintenanceStatus("Seal check failed, waiting for OpenBao to recover")
-            )
-            return
-        if not (approle := self._get_openbao_approle_secret()):
-            event.add_status(
-                BlockedStatus("Please authorize charm (see `authorize-charm` action)")
-            )
-            return
-        try:
-            if not openbao.authenticate(approle):
-                event.add_status(WaitingStatus("Waiting for OpenBao to become available"))
-                return
-        except OpenBaoAuthenticationError:
-            event.add_status(
-                BlockedStatus("Please authorize charm (see `authorize-charm` action)")
-            )
-            return
-        if not openbao.is_active_or_standby():
-            event.add_status(WaitingStatus("Waiting for openbao to finish raft leader election"))
-            return
-        event.add_status(ActiveStatus())
-
-    def _configure(self, _):  # noqa: C901
-        """Handle OpenBao installation.
-
-        This includes:
-          - Installing the OpenBao snap
-          - Generating the OpenBao config file
-        """
-        self._create_backend_directory()
-        self._create_certs_directory()
-        self._generate_logrotate_conf()
-        try:
-            self._install_openbao_snap()
-        except (snap.SnapError, ModelError, NameError) as e:
-            logger.error("Failed to install OpenBao snap: %s", e)
-            return
-        if not self.juju_facade.relation_exists(PEER_RELATION_NAME):
-            return
-        if not self._bind_address:
-            return
-        if not self.juju_facade.is_leader:
-            if len(self._other_peer_node_api_addresses()) == 0:
-                return
-            if not self.tls.ca_certificate_is_saved():
-                return
-        if not self._log_level_is_valid(self._get_log_level()):
-            return
-        config_changed, seal_changed = self._generate_openbao_config_file()
-        env_changed = self._sync_openbao_environment()
-
-        # A raft node completes its join to the cluster using the retry_join
-        # targets read at startup, so restart an uninitialized node when the
-        # config changes to pick up the current active node. Restarting is
-        # harmless at that point since the node holds no data. A seal type
-        # change also requires a restart so OpenBao can pick up PKCS#11 or
-        # transit auto-unseal. Any PKCS#11 config rewrite (secret/lib ready or
-        # updated) must restart so baod-start reloads openbao.env from hsm-lib
-        # and the plugin sees the new seal stanza.
-        restart_needed = (
-            env_changed
-            or seal_changed
-            or (
-                config_changed
-                and (self._openbao_is_uninitialized() or self._hsm_config_requested())
-            )
-        )
-        if restart_needed and self._openbao_service_is_running():
-            self._restart_openbao_service()
-        else:
-            try:
-                self._start_openbao_service()
-            except snap.SnapError as e:
-                logger.error("Failed to start OpenBao service: %s", e)
-                return
-        self._set_peer_relation_node_api_address()
-
-        unauthenticated_openbao = self._get_openbao_client()
-        if unauthenticated_openbao:
-            try:
-                if (
-                    unauthenticated_openbao.is_api_available()
-                    and unauthenticated_openbao.is_initialized()
-                    and unauthenticated_openbao.is_sealed()
-                    and (
-                        unauthenticated_openbao.is_seal_type_transit()
-                        or unauthenticated_openbao.get_seal_type() == "pkcs11"
-                    )
-                ):
-                    logger.info(
-                        "OpenBao is sealed with an auto-unseal type, restarting to trigger unseal"
-                    )
-                    self._restart_openbao_service()
-                    return
-            except OpenBaoClientError:
-                pass
-
-        openbao = self._get_authenticated_openbao_client()
-        if not openbao:
-            return
-        self._configure_pki_secrets_engine(openbao)
-        self._configure_acme_server(openbao)
-        self._sync_openbao_autounseal(openbao)
-        self._sync_openbao_kv(openbao)
-        self._sync_openbao_pki(openbao)
-
-        if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
-            return
-
-        if openbao.is_active() and not openbao.is_raft_cluster_healthy():
-            logger.warning("Raft cluster is not healthy: %s", openbao.get_raft_cluster_state())
-
-    def _on_remove(self, event: RemoveEvent):
-        """Handle remove charm event.
-
-        Removes the openbao service and the raft data and removes the node from the raft cluster.
-        """
-        self._remove_node_from_raft_cluster()
-        if self._openbao_service_is_running():
-            self.machine.stop(OPENBAO_SNAP_NAME)
-        self._delete_openbao_data()
-
-    def _on_create_backup_action(self, event: ActionEvent) -> None:
-        """Handle the create-backup action.
-
-        Creates a snapshot and stores it on S3 storage.
-        Outputs the ID of the backup to the user.
-
-        Args:
-            event: ActionEvent
-        """
-        skip_verify: bool = event.params.get("skip-verify", False)
-
-        openbao_client = self._get_authenticated_openbao_client()
-        if not openbao_client:
-            event.fail(message="Failed to initialize OpenBao client.")
-            return
-        try:
-            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
-            backup_key = manager.create_backup(openbao_client, skip_verify=skip_verify)
-        except ManagerError as e:
-            logger.error("Failed to create backup: %s", e)
-            event.fail(message=f"Failed to create backup: {e}")
-            return
-        event.set_results({"backup-id": backup_key})
-
-    def _on_list_backups_action(self, event: ActionEvent) -> None:
-        """Handle the list-backups action.
-
-        Lists all backups stored in S3 bucket.
-        """
-        skip_verify: bool = event.params.get("skip-verify", False)
-
-        try:
-            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
-            backup_ids = manager.list_backups(skip_verify=skip_verify)
-        except ManagerError as e:
-            logger.error("Failed to list backups: %s", e)
-            event.fail(message=f"Failed to list backups: {e}")
-            return
-
-        event.set_results({"backup-ids": json.dumps(backup_ids)})
-
-    def _on_restore_backup_action(self, event: ActionEvent) -> None:
-        """Handle the restore-backup action.
-
-        Restores the snapshot with the provided ID.
-        """
-        openbao_client = self._get_active_openbao_client()
-        if not openbao_client:
-            event.fail(message="Failed to initialize an active OpenBao client.")
-            return
-        key = event.params.get("backup-id")
-        # This should be enforced by Juju/charmcraft.yaml, but we assert here
-        # to make the typechecker happy
-        assert isinstance(key, str)
-        skip_verify: bool = event.params.get("skip-verify", False)
-
-        try:
-            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
-            manager.restore_backup(openbao_client, key, skip_verify=skip_verify)
-        except ManagerError as e:
-            logger.error("Failed to restore backup: %s", e)
-            event.fail(message=f"Failed to restore backup: {e}")
-            return
-
-        event.set_results({"restored": event.params.get("backup-id")})
-
-    def _openbao_service_is_running(self) -> bool:
-        """Check if the OpenBao service is running."""
-        service = self.machine.get_service(process=OPENBAO_PROCESS_NAME)
-        return False if not service else service.is_running()
-
-    def _delete_openbao_data(self) -> None:
-        """Delete OpenBao's data."""
-        try:
-            self.machine.remove_path(path=f"{OPENBAO_STORAGE_PATH}/vault.db")
-            logger.info("Removed OpenBao's main database")
-        except ValueError:
-            logger.info("No OpenBao database to remove")
-        try:
-            self.machine.remove_path(path=f"{OPENBAO_STORAGE_PATH}/raft/raft.db")
-            logger.info("Removed OpenBao's Raft database")
-        except ValueError:
-            logger.info("No OpenBao raft database to remove")
-
-    def _remove_node_from_raft_cluster(self):
-        """Remove the node from the raft cluster."""
-        if not (approle := self._get_openbao_approle_secret()):
-            logger.error("Failed to authenticate to OpenBao")
-            return
-        api_address = self._api_address
-        if not api_address:
-            logger.error("Can't remove node from cluster - OpenBao API address is not available")
-            return
-        openbao = OpenBaoClient(url=api_address, ca_cert_path=None)
-        if not openbao.is_api_available():
-            logger.error("Can't remove node from cluster - OpenBao API is not available")
-            return
-        if not openbao.is_initialized():
-            logger.error("Can't remove node from cluster - OpenBao is not initialized")
-            return
-        try:
-            if openbao.is_sealed():
-                logger.error("Can't remove node from cluster - OpenBao is sealed")
-                return
-        except OpenBaoClientError as e:
-            logger.error("Can't remove node from cluster - OpenBao status check failed: %s", e)
-            return
-        try:
-            openbao.authenticate(approle)
-        except OpenBaoAuthenticationError:
-            logger.warning("OpenBao rejected the charm's credentials during raft node removal")
-            return
-        if openbao.is_node_in_raft_peers(id=self._node_id) and openbao.get_num_raft_peers() > 1:
-            openbao.remove_raft_node(id=self._node_id)
-
-    def _check_s3_pre_requisites(self) -> str | None:
-        """Check if the S3 pre-requisites are met."""
-        if not self.unit.is_leader():
-            return "Only leader unit can perform backup operations"
-        if not self.juju_facade.relation_exists(S3_RELATION_NAME):
-            return "S3 relation not created"
-        if missing_parameters := self._get_missing_s3_parameters():
-            return "S3 parameters missing ({})".format(", ".join(missing_parameters))
-        return None
-
-    def _get_backup_key(self) -> str:
-        """Return the backup key.
-
-        Returns:
-            str: The backup key
-        """
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        return f"{BACKUP_KEY_PREFIX}-{self.model.name}-{timestamp}"
-
-    def _get_s3_parameters(self) -> Dict[str, str]:
-        """Retrieve S3 parameters from the S3 integrator relation.
-
-        Removes leading and trailing whitespaces from the parameters.
-
-        Returns:
-            Dict[str, str]: Dictionary of the S3 parameters.
-        """
-        s3_parameters = self.s3_requirer.get_s3_connection_info()
-        for key, value in s3_parameters.items():
-            if isinstance(value, str):
-                s3_parameters[key] = value.strip()
-        return s3_parameters
-
-    def _get_missing_s3_parameters(self) -> List[str]:
-        """Return the list of missing S3 parameters.
-
-        Returns:
-            List[str]: List of missing required S3 parameters.
-        """
-        s3_parameters = self.s3_requirer.get_s3_connection_info()
-        return [param for param in REQUIRED_S3_PARAMETERS if param not in s3_parameters]
-
-    def _get_relation_api_address(self, relation: Relation) -> str:
-        """Get the API address for the given relation."""
-        ingress_address = self.juju_facade.get_ingress_address(relation=relation)
-        return f"https://{ingress_address}:{OPENBAO_PORT}"
-
     def _sync_openbao_kv(self, openbao: OpenBaoClient) -> None:
         """Goes through all the openbao-kv relations and sends necessary KV information."""
         if not self.juju_facade.is_leader:
@@ -931,9 +706,7 @@ class OpenBaoOperatorCharm(CharmBase):
             logger.debug("OpenBao CA certificate not available")
             return
         manager = KVManager(self, openbao, self.openbao_kv, ca_certificate)
-
-        kv_requests = self.openbao_kv.get_kv_requests()
-        for kv_request in kv_requests:
+        for kv_request in self.openbao_kv.get_kv_requests():
             if not (openbao_url := self._get_relation_api_address(kv_request.relation)):
                 logger.debug("Failed to get OpenBao URL for relation %s", kv_request.relation.id)
                 continue
@@ -947,302 +720,194 @@ class OpenBaoOperatorCharm(CharmBase):
                 openbao_url=openbao_url,
             )
 
-    def _sync_openbao_pki(self, openbao_client: OpenBaoClient) -> None:
-        """Goes through all the openbao-pki relations and sends necessary TLS certificate."""
-        if not common_name_config_is_valid(
-            self.juju_facade.get_string_config("pki_ca_common_name")
-        ):
+    def _on_authorize_charm_action(self, event: ActionEvent) -> None:
+        """Grant the charm access to OpenBao with the token in the given secret."""
+        if not self.unit.is_leader():
+            event.fail("This action must be run on the leader unit.")
             return
-        if not allowed_domains_config_is_valid(
-            self.juju_facade.get_string_config("pki_ca_allowed_domains")
-        ):
-            return
-        if not sans_dns_config_is_valid(self.juju_facade.get_string_config("pki_ca_sans_dns")):
-            return
-        certificate_request = self._get_pki_certificate_request()
-        if not certificate_request:
-            return
-        # Pass tls_certificates_pki only if relation exists; PKIManager derives mode from this
-        tls_certificates_pki = (
-            self.tls_certificates_pki
-            if self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME)
-            else None
-        )
-        manager = PKIManager(
-            charm=self,
-            openbao_client=openbao_client,
-            certificate_request_attributes=certificate_request,
-            mount_point=OPENBAO_PKI_MOUNT,
-            role_name=OPENBAO_PKI_ROLE,
-            openbao_pki=self.openbao_pki,
-            tls_certificates_pki=tls_certificates_pki,
-            allowed_domains=self.juju_facade.get_string_config("pki_allowed_domains"),
-            allow_bare_domains=self.juju_facade.get_bool_config("pki_allow_bare_domains"),
-            allow_subdomains=self.juju_facade.get_bool_config("pki_allow_subdomains"),
-            allow_wildcard_certificates=self.juju_facade.get_bool_config(
-                "pki_allow_wildcard_certificates"
-            ),
-            allow_any_name=self.juju_facade.get_bool_config("pki_allow_any_name"),
-            allow_ip_sans=self.juju_facade.get_bool_config("pki_allow_ip_sans"),
-            organization=self.juju_facade.get_string_config("pki_organization"),
-            organizational_unit=self.juju_facade.get_string_config("pki_organizational_unit"),
-            country=self.juju_facade.get_string_config("pki_country"),
-            province=self.juju_facade.get_string_config("pki_province"),
-            locality=self.juju_facade.get_string_config("pki_locality"),
-            self_signed_ca_validity_hours=self.juju_facade.get_int_config(
-                "pki_self_signed_ca_validity"
-            )
-            or 87600,
-        )
-        manager.sync()
-
-    def _configure_pki_secrets_engine(self, openbao: OpenBaoClient) -> None:  # noqa: C901
-        """Configure the PKI secrets engine."""
-        if not common_name_config_is_valid(
-            self.juju_facade.get_string_config("pki_ca_common_name")
-        ):
+        try:
+            token = self.juju_facade.get_latest_secret_content(
+                id=event.params.get("secret-id", "")
+            ).get("token", "")
+        except (NoSuchSecretError, SecretRemovedError):
             logger.warning(
-                "pki_ca_common_name is not set in the charm config, not configuring PKI secrets engine"
+                "Secret id provided could not be found by the charm when authorizing charm."
+            )
+            event.fail(
+                "The secret id provided could not be found by the charm. Please grant the token secret to the charm."
             )
             return
-        if not allowed_domains_config_is_valid(
-            self.juju_facade.get_string_config("pki_allowed_domains")
-        ):
-            logger.warning(
-                "pki_ca_allowed_domains has invalid value, must be a comma separated list, skipping PKI secrets engine configuration"
+        if not token:
+            logger.warning("Token not found in the secret when authorizing charm.")
+            event.fail("Token not found in the secret. Please provide a valid token secret.")
+            return
+        if not (openbao := self._get_openbao_client()):
+            event.fail("The OpenBao API address or CA certificate is not available yet.")
+            return
+        try:
+            authenticated = openbao.authenticate(Token(token))
+        except OpenBaoAuthenticationError:
+            authenticated = False
+        if not authenticated:
+            logger.error("The token provided is not valid when authorizing charm.")
+            event.fail(
+                "The token provided is not valid. Please use a OpenBao token with the appropriate permissions."
             )
             return
-        if not sans_dns_config_is_valid(self.juju_facade.get_string_config("pki_ca_sans_dns")):
-            logger.warning(
-                "pki_ca_sans_dns has invalid value, must be a comma separated list, skipping PKI secrets engine configuration"
+        try:
+            openbao.enable_approle_auth_method()
+            openbao.create_or_update_policy_from_file(
+                name=CHARM_POLICY_NAME, path=CHARM_POLICY_PATH
             )
-            return
-        certificate_request = self._get_pki_certificate_request()
-        if not certificate_request:
-            return
-        # Pass tls_certificates_pki only if relation exists; PKIManager derives mode from this
-        tls_certificates_pki = (
-            self.tls_certificates_pki
-            if self.juju_facade.relation_exists(TLS_CERTIFICATES_PKI_RELATION_NAME)
-            else None
-        )
-        manager = PKIManager(
-            charm=self,
-            openbao_client=openbao,
-            certificate_request_attributes=certificate_request,
-            mount_point=OPENBAO_PKI_MOUNT,
-            role_name=OPENBAO_PKI_ROLE,
-            tls_certificates_pki=tls_certificates_pki,
-            openbao_pki=self.openbao_pki,
-            allowed_domains=self.juju_facade.get_string_config("pki_allowed_domains"),
-            allow_bare_domains=self.juju_facade.get_bool_config("pki_allow_bare_domains"),
-            allow_subdomains=self.juju_facade.get_bool_config("pki_allow_subdomains"),
-            allow_wildcard_certificates=self.juju_facade.get_bool_config(
-                "pki_allow_wildcard_certificates"
-            ),
-            allow_any_name=self.juju_facade.get_bool_config("pki_allow_any_name"),
-            allow_ip_sans=self.juju_facade.get_bool_config("pki_allow_ip_sans"),
-            organization=self.juju_facade.get_string_config("pki_organization"),
-            organizational_unit=self.juju_facade.get_string_config("pki_organizational_unit"),
-            country=self.juju_facade.get_string_config("pki_country"),
-            province=self.juju_facade.get_string_config("pki_province"),
-            locality=self.juju_facade.get_string_config("pki_locality"),
-            self_signed_ca_validity_hours=self.juju_facade.get_int_config(
-                "pki_self_signed_ca_validity"
+            role_id = openbao.create_or_update_approle(
+                name=APPROLE_ROLE_NAME,
+                policies=[CHARM_POLICY_NAME, DEFAULT_POLICY_NAME],
+                token_ttl="1h",
+                token_max_ttl="1h",
             )
-            or 87600,
-        )
-        manager.configure()
-
-    def _get_pki_certificate_request(self) -> CertificateRequestAttributes | None:
-        common_name = self.juju_facade.get_string_config("pki_ca_common_name")
-        if not common_name:
-            logger.warning("pki_ca_common_name is not set in the charm config")
-            return None
-        sans_dns = self.juju_facade.get_string_config("pki_ca_sans_dns")
-        if not sans_dns_config_is_valid(sans_dns):
-            logger.warning("pki_ca_sans_dns is not valid")
-            return None
-        if sans_dns:
-            sans_dns = [name.strip() for name in sans_dns.split(",")]
-        return CertificateRequestAttributes(
-            common_name=common_name,
-            sans_dns=frozenset(sans_dns) if sans_dns else frozenset(),
-            country_name=self.juju_facade.get_string_config("pki_ca_country_name")
-            if self.juju_facade.get_string_config("pki_ca_country_name")
-            else None,
-            state_or_province_name=self.juju_facade.get_string_config(
-                "pki_ca_state_or_province_name"
+            secret_id = openbao.generate_role_secret_id(name=APPROLE_ROLE_NAME)
+            self.juju_facade.set_app_secret_content(
+                content={"role-id": role_id, "secret-id": secret_id},
+                label=OPENBAO_CHARM_APPROLE_SECRET_LABEL,
+                description="The authentication details for the charm's access to openbao.",
             )
-            if self.juju_facade.get_string_config("pki_ca_state_or_province_name")
-            else None,
-            locality_name=self.juju_facade.get_string_config("pki_ca_locality_name")
-            if self.juju_facade.get_string_config("pki_ca_locality_name")
-            else None,
-            organization=self.juju_facade.get_string_config("pki_ca_organization")
-            if self.juju_facade.get_string_config("pki_ca_organization")
-            else None,
-            organizational_unit=self.juju_facade.get_string_config("pki_ca_organizational_unit")
-            if self.juju_facade.get_string_config("pki_ca_organizational_unit")
-            else None,
-            email_address=self.juju_facade.get_string_config("pki_ca_email_address")
-            if self.juju_facade.get_string_config("pki_ca_email_address")
-            else None,
-            is_ca=True,
-        )
-
-    def _configure_acme_server(self, openbao: OpenBaoClient) -> None:
-        if not common_name_config_is_valid(
-            self.juju_facade.get_string_config("acme_ca_common_name")
-        ):
-            logger.warning(
-                "acme_ca_common_name has invalid value, skipping ACME server configuration"
+            event.set_results(
+                {"result": "Charm authorized successfully. You may now remove the secret."}
             )
-            return
-        if not allowed_domains_config_is_valid(
-            self.juju_facade.get_string_config("acme_allowed_domains")
-        ):
-            logger.warning(
-                "acme_allowed_domains has invalid value, must be a comma separated list, skipping PKI secrets engine configuration"
-            )
-            return
-        if not sans_dns_config_is_valid(self.juju_facade.get_string_config("acme_ca_sans_dns")):
-            logger.warning(
-                "acme_ca_sans_dns has invalid value, must be a comma separated list, skipping PKI secrets engine configuration"
-            )
-            return
-        certificate_request = self._get_acme_certificate_request()
-        if not certificate_request:
-            return
-        manager = ACMEManager(
-            charm=self,
-            openbao_client=openbao,
-            mount_point=ACME_MOUNT,
-            tls_certificates_acme=self.tls_certificates_acme,
-            certificate_request_attributes=certificate_request,
-            role_name=ACME_ROLE_NAME,
-            openbao_address=f"https://{self._ingress_address}:{OPENBAO_PORT}",
-            allowed_domains=self.juju_facade.get_string_config("acme_allowed_domains"),
-            allow_bare_domains=self.juju_facade.get_bool_config("acme_allow_bare_domains"),
-            allow_subdomains=self.juju_facade.get_bool_config("acme_allow_subdomains"),
-            allow_wildcard_certificates=self.juju_facade.get_bool_config(
-                "acme_allow_wildcard_certificates"
-            ),
-            allow_any_name=self.juju_facade.get_bool_config("acme_allow_any_name"),
-            allow_ip_sans=self.juju_facade.get_bool_config("acme_allow_ip_sans"),
-            organization=self.juju_facade.get_string_config("acme_organization"),
-            organizational_unit=self.juju_facade.get_string_config("acme_organizational_unit"),
-            country=self.juju_facade.get_string_config("acme_country"),
-            province=self.juju_facade.get_string_config("acme_province"),
-            locality=self.juju_facade.get_string_config("acme_locality"),
-        )
-        manager.configure()
+        except OpenBaoClientError as e:
+            logger.exception("OpenBao returned an error while authorizing the charm")
+            event.fail(f"OpenBao returned an error while authorizing the charm: {str(e)}")
 
-    def _get_acme_certificate_request(self) -> CertificateRequestAttributes | None:
-        common_name = self.juju_facade.get_string_config("acme_ca_common_name")
-        if not common_name:
-            logger.warning("acme_ca_common_name is not set in the charm config")
-            return None
-        sans_dns = self.juju_facade.get_string_config("acme_ca_sans_dns")
-        if not sans_dns_config_is_valid(sans_dns):
-            logger.warning("acme_ca_sans_dns is not valid")
-            return None
-        if sans_dns:
-            sans_dns = [name.strip() for name in sans_dns.split(",")]
-        return CertificateRequestAttributes(
-            common_name=common_name,
-            sans_dns=frozenset(sans_dns) if sans_dns else frozenset(),
-            country_name=self.juju_facade.get_string_config("acme_ca_country_name")
-            if self.juju_facade.get_string_config("acme_ca_country_name")
-            else None,
-            state_or_province_name=self.juju_facade.get_string_config(
-                "acme_ca_state_or_province_name"
-            )
-            if self.juju_facade.get_string_config("acme_ca_state_or_province_name")
-            else None,
-            locality_name=self.juju_facade.get_string_config("acme_ca_locality_name")
-            if self.juju_facade.get_string_config("acme_ca_locality_name")
-            else None,
-            organization=self.juju_facade.get_string_config("acme_ca_organization")
-            if self.juju_facade.get_string_config("acme_ca_organization")
-            else None,
-            organizational_unit=self.juju_facade.get_string_config("acme_ca_organizational_unit")
-            if self.juju_facade.get_string_config("acme_ca_organizational_unit")
-            else None,
-            email_address=self.juju_facade.get_string_config("acme_ca_email_address")
-            if self.juju_facade.get_string_config("acme_ca_email_address")
-            else None,
-            is_ca=True,
-        )
+    def _on_bootstrap_raft_action(self, event: ActionEvent) -> None:
+        """Bootstraps the raft cluster when a single node is present.
 
-    def _get_default_lease_ttl(self) -> str:
-        """Return the default lease ttl config."""
-        default_lease_ttl = self.config.get("default_lease_ttl")
-        if not default_lease_ttl or not isinstance(default_lease_ttl, str):
-            raise ValueError("Invalid config default_lease_ttl")
-        return default_lease_ttl
-
-    def _get_max_lease_ttl(self) -> str:
-        """Return the max lease ttl config."""
-        max_lease_ttl = self.config.get("max_lease_ttl")
-        if not max_lease_ttl or not isinstance(max_lease_ttl, str):
-            raise ValueError("Invalid config max_lease_ttl")
-        return max_lease_ttl
-
-    def _get_log_level(self) -> str:
-        """Return the log level config."""
-        log_level = self.config.get("log_level")
-        if not log_level or not isinstance(log_level, str):
-            raise ValueError("Invalid config log_level")
-        return log_level
-
-    def _log_level_is_valid(self, log_level: str) -> bool:
-        return log_level in ["trace", "debug", "info", "warn", "error"]
-
-    def _get_logrotate_frequency(self) -> str:
-        """Return the logrotate frequency config."""
-        logrotate_frequency = str(self.config.get("logrotate_frequency"))
-        if not self._logrotate_frequency_is_valid(str(logrotate_frequency)):
-            raise ValueError(f"Invalid logrotatde frequency: {logrotate_frequency}")
-        return logrotate_frequency
-
-    def _logrotate_frequency_is_valid(self, logrotate_frequency: str) -> bool:
-        return logrotate_frequency in ["daily", "weekly", "monthly"]
-
-    def _generate_logrotate_conf(self) -> None:
-        """Write the logrotate configuration file."""
-        logrotate_conf_template = """\
-        /var/log/syslog
-        {{
-            rotate {rotate_count}
-            {frequency}
-            maxsize {maxsize}
-            missingok
-            notifempty
-            compress
-            delaycompress
-            postrotate
-                /usr/lib/rsyslog/rsyslog-rotate
-            endscript
-        }}
+        This is useful when OpenBao has lost quorum. The application must first
+        be reduced to a single unit.
         """
-        logrotate_frequency = self._get_logrotate_frequency()
-        logrotate_conf = logrotate_conf_template.format(
-            rotate_count=LOGROTATE_DEFAULT_COUNT,
-            frequency=logrotate_frequency,
-            maxsize=LOGROTATE_DEFAULT_MAXSIZE,
-        )
-        logger.debug(logrotate_conf)
-        _ = LOGROTATE_PATH.write_text(logrotate_conf)
+        if not self._api_address:
+            event.fail(message="Network bind address is not available")
+            return
+        try:
+            RaftManager(self, self.workload).bootstrap(self._node_id, self._api_address)
+        except ManagerError as e:
+            logger.error("Failed to bootstrap raft: %s", e)
+            event.fail(message=f"Failed to bootstrap raft: {e}")
+            return
+        event.set_results({"result": "Raft cluster bootstrapped successfully."})
 
-    def _get_openbao_approle_secret(self) -> AppRole | None:
-        """Get the approle details from the secret.
+    def _on_create_backup_action(self, event: ActionEvent) -> None:
+        """Create a snapshot, store it on S3 and return its ID."""
+        if not (openbao_client := self._get_authenticated_openbao_client()):
+            event.fail(message="Failed to initialize OpenBao client.")
+            return
+        try:
+            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
+            backup_key = manager.create_backup(
+                openbao_client, skip_verify=event.params.get("skip-verify", False)
+            )
+        except ManagerError as e:
+            logger.error("Failed to create backup: %s", e)
+            event.fail(message=f"Failed to create backup: {e}")
+            return
+        event.set_results({"backup-id": backup_key})
+
+    def _on_list_backups_action(self, event: ActionEvent) -> None:
+        """List the IDs of the backups stored on S3."""
+        try:
+            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
+            backup_ids = manager.list_backups(skip_verify=event.params.get("skip-verify", False))
+        except ManagerError as e:
+            logger.error("Failed to list backups: %s", e)
+            event.fail(message=f"Failed to list backups: {e}")
+            return
+        event.set_results({"backup-ids": json.dumps(backup_ids)})
+
+    def _on_restore_backup_action(self, event: ActionEvent) -> None:
+        """Restore the snapshot with the given ID."""
+        if not (openbao_client := self._get_active_openbao_client()):
+            event.fail(message="Failed to initialize an active OpenBao client.")
+            return
+        key = event.params.get("backup-id")
+        # This is enforced by Juju, the assert narrows the type.
+        assert isinstance(key, str)
+        try:
+            manager = BackupManager(self, self.s3_requirer, S3_RELATION_NAME)
+            manager.restore_backup(
+                openbao_client, key, skip_verify=event.params.get("skip-verify", False)
+            )
+        except ManagerError as e:
+            logger.error("Failed to restore backup: %s", e)
+            event.fail(message=f"Failed to restore backup: {e}")
+            return
+        event.set_results({"restored": key})
+
+    def _get_openbao_client(self) -> OpenBaoClient | None:
+        """Return a client for the OpenBao service of this unit, if it can be reached."""
+        if not self._api_address or not self.tls.tls_file_available_in_charm(File.CA):
+            return None
+        return OpenBaoClient(
+            url=self._api_address,
+            ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA),
+        )
+
+    def _get_authenticated_openbao_client(self) -> OpenBaoClient | None:
+        """Return a client for this unit authenticated with the charm's AppRole.
+
+        Returns None if OpenBao is not available, or neither active nor standby,
+        or the charm has not been authorized.
+        """
+        openbao = self._get_openbao_client()
+        if not openbao or not openbao.is_api_available():
+            return None
+        if not self._authenticate_openbao_client(openbao):
+            return None
+        if not openbao.is_active_or_standby():
+            return None
+        return openbao
+
+    def _get_active_openbao_client(self) -> OpenBaoClient | None:
+        """Return an authenticated client for the _active_ OpenBao node.
+
+        This may not be the OpenBao service running on this unit.
+        """
+        for address in [self._api_address, *self._other_peer_node_api_addresses()]:
+            if not address:
+                continue
+            try:
+                openbao = OpenBaoClient(
+                    address, ca_cert_path=self.tls.get_tls_file_path_in_charm(File.CA)
+                )
+            except (OpenBaoCertsError, TransientJujuError) as e:
+                logger.warning("Failed to get OpenBao client: %s", e)
+                continue
+            if openbao.is_active():
+                if not openbao.is_api_available() or not self._authenticate_openbao_client(
+                    openbao
+                ):
+                    return None
+                return openbao
+        return None
+
+    def _authenticate_openbao_client(self, openbao: OpenBaoClient) -> bool:
+        """Authenticate the client with the charm's AppRole.
 
         Returns:
-            AppRole: An AppRole object with role_id and secret_id set from the
-                     values stored in the Juju secret, or None if the secret is
-                     not found or either of the values are not set.
+            bool: Whether the OpenBao client authentication was successful.
         """
+        if not (approle := self._get_approle_auth_secret()):
+            return False
+        try:
+            return openbao.authenticate(approle)
+        except OpenBaoAuthenticationError:
+            logger.warning(
+                "OpenBao rejected the charm's credentials. "
+                "Removing stored credentials to prevent lockout."
+            )
+            self.juju_facade.remove_secret(label=OPENBAO_CHARM_APPROLE_SECRET_LABEL)
+            return False
+
+    def _get_approle_auth_secret(self) -> AppRole | None:
+        """Return the charm's AppRole credentials, or None if it has not been authorized."""
         try:
             role_id, secret_id = self.juju_facade.get_secret_content_values(
                 "role-id", "secret-id", label=OPENBAO_CHARM_APPROLE_SECRET_LABEL, refresh=True
@@ -1251,195 +916,6 @@ class OpenBaoOperatorCharm(CharmBase):
             logger.warning("Approle secret not yet created")
             return None
         return AppRole(role_id, secret_id) if role_id and secret_id else None
-
-    @property
-    def _juju_proxy_environment(self) -> dict[str, str]:
-        """Extract Juju proxy model environment variables.
-
-        Returns:
-            Dictionary of proxy environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
-        """
-        env = {}
-        if http_proxy := get_env_var("JUJU_CHARM_HTTP_PROXY"):
-            env["HTTP_PROXY"] = http_proxy
-        if https_proxy := get_env_var("JUJU_CHARM_HTTPS_PROXY"):
-            env["HTTPS_PROXY"] = https_proxy
-        if no_proxy := get_env_var("JUJU_CHARM_NO_PROXY"):
-            env["NO_PROXY"] = no_proxy
-        return env
-
-    def _install_openbao_snap(self) -> None:
-        """Installs the OpenBao snap in the machine."""
-        try:
-            snap_cache = snap.SnapCache()
-            openbao_snap = snap_cache[OPENBAO_SNAP_NAME]
-            if OPENBAO_SNAP_REVISION == openbao_snap.revision and openbao_snap.state in [
-                snap.SnapState.Latest,
-                snap.SnapState.Present,
-            ]:
-                logger.debug(
-                    "Openbao snap revision %s is already installed", OPENBAO_SNAP_REVISION
-                )
-                return
-            with self.temp_maintenance_status("Installing Openbao"):
-                openbao_snap.ensure(
-                    snap.SnapState.Latest,
-                    channel=OPENBAO_SNAP_CHANNEL_FOR_ARCH,
-                    revision=OPENBAO_SNAP_REVISION,
-                )
-                openbao_snap.hold()
-            logger.info("Openbao snap installed")
-            if self._openbao_service_is_running():
-                self.machine.stop(OPENBAO_SNAP_NAME)
-                logger.debug("Previously running Openbao service stopped")
-        except snap.SnapError as e:
-            logger.error("An exception occurred when installing Openbao. Reason: %s", str(e))
-            raise e
-
-    def _create_backend_directory(self) -> None:
-        self.machine.make_dir(path=OPENBAO_STORAGE_PATH)
-
-    def _create_certs_directory(self) -> None:
-        self.machine.make_dir(path=MACHINE_TLS_FILE_DIRECTORY_PATH)
-
-    def _start_openbao_service(self) -> None:
-        """Start the OpenBao service."""
-        snap_cache = snap.SnapCache()
-        openbao_snap = snap_cache[OPENBAO_SNAP_NAME]
-        openbao_snap.start(services=[OPENBAO_SNAP_SERVICE_NAME])
-        logger.debug("OpenBao service started")
-
-    def _sync_openbao_environment(self) -> bool:
-        """Add or remove the systemd drop-in file for the OpenBao service.
-
-        This file is used to set the BAO_TOKEN environment variable for the
-        external OpenBao service when using auto-unseal, and to set proxy environment
-        variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY) when available.
-
-        If no token and no proxy environment variables are available, the systemd drop-in
-        is removed. ``openbao.env`` is restored from an optional ``openbao.env`` shipped
-        in the hsm-lib resource when present; otherwise it is cleared.
-
-        Returns:
-            True if environment files were updated, False otherwise
-        """
-        token = self._get_openbao_autounseal_token()
-        proxy_env = self._juju_proxy_environment
-
-        if not token and not proxy_env:
-            logger.debug("No auto-unseal token or proxy environment variables available")
-            with suppress(ValueError):
-                self.machine.remove_path(SYSTEMD_DROP_IN_FILE_PATH)
-            if self._apply_hsm_openbao_env():
-                return True
-            with suppress(ValueError):
-                self.machine.remove_path(OPENBAO_ENV_PATH)
-                logger.info("Removed systemd drop-in file and openbao.env")
-            return False
-
-        if token:
-            try:
-                SystemdCreds.encrypt_if_changed(SYSTEMD_CRED_EXTERNAL_BAO_TOKEN_NAME, token)
-            except subprocess.CalledProcessError:
-                logger.warning("Failed to encrypt auto-unseal token")
-
-        if self._generate_systemd_drop_in_file(token, proxy_env):
-            SystemdCreds.reload_daemon()
-            return True
-        return False
-
-    def _generate_systemd_drop_in_file(
-        self, external_openbao_token: str | None, proxy_env: dict[str, str]
-    ) -> bool:
-        """Create the systemd drop-in file for the OpenBao service.
-
-        This file is a bit like an overlay, and adds some extra configuration
-        to a service. In particular, we use this file to pass the encrypted
-        external openbao token to the service (if supported), or otherwise inject
-        the token as an environment variable. It also sets proxy environment
-        variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY) if available.
-
-        If the token is passed via a credential, we also update the `openbao.env`
-        file to load this credential into the BAO_TOKEN env var.
-
-        Args:
-            external_openbao_token: The autounseal token, or None if not using autounseal
-            proxy_env: Dictionary of proxy environment variables
-
-        Returns:
-            True if the file was created, False otherwise
-        """
-        jinja2 = Environment(loader=FileSystemLoader(TEMPLATE_PATH))
-        self.machine.make_dir(path=SYSTEMD_DROP_IN_DIR)
-
-        credentials_supported = SystemdCreds.is_credentials_supported()
-
-        # If we have a token but credentials are not supported, log a warning
-        if external_openbao_token and not credentials_supported:
-            logger.warning(
-                "This system configuration does not support systemd credentials. Falling back to un-encrypted environment variables."
-            )
-
-        dropin_content = jinja2.get_template(TEMPLATE_SYSTEMD_DROP_IN_CREDS).render(
-            credential_name=SYSTEMD_CRED_EXTERNAL_BAO_TOKEN_NAME
-            if external_openbao_token and credentials_supported
-            else None,
-            external_openbao_token=external_openbao_token
-            if external_openbao_token and not credentials_supported
-            else None,
-            proxy_env=proxy_env,
-        )
-
-        # Check if file exists and content has changed
-        if self.machine.exists(path=SYSTEMD_DROP_IN_FILE_PATH):
-            existing_content = self.machine.pull(path=SYSTEMD_DROP_IN_FILE_PATH).read()
-            if existing_content == dropin_content:
-                return False
-
-        # Push the drop-in file
-        self.machine.push(path=SYSTEMD_DROP_IN_FILE_PATH, source=dropin_content)
-
-        # If using systemd credentials, also update openbao.env to load the credential
-        if external_openbao_token and SystemdCreds.is_credentials_supported():
-            openbao_env_content = jinja2.get_template(
-                TEMPLATE_OPENBAO_ENV_LOAD_SYSTEMD_CREDS
-            ).render(credential_name=SYSTEMD_CRED_EXTERNAL_BAO_TOKEN_NAME)
-            # Preserve optional provider exports shipped in hsm-lib's openbao.env.
-            if not self._apply_hsm_openbao_env(prefix=openbao_env_content):
-                self.machine.push(path=OPENBAO_ENV_PATH, source=openbao_env_content)
-            logger.info("Updated systemd drop-in file for OpenBao service")
-
-        return True
-
-    def _apply_hsm_openbao_env(self, prefix: str = "") -> bool:
-        """Install optional ``openbao.env`` from the unpacked hsm-lib into SNAP_COMMON.
-
-        ``baod-start`` already sources ``$SNAP_COMMON/openbao.env``. Provider-specific
-        exports can be shipped as ``openbao.env`` inside the hsm-lib tarball; the charm
-        copies them into place without parsing HSM-specific keys.
-
-        Args:
-            prefix: Optional content written before the hsm-lib openbao.env (e.g. transit
-                credential exports).
-
-        Returns:
-            True if ``OPENBAO_ENV_PATH`` was written or changed.
-        """
-        hsm_env_path = f"{HSM_LIB_DIR}/openbao.env"
-        # Use the real filesystem: Machine.exists is often a MagicMock in unit tests
-        # and would otherwise look present.
-        if not Path(hsm_env_path).is_file():
-            return False
-        hsm_content = self.machine.pull(path=hsm_env_path).read()
-        content = f"{prefix.rstrip()}\n{hsm_content}" if prefix else hsm_content
-        if not content.endswith("\n"):
-            content += "\n"
-        if Path(OPENBAO_ENV_PATH).is_file():
-            if Path(OPENBAO_ENV_PATH).read_text(encoding="utf-8") == content:
-                return False
-        self.machine.push(path=OPENBAO_ENV_PATH, source=content)
-        logger.info("Installed openbao.env from hsm-lib into %s", OPENBAO_ENV_PATH)
-        return True
 
     def _filter_active_peer_addresses(self, addresses: List[str]) -> List[str]:
         """Return only the active node's address when one can be identified.
@@ -1491,63 +967,55 @@ class OpenBaoOperatorCharm(CharmBase):
             return False
 
     def _generate_openbao_config_file(self) -> tuple[bool, bool]:
-        """Create the OpenBao config file and push it to the Machine.
+        """Render the OpenBao config file and push it to the workload if it changed.
 
         Returns:
             A tuple of (content_changed, seal_changed).
         """
-        assert self._cluster_address
-        assert self._api_address
+        assert self._api_address and self._cluster_address
+        tls_directory = self.workload.tls_directory_path
         retry_joins = [
-            {
-                "leader_api_addr": node_api_address,
-                "leader_ca_cert_file": f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CA.name.lower()}.pem",  # noqa: E501
-            }
-            for node_api_address in self._filter_active_peer_addresses(
+            {"leader_api_addr": address, "leader_ca_cert_file": f"{tls_directory}/ca.pem"}
+            for address in self._filter_active_peer_addresses(
                 self._other_peer_node_api_addresses()
             )
         ]
-
-        autounseal_configuration_details = self._get_openbao_autounseal_configuration()
-        pkcs11_configuration_details = self._get_pkcs11_seal_configuration()
-
         content = render_openbao_config_file(
-            config_template_path=TEMPLATE_PATH,
+            config_template_path=CONFIG_TEMPLATE_DIR_PATH,
             config_template_name=CONFIG_TEMPLATE_NAME,
-            default_lease_ttl=self._get_default_lease_ttl(),
-            max_lease_ttl=self._get_max_lease_ttl(),
+            default_lease_ttl=self._get_string_config_or_raise("default_lease_ttl"),
+            max_lease_ttl=self._get_string_config_or_raise("max_lease_ttl"),
             cluster_address=self._cluster_address,
             api_address=self._api_address,
-            tls_cert_file=f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.CERT.name.lower()}.pem",
-            tls_key_file=f"{MACHINE_TLS_FILE_DIRECTORY_PATH}/{File.KEY.name.lower()}.pem",
+            tls_cert_file=f"{tls_directory}/cert.pem",
+            tls_key_file=f"{tls_directory}/key.pem",
             tcp_address=f"[::]:{OPENBAO_PORT}",
-            raft_storage_path=OPENBAO_STORAGE_PATH,
+            raft_storage_path=self.workload.raft_storage_path,
             node_id=self._node_id,
             retry_joins=retry_joins,
-            autounseal_config=autounseal_configuration_details,
-            pkcs11_config=pkcs11_configuration_details,
-            log_level=self._get_log_level(),
+            autounseal_config=self._get_openbao_autounseal_configuration(),
+            pkcs11_config=self._get_pkcs11_seal_configuration(),
+            log_level=self._get_string_config_or_raise("log_level"),
         )
+        config_file_path = self.workload.config_file_path
         existing_content = ""
-        openbao_config_file_path = f"{OPENBAO_CONFIG_PATH}/{OPENBAO_CONFIG_FILE_NAME}"
-        if self.machine.exists(path=openbao_config_file_path):
-            existing_content_stringio = self.machine.pull(path=openbao_config_file_path)
-            existing_content = existing_content_stringio.read()
-
+        if self.workload.exists(path=config_file_path):
+            existing_content = self.workload.pull(path=config_file_path).read()
         seal_changed = seal_type_has_changed(existing_content, content)
-        if not config_file_content_matches(existing_content=existing_content, new_content=content):
-            self.machine.push(
-                path=openbao_config_file_path,
-                source=content,
-            )
-            return True, seal_changed
-        return False, seal_changed
+        if config_file_content_matches(existing_content=existing_content, new_content=content):
+            return False, seal_changed
+        self.workload.push(path=config_file_path, source=content)
+        return True, seal_changed
 
-    def _restart_openbao_service(self) -> None:
-        """Restart the OpenBao service."""
-        if self._openbao_service_is_running():
-            self.machine.restart(OPENBAO_SNAP_NAME)
-            logger.debug("OpenBao service restarted")
+    def _get_string_config_or_raise(self, key: str) -> str:
+        """Return a string config option that has a default value."""
+        value = self.config.get(key)
+        if not value or not isinstance(value, str):
+            raise ValueError(f"Invalid config {key}")
+        return value
+
+    def _log_level_is_valid(self) -> bool:
+        return self.config.get("log_level") in LOG_LEVELS
 
     def _get_openbao_autounseal_token(self) -> str | None:
         autounseal_relation_details = self.openbao_autounseal_requires.get_details()
@@ -1556,10 +1024,9 @@ class OpenBaoOperatorCharm(CharmBase):
         autounseal_requirer_manager = AutounsealRequirerManager(
             self, self.openbao_autounseal_requires
         )
-        provider_openbao_token = autounseal_requirer_manager.get_provider_openbao_token(
+        return autounseal_requirer_manager.get_provider_openbao_token(
             autounseal_relation_details, self.tls.get_tls_file_path_in_charm(File.AUTOUNSEAL_CA)
         )
-        return provider_openbao_token
 
     def _get_openbao_autounseal_configuration(self) -> AutounsealConfiguration | None:
         autounseal_relation_details = self.openbao_autounseal_requires.get_details()
@@ -1581,67 +1048,37 @@ class OpenBaoOperatorCharm(CharmBase):
 
     def _hsm_config_requested(self) -> bool:
         """Return whether the operator has set the HSM secret config option."""
-        return bool(self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY))
+        return bool(self._config(HSM_CONFIG_SECRET_ID_CONFIG_KEY))
 
     def _transit_autounseal_requested(self) -> bool:
         """Return whether a transit auto-unseal provider relation is ready."""
         return self.openbao_autounseal_requires.get_details() is not None
 
-    def _get_hsm_lib_resource_path(self) -> str | None:
+    def _get_hsm_lib_resource_path(self) -> Path | None:
         """Return the attached hsm-lib path, or None if missing or a deploy placeholder.
 
         The resource is a directory packed as a tar/zip (module + shared-library
-        dependencies), or a single ELF PKCS#11 ``.so`` for simple providers.
+        dependencies), or a single ELF PKCS#11 `.so` for simple providers.
         Empty or non-ELF text placeholders used at deploy time count as unattached.
         """
         try:
             path = self.model.resources.fetch(HSM_LIB_RESOURCE_NAME)
         except (ModelError, NameError, RuntimeError):
             return None
-        if not path:
+        if not path or not is_hsm_lib_resource_usable(Path(path)):
             return None
-        lib_path = Path(path)
-        if not is_hsm_lib_resource_usable(lib_path):
-            return None
-        return str(lib_path)
+        return Path(path)
 
     def _install_hsm_lib(self) -> str | None:
-        """Install the hsm-lib resource into snap-common and return the PKCS#11 module path."""
-        source = self._get_hsm_lib_resource_path()
-        if not source:
+        """Install the hsm-lib resource in the workload and return the PKCS#11 module path."""
+        if not (resource := self._get_hsm_lib_resource_path()):
             return None
-        source_path = Path(source)
         content = self._get_hsm_secret_content() or {}
-        lib_relative = hsm_lib_module_relative_path(content)
-
-        try:
-            self.machine.replace_directory(HSM_LIB_DIR)
-            if is_hsm_lib_archive(source_path):
-                self.machine.extract_archive(source, HSM_LIB_DIR)
-            elif is_elf_shared_object(source_path):
-                dest = f"{HSM_LIB_DIR}/{source_path.name}"
-                self.machine.copy_file(source, dest)
-            else:
-                return None
-        except (OSError, ValueError) as exc:
-            logger.warning("Failed to install hsm-lib resource: %s", exc)
-            return None
-
-        # Optional openbao.env in the archive is installed where baod-start sources it.
-        self._apply_hsm_openbao_env()
-
-        module = resolve_hsm_pkcs11_module(Path(HSM_LIB_DIR), lib_relative)
-        if not module:
-            logger.warning(
-                "Could not resolve PKCS#11 module under %s (set hsm-config secret key `lib`)",
-                HSM_LIB_DIR,
-            )
-            return None
-        return str(module)
+        return self.workload.install_hsm_lib(resource, hsm_lib_module_relative_path(content))
 
     def _get_hsm_secret_content(self) -> dict[str, str] | None:
         """Return the HSM secret content, or None if it cannot be read."""
-        secret_id = self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
+        secret_id = self._config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
         if not secret_id:
             return None
         try:
@@ -1654,35 +1091,20 @@ class OpenBaoOperatorCharm(CharmBase):
         ):
             return None
 
-    def _get_pkcs11_kms_plugin_metadata(self) -> tuple[str, str, str] | None:
-        """Return (plugin_directory, version, sha256sum) if the snap ships the PKCS#11 plugin."""
-        plugin_path = Path(PKCS11_KMS_PLUGIN_PATH)
-        version_path = Path(PKCS11_KMS_PLUGIN_VERSION_PATH)
-        if not plugin_path.is_file():
-            return None
-        try:
-            version = version_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return None
-        if not version or version == "unsupported":
-            return None
-        try:
-            sha256sum = hashlib.sha256(plugin_path.read_bytes()).hexdigest()
-        except OSError:
-            return None
-        return (PKCS11_KMS_PLUGIN_DIR, version, sha256sum)
-
     def _get_hsm_blocked_status(self) -> BlockedStatus | None:
         """Return a blocked status if PKCS#11 HSM configuration is incomplete or conflicting."""
         if not self._hsm_config_requested():
             return None
+        if self.substrate == Substrate.K8S:
+            return BlockedStatus("PKCS#11 HSM auto-unseal is only supported on machines")
         if self._transit_autounseal_requested():
             return BlockedStatus(
                 "PKCS#11 HSM seal cannot be used together with transit auto-unseal"
             )
-        secret_id = self.juju_facade.get_string_config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
         try:
-            content = self.juju_facade.get_latest_secret_content(id=secret_id)
+            content = self.juju_facade.get_latest_secret_content(
+                id=self._config(HSM_CONFIG_SECRET_ID_CONFIG_KEY)
+            )
         except (NoSuchSecretError, SecretRemovedError, SecretAccessDeniedError):
             return BlockedStatus(
                 "hsm-config secret is not accessible; grant it to the charm with `juju grant-secret`"
@@ -1702,7 +1124,7 @@ class OpenBaoOperatorCharm(CharmBase):
                 "hsm-lib could not be installed; ensure the tarball contains the PKCS#11 "
                 "module (name it pkcs11.so or set secret key `lib` to the module filename)"
             )
-        if not self._get_pkcs11_kms_plugin_metadata():
+        if not self.workload.pkcs11_kms_plugin():
             return BlockedStatus(
                 "OpenBao snap does not include the PKCS#11 KMS plugin "
                 "(requires an amd64/arm64 snap revision that ships it)"
@@ -1713,16 +1135,13 @@ class OpenBaoOperatorCharm(CharmBase):
         """Return PKCS#11 seal configuration when the secret, library, and KMS plugin are ready."""
         if not self._hsm_config_requested() or self._transit_autounseal_requested():
             return None
-        lib_path = self._install_hsm_lib()
-        if not lib_path:
+        if not (lib_path := self._install_hsm_lib()):
             return None
-        content = self._get_hsm_secret_content()
-        if not content:
+        if not (content := self._get_hsm_secret_content()):
             return None
-        plugin_meta = self._get_pkcs11_kms_plugin_metadata()
-        if not plugin_meta:
+        if not (plugin := self.workload.pkcs11_kms_plugin()):
             return None
-        plugin_directory, plugin_version, plugin_sha256sum = plugin_meta
+        plugin_directory, plugin_version, plugin_sha256sum = plugin
         return pkcs11_seal_config_from_secret(
             content,
             lib_path,
@@ -1732,6 +1151,50 @@ class OpenBaoOperatorCharm(CharmBase):
             plugin_sha256sum=plugin_sha256sum,
         )
 
+    @property
+    def _juju_proxy_environment(self) -> dict[str, str]:
+        """Return the HTTP_PROXY, HTTPS_PROXY and NO_PROXY values of the Juju model."""
+        env = {}
+        if http_proxy := get_env_var("JUJU_CHARM_HTTP_PROXY"):
+            env["HTTP_PROXY"] = http_proxy
+        if https_proxy := get_env_var("JUJU_CHARM_HTTPS_PROXY"):
+            env["HTTPS_PROXY"] = https_proxy
+        if no_proxy := get_env_var("JUJU_CHARM_NO_PROXY"):
+            env["NO_PROXY"] = no_proxy
+        return env
+
+    def _access_sans_dns(self) -> frozenset[str]:
+        """Return the DNS names of this unit's certificate."""
+        access_sans_dns = self._config("access_sans_dns")
+        if not access_sans_dns:
+            return frozenset({socket.getfqdn()})
+        if not sans_dns_config_is_valid(access_sans_dns):
+            logger.warning("access_sans_dns is not valid, it must be a comma separated list")
+            return frozenset()
+        return frozenset(
+            {socket.getfqdn(), *(name.strip() for name in access_sans_dns.split(","))}
+        )
+
+    def _access_sans_ip(self) -> frozenset[str]:
+        """Return the IP addresses of this unit's certificate."""
+        ip_addresses = set(self.juju_facade.get_ingress_addresses(PEER_RELATION_NAME))
+        if self._bind_address:
+            ip_addresses.add(self._bind_address)
+        access_sans_ip = self._config("access_sans_ip")
+        if access_sans_ip and not sans_ip_config_is_valid(access_sans_ip):
+            logger.warning(
+                "access_sans_ip is not valid, it must be a comma separated list of IP addresses"
+            )
+        elif access_sans_ip:
+            ip_addresses.update(ip.strip() for ip in access_sans_ip.split(","))
+        return frozenset(ip_addresses)
+
+    def _get_relation_api_address(self, relation: Relation) -> str | None:
+        """Return the API address of this unit on the network of the relation."""
+        if not (ingress_address := self.juju_facade.get_ingress_address(relation=relation)):
+            return None
+        return f"https://{ingress_address}:{OPENBAO_PORT}"
+
     def _set_peer_relation_node_api_address(self) -> None:
         """Set the unit address in the peer relation."""
         assert self._api_address
@@ -1740,86 +1203,53 @@ class OpenBaoOperatorCharm(CharmBase):
             name=PEER_RELATION_NAME,
         )
 
-    def _get_peer_relation_node_api_addresses(self) -> List[str]:
-        """Return the list of peer unit addresses."""
-        peer_relation_data = self.juju_facade.get_remote_units_relation_data(
-            name=PEER_RELATION_NAME,
-        )
+    def _other_peer_node_api_addresses(self) -> List[str]:
+        """Return the API addresses that the other units shared in the peer relation."""
         return [
             databag["node_api_address"]
-            for databag in peer_relation_data
-            if "node_api_address" in databag
-        ] + ([self._api_address] if self._api_address else [])
-
-    def _other_peer_node_api_addresses(self) -> List[str]:
-        """Return the list of other peer unit addresses.
-
-        We exclude our own unit address from the list.
-        """
-        return [
-            node_api_address
-            for node_api_address in self._get_peer_relation_node_api_addresses()
-            if node_api_address != self._api_address
+            for databag in self.juju_facade.get_remote_units_relation_data(name=PEER_RELATION_NAME)
+            if databag.get("node_api_address") not in (None, self._api_address)
         ]
 
-    def _is_openbao_service_started(self) -> bool:
-        """Check if the OpenBao service is started."""
-        snap_cache = snap.SnapCache()
-        openbao_snap = snap_cache[OPENBAO_SNAP_NAME]
-        openbao_services = openbao_snap.services
-        baod_service = openbao_services.get(OPENBAO_SNAP_SERVICE_NAME)
-        if not baod_service:
-            return False
-        if not baod_service["active"]:
-            return False
-        return True
+    def _config(self, key: str) -> str:
+        """Return a string config option, or an empty string if it is not set."""
+        return self.juju_facade.get_string_config(key)
 
     @property
     def _bind_address(self) -> str | None:
-        """Fetches bind address from peer relation and returns it.
-
-        Returns:
-            str: Bind address
-        """
         return self.juju_facade.get_bind_address(relation_name=PEER_RELATION_NAME)
 
     @property
-    def _api_address(self) -> str | None:
-        """Returns the IP with the https schema and openbao port.
+    def _ingress_address(self) -> str | None:
+        return self.juju_facade.get_ingress_address(PEER_RELATION_NAME)
 
-        Example: "https://1.2.3.4:8200"
+    @property
+    def _host(self) -> str | None:
+        """Return the host other units and clients reach this unit at.
+
+        The unit is reachable once Juju has bound its peer network. Pods get a
+        new IP when they are rescheduled, so on Kubernetes the stable pod FQDN
+        is used, e.g. openbao-0.openbao-endpoints.model.svc.cluster.local.
         """
         if not self._bind_address:
             return None
-        return f"https://{self._bind_address}:{OPENBAO_PORT}"
+        return socket.getfqdn() if self.substrate == Substrate.K8S else self._bind_address
+
+    @property
+    def _api_address(self) -> str | None:
+        """Return the API address of this unit, e.g. https://1.2.3.4:8200."""
+        return f"https://{self._host}:{OPENBAO_PORT}" if self._host else None
 
     @property
     def _cluster_address(self) -> str | None:
-        """Return the IP with the https schema and openbao port.
-
-        Example: "https://1.2.3.4:8201"
-        """
-        if not self._bind_address:
-            return None
-        return f"https://{self._bind_address}:{OPENBAO_CLUSTER_PORT}"
+        """Return the cluster address of this unit, e.g. https://1.2.3.4:8201."""
+        return f"https://{self._host}:{OPENBAO_CLUSTER_PORT}" if self._host else None
 
     @property
     def _node_id(self) -> str:
-        """Return node id for openbao.
-
-        Example of node id: "openbao-0"
-        """
+        """Return the raft node id of this unit, e.g. my-model-openbao-0."""
         return f"{self.model.name}-{self.unit.name}"
-
-    @property
-    def _ingress_address(self) -> str | None:
-        """Fetch the ingress address from peer relation and returns it.
-
-        Returns:
-            str: Ingress address
-        """
-        return self.juju_facade.get_ingress_address(PEER_RELATION_NAME)
 
 
 if __name__ == "__main__":  # pragma: nocover
-    main(OpenBaoOperatorCharm)
+    main(OpenBaoCharm)

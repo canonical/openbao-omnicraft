@@ -4,7 +4,7 @@ import ops.testing as testing
 import yaml
 from ops.testing import Context, State
 
-from charm import OpenBaoOperatorCharm
+from charm import OpenBaoCharm
 
 
 class TestCharmConfig:
@@ -13,6 +13,10 @@ class TestCharmConfig:
         "max_lease_ttl": "720h",
         "log_level": "info",
         "logrotate_frequency": "daily",
+        "cpu-limit": "1",
+        "memory-limit": "1Gi",
+        "cpu-request": "500m",
+        "memory-request": "512Mi",
         "access_sans_dns": "example.com",
         "access_sans_ip": "10.0.0.1",
         "access_country_name": "US",
@@ -65,7 +69,7 @@ class TestCharmConfig:
 
     def test_given_config_with_defaults_then_default_config_values_are_correct(self):
         """This test checks the default config values."""
-        ctx = Context(OpenBaoOperatorCharm)
+        ctx = Context(OpenBaoCharm)
         with ctx(ctx.on.start(), State()) as manager:
             manager.run()
             assert manager.charm.model.config.get("default_lease_ttl") == "168h"
@@ -86,7 +90,7 @@ class TestCharmConfig:
 
         This is supposed to fail if a key is removed or the type is changed.
         """
-        ctx = Context(OpenBaoOperatorCharm)
+        ctx = Context(OpenBaoCharm)
         state_in = testing.State(
             config=self.config,
         )

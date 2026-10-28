@@ -8,24 +8,23 @@ from unittest.mock import MagicMock
 
 import ops.testing as testing
 import pytest
-from charms.operator_libs_linux.v2.snap import Snap
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import OpenBaoClientError
+from fixtures import OpenBaoCharmFixtures
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
-from fixtures import OpenBaoCharmFixtures
-from machine import Machine
+from openbao.openbao_autounseal import AutounsealDetails
+from openbao.openbao_client import OpenBaoClientError
+from workload_vm import OpenBaoVMWorkload
 
 
 def _wire_real_hsm_machine_fs(
     mock_machine: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
-    real = Machine()
     hsm_dir = tmp_path / "hsm"
-    monkeypatch.setattr("charm.HSM_LIB_DIR", str(hsm_dir))
-    mock_machine.replace_directory.side_effect = real.replace_directory
-    mock_machine.extract_archive.side_effect = real.extract_archive
-    mock_machine.copy_file.side_effect = real.copy_file
+    monkeypatch.setattr("workload_vm.HSM_LIB_DIR", str(hsm_dir))
+    monkeypatch.setattr("workload_vm.OPENBAO_ENV_PATH", str(tmp_path / "openbao.env"))
+    real = OpenBaoVMWorkload()
+    mock_machine.install_hsm_lib.side_effect = real.install_hsm_lib
+    mock_machine.pkcs11_kms_plugin.side_effect = real.pkcs11_kms_plugin
     return hsm_dir
 
 
@@ -43,11 +42,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_pki_relation_without_external_ca_when_common_name_configured_then_status_is_active(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -344,14 +339,14 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == WaitingStatus("Certificate is unavailable in the charm")
+        assert state_out.unit_status == WaitingStatus(
+            "Waiting for CA certificate to be accessible in the charm"
+        )
 
     def test_given_service_not_started_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(spec=Snap, revision="1.18/stable", services={})
-        }
+        self.mock_machine.is_running.return_value = False
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -378,11 +373,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_api_unavailable_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -409,16 +400,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
 
         state_out = self.ctx.run(self.ctx.on.collect_unit_status(), state_in)
 
-        assert state_out.unit_status == WaitingStatus("OpenBao API is not yet available")
+        assert state_out.unit_status == WaitingStatus("Waiting for OpenBao API to be available")
 
     def test_given_openbao_uninitialized_and_seal_type_transit_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -452,11 +439,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_uninitialized_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -492,11 +475,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_sealed_and_needs_migration_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -532,11 +511,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_sealed_and_doesnt_need_migration_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -572,11 +547,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_sealed_with_transit_seal_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -612,11 +583,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_client_error_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -654,11 +621,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_unauthorized_when_collect_unit_status_then_status_is_blocked(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -696,11 +659,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_authorized_when_collect_unit_status_then_status_is_active(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,
@@ -796,12 +755,12 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         self.mock_autounseal_requires_get_details.return_value = None
         _wire_real_hsm_machine_fs(self.mock_machine, tmp_path, monkeypatch)
         missing_dir = tmp_path / "missing-plugins"
-        monkeypatch.setattr("charm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
+        monkeypatch.setattr("workload_vm.PKCS11_KMS_PLUGIN_DIR", str(missing_dir))
         monkeypatch.setattr(
-            "charm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
+            "workload_vm.PKCS11_KMS_PLUGIN_PATH", str(missing_dir / "openbao-plugin-kms-pkcs11")
         )
         monkeypatch.setattr(
-            "charm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
+            "workload_vm.PKCS11_KMS_PLUGIN_VERSION_PATH", str(missing_dir / "pkcs11.version")
         )
         hsm_lib = tmp_path / "libykcs11.so"
         hsm_lib.write_bytes(b"\x7fELF" + b"\x00" * 16)
@@ -848,11 +807,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
     def test_given_openbao_sealed_with_pkcs11_seal_when_collect_unit_status_then_status_is_waiting(
         self,
     ):
-        self.mock_snap_cache.return_value = {
-            "openbao": MagicMock(
-                spec=Snap, revision="1.18/stable", services={"server": {"active": True}}
-            )
-        }
+        self.mock_machine.is_running.return_value = True
         self.mock_tls.configure_mock(
             **{
                 "tls_file_pushed_to_workload.return_value": True,

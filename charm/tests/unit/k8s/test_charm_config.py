@@ -2,10 +2,10 @@ from pathlib import Path
 
 import ops.testing as testing
 import yaml
+from fixtures import OpenBaoCharmFixtures
 from ops.testing import Context, State
 
 from charm import OpenBaoCharm
-from fixtures import OpenBaoCharmFixtures
 
 
 class TestCharmConfig(OpenBaoCharmFixtures):
@@ -17,7 +17,10 @@ class TestCharmConfig(OpenBaoCharmFixtures):
         "default_lease_ttl": "168h",
         "max_lease_ttl": "720h",
         "log_level": "info",
+        "logrotate_frequency": "daily",
+        "hsm-config-secret-id": "secret:abc",
         "access_sans_dns": "example.com",
+        "access_sans_ip": "10.0.0.1",
         "access_country_name": "US",
         "access_state_or_province_name": "CA",
         "access_locality_name": "San Francisco",

@@ -1,1 +1,1 @@
-../../../k8s/tests/unit/config.hcl
+../k8s/config.hcl

@@ -31,11 +31,10 @@ Feature managers should not:
 import json
 import logging
 import os
-from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from functools import cached_property
-from typing import FrozenSet, MutableMapping, TextIO
+from typing import FrozenSet, MutableMapping
 
 from charmlibs.interfaces.certificate_transfer import CertificateTransferProvides
 from charmlibs.interfaces.tls_certificates import (
@@ -55,11 +54,12 @@ from charmlibs.interfaces.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
-from charms.data_platform_libs.v0.s3 import S3Requirer
-from charms.vault_k8s.v0.vault_kv import VaultKvProvides
 from ops import CharmBase, EventBase, Object, Relation
 from ops.pebble import PathError
 
+from charms.data_platform_libs.v0.s3 import S3Requirer
+from charms.vault_k8s.v0.vault_kv import VaultKvProvides
+from core.base_workload import WorkloadBase
 from openbao.juju_facade import (
     FacadeError,
     JujuFacade,
@@ -194,62 +194,6 @@ class TLSMode(Enum):
     TLS_INTEGRATION = 2
 
 
-# TODO Move this class, it doesn't belong here.
-class WorkloadBase(ABC):
-    """Define an interface for the Machine and Container classes."""
-
-    @abstractmethod
-    def exists(self, path: str) -> bool:
-        """Check if a file exists in the workload."""
-        pass
-
-    @abstractmethod
-    def pull(self, path: str) -> TextIO:
-        """Read file from the workload."""
-        pass
-
-    @abstractmethod
-    def push(self, path: str, source: str) -> None:
-        """Write file to the workload."""
-        pass
-
-    @abstractmethod
-    def make_dir(self, path: str) -> None:
-        """Create directory in the workload."""
-        pass
-
-    @abstractmethod
-    def remove_path(self, path: str, recursive: bool = False) -> None:
-        """Remove file or directory from the workload.
-
-        Raises:
-            ValueError: If the path is not absolute, or the path does not exist.
-        """
-        pass
-
-    @abstractmethod
-    def send_signal(self, signal: int, process: str) -> None:
-        """Send a signal to a process in the workload."""
-        pass
-
-    @abstractmethod
-    def restart(self, process: str) -> None:
-        """Restart the workload service."""
-
-    @abstractmethod
-    def stop(self, process: str) -> None:
-        """Stop a service in the workload."""
-        pass
-
-    @abstractmethod
-    def is_accessible(self) -> bool:
-        """Return whether the workload is accessible.
-
-        For a container, this would check if we can connect to pebble.
-        """
-        pass
-
-
 class OpenBaoCertsError(Exception):
     """Exception raised when a openbao certificate is not found."""
 
@@ -275,8 +219,6 @@ class TLSManager(Object):
     def __init__(
         self,
         charm: CharmBase,
-        service_name: str,
-        tls_directory_path: str,
         workload: WorkloadBase,
         common_name: str,
         sans_dns: FrozenSet[str] = frozenset(),
@@ -292,11 +234,8 @@ class TLSManager(Object):
 
         Args:
             charm: CharmBase
-            service_name: Name of the container in k8s and
-                name of the process in machine.
-            tls_directory_path: Path of the directory
-                where certificates should be stored on the workload.
-            workload: Either a Container or a Machine.
+            workload: The OpenBao workload, which stores the certificates
+                in its `tls_directory_path`.
             common_name: The common name of the certificate
             sans_dns: Subject alternative names of the certificate
             sans_ip: Subject alternative IP addresses of the certificate
@@ -311,8 +250,7 @@ class TLSManager(Object):
         self.charm = charm
         self.juju_facade = JujuFacade(charm)
         self.workload = workload
-        self._service_name = service_name
-        self.tls_directory_path = tls_directory_path
+        self.tls_directory_path = workload.tls_directory_path
         self.common_name = common_name
         self.sans_dns = sans_dns
         self.sans_ip = sans_ip
@@ -575,7 +513,7 @@ class TLSManager(Object):
     def _restart_openbao(self) -> None:
         """Attempt to restart the OpenBao server."""
         try:
-            self.workload.restart(self._service_name)
+            self.workload.restart()
             logger.debug("OpenBao restarted")
         except Exception:
             logger.debug("Couldn't restart OpenBao. Proceeding normally.")
@@ -1896,13 +1834,9 @@ class RaftManager:
         self,
         charm: CharmBase,
         workload: WorkloadBase,
-        service_name: str,
-        storage_path: str,
     ):
         self._juju_facade = JujuFacade(charm)
         self._workload = workload
-        self._service_name = service_name
-        self._storage_path = storage_path
 
     def bootstrap(self, node_id: str, address: str) -> None:
         """Bootstrap a OpenBao cluster in Raft mode.
@@ -1917,9 +1851,9 @@ class RaftManager:
         if not self._juju_facade.planned_units_for_app == 1:
             raise ManagerError("Bootstrapping a OpenBao cluster requires exactly one unit")
 
-        self._workload.stop(self._service_name)
+        self._workload.stop()
         self._push_peers_json(node_id, address)
-        self._workload.restart(self._service_name)
+        self._workload.restart()
 
         logger.info("OpenBao cluster bootstrapped in Raft mode")
 
@@ -1929,9 +1863,9 @@ class RaftManager:
         This method will create the peers.json file for the OpenBao cluster based
         on the ``node_id`` and ``address`` provided.
         """
-        pass
         self._workload.push(
-            f"{self._storage_path}/raft/peers.json", self._get_peers_json(node_id, address)
+            f"{self._workload.raft_storage_path}/raft/peers.json",
+            self._get_peers_json(node_id, address),
         )
 
     def _get_peers_json(self, node_id: str, address: str) -> str:

@@ -10,16 +10,16 @@ from pathlib import Path
 import hcl
 import ops.testing as testing
 import pytest
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import (
-    AppRole,
-)
-from ops.pebble import Layer
-
 from certificates_helpers import (
     generate_example_provider_certificate,
 )
 from fixtures import MockBinding, OpenBaoCharmFixtures
+from ops.pebble import Layer
+
+from openbao.openbao_autounseal import AutounsealDetails
+from openbao.openbao_client import (
+    AppRole,
+)
 
 
 class MockRelation:
@@ -64,7 +64,7 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
             with open(f"{temp_dir}/openbao.hcl", "r") as f:
                 actual_config = f.read()
 
-            with open("tests/unit/config.hcl", "r") as f:
+            with open("tests/unit/k8s/config.hcl", "r") as f:
                 expected_config = f.read()
             actual_content_hcl = hcl.loads(actual_config)
             expected_content_hcl = hcl.loads(expected_config)
