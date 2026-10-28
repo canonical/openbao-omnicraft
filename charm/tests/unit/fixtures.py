@@ -57,6 +57,7 @@ class OpenBaoCharmFixtures:
 
     substrate: Substrate
     mock_workload_class = True
+    mock_tls_class = True
 
     @pytest.fixture(autouse=True, params=[Substrate.VM, Substrate.K8S], ids=["vm", "k8s"])
     def setup(self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
@@ -69,7 +70,8 @@ class OpenBaoCharmFixtures:
             if self.mock_workload_class:
                 self.mock_workload = self._mock_workload(stack, WORKLOADS[self.substrate])
             # When we want to mock the instances, we use the return value of the mocked class
-            self.mock_tls = self._patch(stack, "charm.TLSManager", TLSManager)
+            if self.mock_tls_class:
+                self.mock_tls = self._patch(stack, "charm.TLSManager", TLSManager)
             self.mock_openbao = self._patch(stack, "charm.OpenBaoClient", OpenBaoClient)
             self.mock_openbao.generate_self_signed_ca.return_value = ("cert-pem", "key-pem")
             self.mock_openbao_autounseal_provider_manager = self._patch(
