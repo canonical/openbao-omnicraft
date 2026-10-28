@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from openbao.openbao_client import (
+from common.openbao_client import (
     AppRole,
     AuditDeviceType,
     OpenBaoAuthenticationError,
@@ -19,7 +19,7 @@ from openbao.openbao_client import (
     SecretsBackend,
     Token,
 )
-from openbao.openbao_http import (
+from common.openbao_http import (
     ForbiddenError,
     InternalServerError,
     InvalidRequestError,
@@ -44,7 +44,7 @@ def make_response(
     return response
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_token_as_auth_details_when_authenticate_then_token_is_set(patch_get: MagicMock):
     patch_get.return_value = make_response(json_body={"data": "random data"})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -53,7 +53,7 @@ def test_given_token_as_auth_details_when_authenticate_then_token_is_set(patch_g
     assert openbao._client.token == "some token"
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_valid_token_as_auth_details_when_authenticate_then_authentication_succeeds(
     patch_get: MagicMock,
 ):
@@ -62,7 +62,7 @@ def test_given_valid_token_as_auth_details_when_authenticate_then_authentication
     assert openbao.authenticate(Token("some token"))
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_invalid_token_as_auth_details_when_authenticate_then_authentication_fails(
     patch_get: MagicMock,
 ):
@@ -72,7 +72,7 @@ def test_given_invalid_token_as_auth_details_when_authenticate_then_authenticati
         openbao.authenticate(Token("some token"))
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_transient_error_when_authenticate_then_returns_false(
     patch_get: MagicMock,
 ):
@@ -81,8 +81,8 @@ def test_given_transient_error_when_authenticate_then_returns_false(
     assert not openbao.authenticate(Token("some token"))
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_approle_as_auth_details_when_authenticate_then_approle_login_is_called(
     patch_post: MagicMock, patch_get: MagicMock
 ):
@@ -97,7 +97,7 @@ def test_given_approle_as_auth_details_when_authenticate_then_approle_login_is_c
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_connection_error_when_is_api_available_then_return_false(
     patch_request: MagicMock,
 ):
@@ -107,7 +107,7 @@ def test_given_connection_error_when_is_api_available_then_return_false(
     assert not openbao.is_api_available()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_api_returns_when_is_api_available_then_return_true(patch_request: MagicMock):
     patch_request.return_value = make_response()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -115,7 +115,7 @@ def test_given_api_returns_when_is_api_available_then_return_true(patch_request:
     assert openbao.is_api_available()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_node_in_peer_list_when_is_node_in_raft_peers_then_returns_true(
     patch_get: MagicMock,
 ):
@@ -128,7 +128,7 @@ def test_given_node_in_peer_list_when_is_node_in_raft_peers_then_returns_true(
     assert openbao.is_node_in_raft_peers(node_id)
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_node_not_in_peer_list_when_is_node_in_raft_peers_then_returns_false(
     patch_get: MagicMock,
 ):
@@ -141,7 +141,7 @@ def test_given_node_not_in_peer_list_when_is_node_in_raft_peers_then_returns_fal
     assert not openbao.is_node_in_raft_peers(node_id)
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_1_node_in_raft_cluster_when_get_num_raft_peers_then_returns_1(
     patch_get: MagicMock,
 ):
@@ -166,7 +166,7 @@ def test_given_1_node_in_raft_cluster_when_get_num_raft_peers_then_returns_1(
     assert openbao.get_num_raft_peers() == 3
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_approle_not_in_auth_methods_when_enable_approle_auth_then_approle_is_added_to_auth_methods(
     patch_post: MagicMock,
 ):
@@ -178,7 +178,7 @@ def test_given_approle_not_in_auth_methods_when_enable_approle_auth_then_approle
     patch_post.assert_called_once_with("/v1/sys/auth/approle", json={"type": "approle"})
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_audit_device_is_not_yet_enabled_when_enable_audit_device_then_device_is_enabled(
     patch_post: MagicMock,
 ):
@@ -190,7 +190,7 @@ def test_given_audit_device_is_not_yet_enabled_when_enable_audit_device_then_dev
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_audit_device_is_enabled_when_enable_audit_device_then_nothing_happens(
     patch_post: MagicMock,
 ):
@@ -205,7 +205,7 @@ def test_given_audit_device_is_enabled_when_enable_audit_device_then_nothing_hap
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.put")
+@patch("common.openbao_http.OpenBaoHttp.put")
 def test_given_policy_with_mount_when_configure_policy_then_policy_is_formatted_properly(
     patch_put: MagicMock,
 ):
@@ -222,7 +222,7 @@ def test_given_policy_with_mount_when_configure_policy_then_policy_is_formatted_
         )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.put")
+@patch("common.openbao_http.OpenBaoHttp.put")
 def test_given_policy_without_mount_when_configure_policy_then_policy_created_correctly(
     patch_put: MagicMock,
 ):
@@ -237,8 +237,8 @@ def test_given_policy_without_mount_when_configure_policy_then_policy_created_co
         )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_approle_with_valid_params_when_configure_approle_then_approle_created(
     patch_post: MagicMock, patch_get: MagicMock
 ):
@@ -266,7 +266,7 @@ def test_given_approle_with_valid_params_when_configure_approle_then_approle_cre
     patch_get.assert_called_once_with("/v1/auth/approle/role/test-approle/role-id")
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_given_secrets_engine_with_valid_params_when_enable_secrets_engine_then_secrets_engine_enabled(
     patch_post: MagicMock,
 ):
@@ -283,7 +283,7 @@ def test_given_secrets_engine_with_valid_params_when_enable_secrets_engine_then_
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.delete")
+@patch("common.openbao_http.OpenBaoHttp.delete")
 def test_when_disable_secrets_engine_then_secrets_engine_disabled(
     mock_delete: MagicMock,
 ):
@@ -294,7 +294,7 @@ def test_when_disable_secrets_engine_then_secrets_engine_disabled(
     mock_delete.assert_called_with("/v1/sys/mounts/some/path")
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_200_when_is_active_then_return_true(
     patch_request: MagicMock,
 ):
@@ -303,7 +303,7 @@ def test_given_health_status_returns_200_when_is_active_then_return_true(
     assert openbao.is_active_or_standby()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_standby_when_is_active_then_return_false(
     patch_request: MagicMock,
 ):
@@ -313,7 +313,7 @@ def test_given_health_status_returns_standby_when_is_active_then_return_false(
     assert not openbao.is_active()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_health_status_returns_5xx_when_is_active_then_return_false(
     patch_request: MagicMock,
 ):
@@ -322,7 +322,7 @@ def test_given_health_status_returns_5xx_when_is_active_then_return_false(
     assert not openbao.is_active_or_standby()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.request")
+@patch("common.openbao_http.OpenBaoHttp.request")
 def test_given_connection_error_when_is_active_then_return_false(patch_request: MagicMock):
     patch_request.side_effect = requests.exceptions.ConnectionError()
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -342,7 +342,7 @@ def test_when_remove_raft_node_is_called_and_exception_raised_then_exception_is_
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "openbao.openbao_http.OpenBaoHttp.post",
+        "common.openbao_http.OpenBaoHttp.post",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -363,7 +363,7 @@ def test_when_is_node_in_raft_peers_called_and_exception_raised_then_exception_i
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "openbao.openbao_http.OpenBaoHttp.get",
+        "common.openbao_http.OpenBaoHttp.get",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -384,7 +384,7 @@ def test_when_get_num_raft_peers_called_andexception_raised_then_exception_is_su
     exception_raised: Exception, expectation: ContextManager, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
-        "openbao.openbao_http.OpenBaoHttp.get",
+        "common.openbao_http.OpenBaoHttp.get",
         MagicMock(side_effect=exception_raised),
     )
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -392,7 +392,7 @@ def test_when_get_num_raft_peers_called_andexception_raised_then_exception_is_su
         openbao.get_num_raft_peers()
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_read(patch_get: MagicMock):
     patch_get.return_value = make_response(json_body={"data": {"key": "value"}})
     openbao = OpenBaoClient(url="http://whatever-url", ca_cert_path="whatever path")
@@ -401,7 +401,7 @@ def test_read(patch_get: MagicMock):
     patch_get.assert_called_once_with("/v1/some/path")
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.list_get_fallback")
+@patch("common.openbao_http.OpenBaoHttp.list_get_fallback")
 def test_list(patch_list_get_fallback: MagicMock):
     patch_list_get_fallback.return_value = make_response(
         json_body={"data": {"keys": ["key1", "key2"]}}
@@ -412,7 +412,7 @@ def test_list(patch_list_get_fallback: MagicMock):
     patch_list_get_fallback.assert_called_once_with("/v1/some/path")
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 def test_given_role_config_matches_given_config_when_role_config_matches_given_config_then_returns_true(
     patch_get: MagicMock,
 ):
@@ -451,7 +451,7 @@ def test_given_role_config_matches_given_config_when_role_config_matches_given_c
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.get")
+@patch("common.openbao_http.OpenBaoHttp.get")
 @pytest.mark.parametrize(
     "allowed_domains,allow_subdomains, allow_wildcard_certificates, allow_any_name, allow_ip_sans, organization, organizational_unit, country, province, locality",
     [
@@ -634,7 +634,7 @@ def test_given_role_config_does_not_match_given_config_when_role_config_matches_
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_when_sign_pki_csr_succeeds_then_certificate_object_returned(patch_post: MagicMock):
     patch_post.return_value = make_response(
         json_body={
@@ -660,7 +660,7 @@ def test_when_sign_pki_csr_succeeds_then_certificate_object_returned(patch_post:
     assert certificate.chain == ["chain-pem"]
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_then_returns_certificate_and_key(
     patch_post: MagicMock,
 ):
@@ -688,7 +688,7 @@ def test_when_generate_self_signed_ca_then_returns_certificate_and_key(
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_passed(
     patch_post: MagicMock,
 ):
@@ -729,7 +729,7 @@ def test_when_generate_self_signed_ca_with_optional_params_then_extra_params_pas
     )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_when_generate_self_signed_ca_fails_then_openbao_client_error_raised(
     patch_post: MagicMock,
 ):
@@ -744,7 +744,7 @@ def test_when_generate_self_signed_ca_fails_then_openbao_client_error_raised(
         )
 
 
-@patch("openbao.openbao_http.OpenBaoHttp.post")
+@patch("common.openbao_http.OpenBaoHttp.post")
 def test_when_sign_pki_csr_denied_by_openbao_then_openbao_client_error_raised(
     patch_post: MagicMock,
 ):

@@ -126,6 +126,6 @@ class OpenBaoK8sWorkload(WorkloadBase):
         """Return None: PKCS#11 HSM auto-unseal is only supported on machines."""
         return None
 
-    def pkcs11_kms_plugin(self) -> tuple[str, str, str] | None:
+    def pkcs11_kms_plugin(self) -> tuple[str, str, str, str] | None:
         """Return None: the OCI image does not ship the PKCS#11 KMS plugin."""
         return None

@@ -16,8 +16,8 @@ import pytest
 from certificates import generate_example_provider_certificate
 from fixtures import OpenBaoCharmFixtures
 
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import AppRole
+from common.openbao_autounseal import AutounsealDetails
+from common.openbao_client import AppRole
 from workload_vm import OpenBaoVMWorkload
 
 

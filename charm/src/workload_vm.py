@@ -19,12 +19,12 @@ from typing import TextIO
 from jinja2 import Environment, FileSystemLoader
 
 from charms.operator_libs_linux.v2 import snap
-from core.base_workload import WorkloadBase, WorkloadError
-from openbao.openbao_helpers import (
+from common.openbao_helpers import (
     is_elf_shared_object,
     is_hsm_lib_archive,
     resolve_hsm_pkcs11_module,
 )
+from core.base_workload import WorkloadBase, WorkloadError
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +381,7 @@ class OpenBaoVMWorkload(WorkloadBase):
             return None
         return str(module)
 
-    def pkcs11_kms_plugin(self) -> tuple[str, str, str] | None:
+    def pkcs11_kms_plugin(self) -> tuple[str, str, str, str] | None:
         """Return the plugin metadata if the snap revision ships the PKCS#11 KMS plugin."""
         plugin_path = Path(PKCS11_KMS_PLUGIN_PATH)
         if not plugin_path.is_file():
@@ -393,7 +393,7 @@ class OpenBaoVMWorkload(WorkloadBase):
             return None
         if not version or version == "unsupported":
             return None
-        return (PKCS11_KMS_PLUGIN_DIR, version, sha256sum)
+        return (PKCS11_KMS_PLUGIN_DIR, PKCS11_KMS_PLUGIN_COMMAND, version, sha256sum)
 
 
 def _systemd_credentials_supported() -> bool:

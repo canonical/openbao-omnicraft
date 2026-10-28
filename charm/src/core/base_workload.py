@@ -111,5 +111,5 @@ class WorkloadBase(ABC):
         """
 
     @abstractmethod
-    def pkcs11_kms_plugin(self) -> tuple[str, str, str] | None:
-        """Return the (directory, version, sha256sum) of the PKCS#11 KMS plugin, if shipped."""
+    def pkcs11_kms_plugin(self) -> tuple[str, str, str, str] | None:
+        """Return the (directory, command, version, sha256sum) of the PKCS#11 KMS plugin."""

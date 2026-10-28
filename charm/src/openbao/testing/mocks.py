@@ -10,16 +10,13 @@ from typing import Iterator
 from unittest.mock import patch
 
 from charms.data_platform_libs.v0.s3 import S3Requirer
-from openbao.openbao_client import OpenBaoClient
-from openbao.openbao_managers import (
-    ACMEManager,
-    AutounsealProviderManager,
-    AutounsealRequirerManager,
-    BackupManager,
-    KVManager,
-    PKIManager,
-    TLSManager,
-)
+from common.openbao_client import OpenBaoClient
+from managers.acme import ACMEManager
+from managers.autounseal import AutounsealProviderManager, AutounsealRequirerManager
+from managers.backup import BackupManager
+from managers.kv import KVManager
+from managers.pki import PKIManager
+from managers.tls import TLSManager
 
 
 class OpenBaoCharmFixturesBase:
@@ -57,7 +54,7 @@ class OpenBaoCharmFixturesBase:
                 patch("charm.S3Requirer", autospec=S3Requirer)
             ).return_value
             self.mock_backup_manager = stack.enter_context(
-                patch("charm.BackupManager", autospec=BackupManager)
+                patch("events.actions.BackupManager", autospec=BackupManager)
             ).return_value
             # When we want to mock the callable, we use the mock directly
             self.mock_socket_fqdn = stack.enter_context(patch("socket.getfqdn"))

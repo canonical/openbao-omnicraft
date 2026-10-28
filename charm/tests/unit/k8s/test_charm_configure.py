@@ -16,8 +16,8 @@ from certificates_helpers import (
 from fixtures import MockBinding, OpenBaoCharmFixtures
 from ops.pebble import Layer
 
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import (
+from common.openbao_autounseal import AutounsealDetails
+from common.openbao_client import (
     AppRole,
 )
 

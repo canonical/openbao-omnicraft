@@ -8,7 +8,7 @@ import ops.testing as testing
 import pytest
 
 from charm import OpenBaoCharm
-from openbao.openbao_managers import RaftManager
+from managers.raft import RaftManager
 from openbao.testing.mocks import OpenBaoCharmFixturesBase
 from workload_vm import OpenBaoVMWorkload
 
@@ -30,7 +30,7 @@ class OpenBaoCharmFixtures(OpenBaoCharmFixturesBase):
             self.mock_machine.is_accessible.return_value = True
             self.mock_machine.configure_service.return_value = False
             self.mock_raft_manager = stack.enter_context(
-                patch("charm.RaftManager", autospec=RaftManager)
+                patch("events.actions.RaftManager", autospec=RaftManager)
             ).return_value
             yield
 

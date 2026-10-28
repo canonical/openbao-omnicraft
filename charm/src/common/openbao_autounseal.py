@@ -76,7 +76,7 @@ from ops import (
 )
 from pydantic import BaseModel, Field, ValidationError
 
-from openbao.juju_facade import (
+from common.juju_facade import (
     JujuFacade,
     MultipleRelationsFoundError,
     NoRemoteAppError,
