@@ -25,7 +25,7 @@ from common.openbao_http import (
     InvalidRequestError,
 )
 
-TEST_PATH = "./tests/unit/openbao"
+TEST_PATH = "./tests/unit"
 
 
 def make_response(
