@@ -18,7 +18,7 @@ from typing import List, MutableMapping, Optional, Protocol
 import requests
 from requests.exceptions import ConnectionError, RequestException
 
-from openbao.openbao_http import (
+from common.openbao_http import (
     ForbiddenError,
     HttpError,
     InternalServerError,

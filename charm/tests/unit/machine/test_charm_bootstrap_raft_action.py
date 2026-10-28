@@ -8,7 +8,7 @@ import pytest
 from fixtures import OpenBaoCharmFixtures
 from ops.testing import ActionFailed
 
-from openbao.openbao_managers import ManagerError
+from common.exceptions import ManagerError
 
 
 class TestCharmBootstrapRaftAction(OpenBaoCharmFixtures):

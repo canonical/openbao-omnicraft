@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 from botocore.response import StreamingBody
 
-from openbao.openbao_s3 import S3, S3Error
+from common.openbao_s3 import S3, S3Error
 
 
 class TestS3(unittest.TestCase):
@@ -391,7 +391,7 @@ class TestS3(unittest.TestCase):
             verify=None,
         )
 
-    @patch("openbao.openbao_s3.logger.warning")
+    @patch("common.openbao_s3.logger.warning")
     @patch("boto3.session.Session")
     def test_given_skip_verify_true_when_create_s3_session_then_insecure_warning_is_logged(
         self,
@@ -407,7 +407,7 @@ class TestS3(unittest.TestCase):
         )
         patch_warning.assert_called_once()
 
-    @patch("openbao.openbao_s3.logger.warning")
+    @patch("common.openbao_s3.logger.warning")
     @patch("boto3.session.Session")
     def test_given_skip_verify_false_when_create_s3_session_then_no_insecure_warning_is_logged(
         self,

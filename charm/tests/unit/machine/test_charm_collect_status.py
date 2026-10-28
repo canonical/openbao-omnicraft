@@ -11,8 +11,8 @@ import pytest
 from fixtures import OpenBaoCharmFixtures
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
-from openbao.openbao_autounseal import AutounsealDetails
-from openbao.openbao_client import OpenBaoClientError
+from common.openbao_autounseal import AutounsealDetails
+from common.openbao_client import OpenBaoClientError
 from workload_vm import OpenBaoVMWorkload
 
 

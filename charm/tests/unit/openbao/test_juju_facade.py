@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 from ops.model import ModelError, SecretNotFoundError
 
-from openbao.juju_facade import (
+from common.juju_facade import (
     InvalidRelationDataError,
     JujuFacade,
     MultipleRelationsFoundError,

@@ -4,7 +4,7 @@
 
 from pathlib import Path
 
-from openbao.openbao_helpers import (
+from common.openbao_helpers import (
     Pkcs11SealConfiguration,
     allowed_domains_config_is_valid,
     config_file_content_matches,

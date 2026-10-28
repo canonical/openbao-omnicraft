@@ -9,7 +9,7 @@ import ops.testing as testing
 import pytest
 from ops.charm import ActionEvent, CharmBase
 
-from openbao.openbao_autounseal import (
+from common.openbao_autounseal import (
     OpenBaoAutounsealDetailsReadyEvent,
     OpenBaoAutounsealProvides,
     OpenBaoAutounsealRequires,

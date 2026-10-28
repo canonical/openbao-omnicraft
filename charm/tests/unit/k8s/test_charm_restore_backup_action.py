@@ -8,7 +8,7 @@ import pytest
 import requests
 from fixtures import OpenBaoCharmFixtures
 
-from openbao.openbao_managers import ManagerError
+from common.exceptions import ManagerError
 
 
 class TestCharmRestoreBackupAction(OpenBaoCharmFixtures):

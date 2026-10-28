@@ -6,7 +6,7 @@ import ops.testing as testing
 import pytest
 from fixtures import MockBinding, OpenBaoCharmFixtures
 
-from openbao.openbao_client import OpenBaoClientError
+from common.openbao_client import OpenBaoClientError
 
 
 class TestCharmAuthorizeAction(OpenBaoCharmFixtures):

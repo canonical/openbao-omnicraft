@@ -9,7 +9,7 @@ import ops.testing as testing
 from fixtures import OpenBaoCharmFixtures, running_container
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
-from openbao.openbao_client import OpenBaoClientError
+from common.openbao_client import OpenBaoClientError
 
 
 class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
