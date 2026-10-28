@@ -3,10 +3,15 @@ name: OpenBao Charm CI/CD
 
 on:
   workflow_call:
+    inputs:
+      rock-built:
+        description: Whether this run built the rock; if not, k8s tests pull the published image
+        type: boolean
+        default: false
 
 jobs:
   build:
-    name: Machine Charm Build
+    name: Charm Build
     runs-on: [self-hosted, linux, X64, large, noble]
     steps:
       - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
@@ -16,35 +21,35 @@ jobs:
         env:
           TOOLCHAINS: python charmcraft
         run: just setup
-      - name: Build machine charm
+      - name: Build charm
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          working-directory: charm/machine
+          working-directory: charm
           charmcraft-enabled: "true"
       - name: Copy test libs into the KV requirer charm
-        run: make -C charm/machine copy-test-libs
+        run: cp charm/src/common/juju_facade.py charm/tests/integration/openbao_kv_requirer_operator/lib/openbao/
       - name: Build KV requirer test charm
         uses: canonical/identity-credentials-workflows/.github/actions/build@v3.1.3
         with:
-          working-directory: charm/machine/tests/integration/openbao_kv_requirer_operator
+          working-directory: charm/tests/integration/openbao_kv_requirer_operator
           charmcraft-enabled: "true"
       - name: Upload charm artifacts
         uses: actions/upload-artifact@v7
         with:
           name: packed-charms
-          path: charm/machine/*.charm
+          path: charm/*.charm
           if-no-files-found: error
           retention-days: 14
       - name: Upload KV requirer charm artifact
         uses: actions/upload-artifact@v7
         with:
-          name: charm-machine-kv-requirer-amd64
-          path: charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm
+          name: charm-kv-requirer-amd64
+          path: charm/tests/integration/openbao_kv_requirer_operator/*.charm
           if-no-files-found: error
           retention-days: 14
 
-  integration-test:
-    name: Integration Test (${{ matrix.suite }})
+  integration-test-machine:
+    name: Machine Integration Test (${{ matrix.suite }})
     needs: build
     runs-on: [self-hosted, linux, X64, large, noble]
     strategy:
@@ -77,17 +82,17 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: packed-charms
-          path: charm/machine
+          path: charm
       - name: Download KV requirer charm artifact
         uses: actions/download-artifact@v8
         with:
-          name: charm-machine-kv-requirer-amd64
-          path: charm/machine/tests/integration/openbao_kv_requirer_operator
+          name: charm-kv-requirer-amd64
+          path: charm/tests/integration/openbao_kv_requirer_operator
       - name: Locate artifacts
         id: artifacts
         run: |
-          echo "charm=$(ls ${{ github.workspace }}/charm/machine/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "kv-charm=$(ls ${{ github.workspace }}/charm/machine/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "charm=$(ls ${{ github.workspace }}/charm/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
       - name: Install MicroCeph and configure RGW for backup tests
         if: matrix.suite == 'test_backup_microceph'
         run: |
@@ -167,8 +172,83 @@ jobs:
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
           KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          SUBSTRATE: machine
           TEST_MODULES: ${{ matrix.suite }}
         with:
-          working-directory: charm/machine
+          working-directory: charm
           charm-enabled: "true"
           charm-file-name: ${{ steps.artifacts.outputs.charm }}
+
+  integration-test-k8s:
+    name: K8s Integration Test (${{ matrix.suite }})
+    needs: build
+    runs-on: [self-hosted, linux, X64, large, noble]
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - test_acme
+          - test_autounseal
+          - test_backup
+          - test_core
+          - test_cos
+          - test_deploy_unseal
+          - test_kv
+          - test_pki
+          - test_pki_self_signed
+          - test_upgrade_first
+          - test_upgrade_latest
+    steps:
+      - uses: canonical/identity-credentials-workflows/.github/actions/prepare@v3.1.3
+        with:
+          workflows-ref: v3.1.3
+      - name: Setup toolchains and bootstrap juju on Canonical K8s
+        env:
+          TOOLCHAINS: python juju-k8s rockcraft
+          JUJU_CHANNEL: 3.6/stable
+        run: just setup
+      - name: Download charm artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: packed-charms
+          path: charm
+      - name: Download KV requirer charm artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: charm-kv-requirer-amd64
+          path: charm/tests/integration/openbao_kv_requirer_operator
+      # Without a rock built in this run, the published upstream-source image is pulled.
+      - name: Download rock artifact from rock continuous delivery
+        if: inputs.rock-built
+        uses: actions/download-artifact@v8
+        with:
+          name: rock-amd64
+          path: rock/2.5.2
+      - name: Import rock into Canonical K8s containerd
+        if: inputs.rock-built
+        run: |
+          ROCK=$(ls rock/2.5.2/*.rock | head -1)
+          IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/charmcraft.yaml)
+          echo "Importing ${ROCK} as ${IMAGE}"
+          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
+          rm rock/2.5.2/openbao-rock.tar
+
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images list -q
+      - name: Locate artifacts
+        id: artifacts
+        run: |
+          echo "charm=$(ls ${{ github.workspace }}/charm/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "kv-charm=$(ls ${{ github.workspace }}/charm/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
+          echo "rock=$(ls ${{ github.workspace }}/rock/2.5.2/*.rock 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Run integration tests
+        uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
+        env:
+          KV_REQUIRER_CHARM_FILE_NAME: ${{ steps.artifacts.outputs.kv-charm }}
+          SUBSTRATE: k8s
+          TEST_MODULES: ${{ matrix.suite }}
+        with:
+          working-directory: charm
+          charm-enabled: "true"
+          charm-file-name: ${{ steps.artifacts.outputs.charm }}
+          rock-file-name: ${{ steps.artifacts.outputs.rock }}

@@ -2,7 +2,7 @@
 
 This folder contains a base [Terraform][Terraform] module for the `openbao` charm.
 
-The module uses the [Terraform Juju provider][Terraform Juju provider] to model the charm deployment onto any Machine environment managed by [Juju][Juju].
+The module uses the [Terraform Juju provider][Terraform Juju provider] to model the charm deployment onto any machine or Kubernetes environment managed by [Juju][Juju]. Set `trust = true` when deploying to Kubernetes.
 
 The base module is not intended to be deployed in separation (it is possible though), but should rather serve as a building block for higher level modules.
 
@@ -10,8 +10,8 @@ The base module is not intended to be deployed in separation (it is possible tho
 
 ### Pre-requisites
 
-- A Machine environment
-- A Juju controller bootstrapped onto the machine environment
+- A machine or Kubernetes environment
+- A Juju controller bootstrapped onto that environment
 - The Juju client
 - Terraform
 
@@ -48,7 +48,7 @@ resource "juju_model" "demo" {
 }
 
 module "openbao" {
-  source = "git::https://github.com/canonical/openbao-omnicraft//machine/terraform"
+  source = "git::https://github.com/canonical/openbao-omnicraft//charm/terraform"
   
   model      = juju_model.demo.name
 }

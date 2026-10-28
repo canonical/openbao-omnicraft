@@ -36,12 +36,12 @@ tox                      # runs 'format', 'lint', 'static', and 'unit' environme
 
 ### Running the integration tests locally
 
-To run the integration tests locally, you will need to have a Juju controller on a machine substrate active (such as lxd).
+The same charm deploys on machines and Kubernetes; its workload is selected at runtime. Integration tests live in `tests/integration/machine` and `tests/integration/k8s`, and `SUBSTRATE` (default `machine`) selects which suite runs. You will need a Juju controller on the matching substrate (for example LXD or MicroK8s).
 
-First, you need to build the `openbao` charm, as well as the test `openbao-kv-requirer` charm. From the `machine/` directory, run the following commands:
+First, you need to build the `openbao` charm, as well as the test `openbao-kv-requirer` charm. From this directory, run the following commands:
 
 ```shell
-make copy-test-libs
+cp src/common/juju_facade.py tests/integration/openbao_kv_requirer_operator/lib/openbao/
 charmcraft pack
 charmcraft pack --project-dir tests/integration/openbao_kv_requirer_operator/
 ```
@@ -49,7 +49,7 @@ charmcraft pack --project-dir tests/integration/openbao_kv_requirer_operator/
 The integration tests are run using `tox`. You can run them with:
 
 ```shell
-tox run -e integration -- --charm_path ./openbao_amd64.charm --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm -k test_autounseal.py
+SUBSTRATE=machine tox run -e integration -- --charm_path ./openbao_amd64.charm --kv_requirer_charm_path ./openbao-kv-requirer_amd64.charm -k test_autounseal.py
 ```
 
 Where the `-k` argument is the test suite you want to run.

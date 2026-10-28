@@ -19,12 +19,12 @@ SHORT_TIMEOUT = (
 )  # How long to wait for apps to settle after integrating them, or configuring them. These events should be quick.
 DEPLOY_TIMEOUT = 60 * 10  # How long to wait for apps to settle after deploying them
 
-APPLICATION_NAME = "openbao-k8s"
 AUTOUNSEAL_TOKEN_SECRET_LABEL = "openbao-autounseal-token"
 LOKI_APPLICATION_NAME = "loki-k8s"
 LOKI_CHANNEL = "1/stable"
 LOKI_REVISION = 199
 METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
+APPLICATION_NAME: str = METADATA["name"]
 MINIO_APPLICATION_NAME = "minio"
 MINIO_REVISION = 383
 MINIO_S3_ACCESS_KEY = "minio_access_key"
@@ -47,4 +47,8 @@ OPENBAO_PKI_REQUIRER_CHANNEL = "latest/stable"
 OPENBAO_PKI_REQUIRER_REVISION = 93
 
 
-OPENBAO_RESOURCES = {"openbao-image": METADATA["resources"]["openbao-image"]["upstream-source"]}
+# Local deploys need every resource; hsm-lib is unused on Kubernetes.
+OPENBAO_RESOURCES = {
+    "openbao-image": METADATA["resources"]["openbao-image"]["upstream-source"],
+    "hsm-lib": str(Path(__file__).resolve().parent.parent / "hsm-lib-placeholder.tar.gz"),
+}

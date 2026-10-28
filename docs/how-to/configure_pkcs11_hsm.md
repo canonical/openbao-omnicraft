@@ -57,11 +57,11 @@ The charm extracts the archive to `/var/snap/openbao/common/hsm/` and points the
 The charm ignores a deploy-time placeholder (non-ELF text). Attach the real tarball before setting the secret.
 
 When deploying a local `.charm` file, Juju requires the resource at deploy time. Use the
-placeholder under `charm/machine/tests/integration/` until you attach a real library:
+placeholder under `charm/tests/integration/` until you attach a real library:
 
 ```bash
 juju deploy ./openbao.charm \
-  --resource hsm-lib=./charm/machine/tests/integration/hsm-lib-placeholder.tar.gz
+  --resource hsm-lib=./charm/tests/integration/hsm-lib-placeholder.tar.gz
 juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz
 ```
 

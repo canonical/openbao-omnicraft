@@ -343,7 +343,7 @@ def _hsm_lib_placeholder_path() -> Path:
     Kept under the integration tests tree; local deploys that need a dummy resource can
     point at the same file.
     """
-    return Path(__file__).resolve().parent / "hsm-lib-placeholder.tar.gz"
+    return Path(__file__).resolve().parent.parent / "hsm-lib-placeholder.tar.gz"
 
 
 def openbao_charm_resources(extra: dict[str, str] | None = None) -> dict[str, str]:
