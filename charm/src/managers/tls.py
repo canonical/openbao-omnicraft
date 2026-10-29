@@ -33,6 +33,7 @@ from common.juju_facade import (
 from core.base_workload import WorkloadBase
 from literals import (
     CA_CERTIFICATE_JUJU_SECRET_LABEL,
+    PEER_RELATION_NAME,
     SEND_CA_CERT_RELATION_NAME,
     TLS_CERTIFICATE_ACCESS_RELATION_NAME,
 )
@@ -130,6 +131,13 @@ class TLSManager(Object):
             self.framework.observe(
                 self.charm.on.update_status, self._configure_self_signed_certificates
             )
+            # Non-leader units issue their certificate once the leader has
+            # created the CA, which it does before sharing its address with
+            # the peers.
+            self.framework.observe(
+                self.charm.on[PEER_RELATION_NAME].relation_changed,
+                self._configure_self_signed_certificates,
+            )
             self.framework.observe(
                 self.charm.on[TLS_CERTIFICATE_ACCESS_RELATION_NAME].relation_broken,
                 self._configure_self_signed_certificates,
@@ -220,6 +228,11 @@ class TLSManager(Object):
                 return
         if not self.ca_certificate_secret_exists():
             logger.debug("No CA certificate found.")
+            return
+        if not self.common_name:
+            # A certificate issued now would not name the unit's address, and
+            # replacing it later restarts OpenBao, possibly mid-join.
+            logger.debug("Unit address not available yet, not issuing a certificate.")
             return
         try:
             ca_private_key, ca_certificate = self.juju_facade.get_secret_content_values(

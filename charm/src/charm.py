@@ -440,21 +440,30 @@ class OpenBaoCharm(CharmBase):
             return
 
         self._set_peer_relation_node_api_address()
-        config_changed, seal_changed = self._generate_openbao_config_file()
+        peer_addresses = self._other_peer_node_api_addresses()
+        active_peer_addresses = self._active_peer_addresses(peer_addresses)
+        config_changed, seal_changed = self._generate_openbao_config_file(
+            retry_join_addresses=active_peer_addresses or peer_addresses
+        )
         environment_changed = self.workload.configure_service(
             self._get_openbao_autounseal_token(), self._juju_proxy_environment
         )
         # A raft node completes its join to the cluster using the retry_join
         # targets read at startup, so restart an uninitialized node when the
         # config changes to pick up the current active node. Restarting is
-        # harmless at that point since the node holds no data. A seal type
+        # harmless at that point since the node holds no data. Without an
+        # active node there is nothing to join, and a restart could only
+        # interrupt an initialization or unseal in progress. A seal type
         # change also requires a restart so OpenBao can pick up PKCS#11 or
         # transit auto-unseal. Any PKCS#11 config rewrite (secret/lib ready or
         # updated) must restart so the new seal stanza is read.
         restart_needed = (
             environment_changed
             or seal_changed
-            or (config_changed and (self._openbao_is_uninitialized() or self.hsm.requested))
+            or (config_changed and self.hsm.requested)
+            or (
+                config_changed and bool(active_peer_addresses) and self._openbao_is_uninitialized()
+            )
         )
         if restart_needed and self.workload.is_running():
             self.workload.restart()
@@ -771,21 +780,21 @@ class OpenBaoCharm(CharmBase):
             return None
         return AppRole(role_id, secret_id) if role_id and secret_id else None
 
-    def _filter_active_peer_addresses(self, addresses: List[str]) -> List[str]:
-        """Return only the active node's address when one can be identified.
+    def _active_peer_addresses(self, addresses: List[str]) -> List[str]:
+        """Return the addresses of the active node, if one can be identified.
 
         OpenBao, unlike Vault, does not forward raft bootstrap answers received
         by standby nodes to the active node, and it answers the challenge of
         whichever retry_join target responds first. A new node can therefore
-        only join the cluster when retry_join points at the active node. When
-        no active node is reachable (e.g. before the cluster is initialized),
-        fall back to all peer addresses.
+        only join the cluster when retry_join points at the active node. No
+        node is active before the cluster is initialized, or when it is
+        unreachable.
         """
         try:
             ca_path = self.tls.get_tls_file_path_in_charm(File.CA)
         except (OpenBaoCertsError, TransientJujuError):
-            logger.debug("CA certificate unavailable, not filtering retry_join addresses")
-            return addresses
+            logger.debug("CA certificate unavailable, cannot find the active peer")
+            return []
         active_addresses = []
         for address in addresses:
             try:
@@ -794,7 +803,7 @@ class OpenBaoCharm(CharmBase):
             except Exception:
                 logger.debug("Failed to probe %s for active status", address, exc_info=True)
         logger.info("Active peers for retry_join: %s (out of %s)", active_addresses, addresses)
-        return active_addresses or addresses
+        return active_addresses
 
     def _openbao_is_uninitialized(self) -> bool:
         """Return whether the local OpenBao node is not yet part of a cluster.
@@ -820,8 +829,11 @@ class OpenBaoCharm(CharmBase):
         except OpenBaoClientError:
             return False
 
-    def _generate_openbao_config_file(self) -> tuple[bool, bool]:
+    def _generate_openbao_config_file(self, retry_join_addresses: List[str]) -> tuple[bool, bool]:
         """Render the OpenBao config file and push it to the workload if it changed.
+
+        Args:
+            retry_join_addresses: API addresses of the raft nodes to join.
 
         Returns:
             A tuple of (content_changed, seal_changed).
@@ -830,9 +842,7 @@ class OpenBaoCharm(CharmBase):
         tls_directory = self.workload.tls_directory_path
         retry_joins = [
             {"leader_api_addr": address, "leader_ca_cert_file": f"{tls_directory}/ca.pem"}
-            for address in self._filter_active_peer_addresses(
-                self._other_peer_node_api_addresses()
-            )
+            for address in retry_join_addresses
         ]
         content = render_openbao_config_file(
             config_template_path=CONFIG_TEMPLATE_DIR_PATH,
