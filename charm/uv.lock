@@ -1122,6 +1122,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "boto3" },
+    { name = "boto3-stubs", extra = ["s3"] },
     { name = "cffi", marker = "platform_machine == 's390x'" },
     { name = "charmlibs-interfaces-certificate-transfer" },
     { name = "charmlibs-interfaces-tls-certificates" },
@@ -1145,7 +1146,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["s3"] },
     { name = "codespell" },
     { name = "pyright" },
     { name = "ruff" },
@@ -1164,6 +1164,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "boto3" },
+    { name = "boto3-stubs", extras = ["s3"] },
     { name = "cffi", marker = "platform_machine == 's390x'", specifier = "<2" },
     { name = "charmlibs-interfaces-certificate-transfer" },
     { name = "charmlibs-interfaces-tls-certificates", specifier = "~=1.8" },
@@ -1186,7 +1187,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["s3"] },
     { name = "codespell" },
     { name = "pyright" },
     { name = "ruff" },
