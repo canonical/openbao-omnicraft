@@ -84,6 +84,22 @@ class TestCharmConfigure(OpenBaoCharmFixtures):
         self.mock_workload.push.assert_not_called()
         self.mock_workload.start.assert_not_called()
 
+    @pytest.mark.parametrize("peer_is_active, restarted", [(True, True), (False, False)])
+    def test_given_uninitialized_node_when_config_changes_then_restarted_only_to_join_active_peer(
+        self, peer_is_active: bool, restarted: bool
+    ):
+        # Without an active peer there is nothing to join, and a restart would
+        # interrupt an initialization or unseal in progress.
+        self.set_openbao_ready(is_initialized=False, is_active=peer_is_active)
+        peer_relation = testing.PeerRelation(
+            endpoint="openbao-peers", peers_data={1: {"node_api_address": "https://1.2.3.4:8200"}}
+        )
+
+        self.configure(self.ready_state(relations=[peer_relation]))
+
+        assert self.mock_workload.restart.called == restarted
+        assert self.mock_workload.start.called != restarted
+
     def test_given_nothing_changed_when_configure_then_openbao_is_started_not_restarted(self):
         self.set_openbao_ready()
 

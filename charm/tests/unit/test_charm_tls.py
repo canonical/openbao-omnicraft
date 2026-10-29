@@ -78,6 +78,28 @@ class TestCharmTLS(OpenBaoCharmFixtures):
 
         assert self.files == {}
 
+    def test_given_no_bind_address_when_config_changed_then_no_certificate_is_issued(self):
+        # A certificate without the unit's address would be replaced as soon
+        # as the address is known, restarting OpenBao.
+        unbound = testing.Network("openbao-peers", bind_addresses=[], ingress_addresses=[])
+
+        state_out = self.ctx.run(self.ctx.on.config_changed(), self.state(networks=[unbound]))
+
+        assert state_out.get_secret(label="self-signed-openbao-ca-certificate")
+        assert self.files == {}
+
+    def test_given_ca_secret_when_peer_relation_changed_then_non_leader_issues_certificate(self):
+        leader_out = self.ctx.run(self.ctx.on.config_changed(), self.state())
+        self.files.clear()
+        peer_relation = testing.PeerRelation(endpoint="openbao-peers", peers_data={1: {}})
+
+        self.ctx.run(
+            self.ctx.on.relation_changed(peer_relation, remote_unit=1),
+            self.state(leader=False, relations=[peer_relation], secrets=list(leader_out.secrets)),
+        )
+
+        assert f"{self.tls_dir}/cert.pem" in self.files
+
     def test_given_access_relation_certificate_when_relation_changed_then_it_is_pushed(self):
         relation = testing.Relation(endpoint="tls-certificates-access")
         provider_certificate, private_key = generate_example_provider_certificate(
