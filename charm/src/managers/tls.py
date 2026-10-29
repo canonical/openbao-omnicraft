@@ -299,6 +299,8 @@ class TLSManager(Object):
 
     def send_ca_cert(self):
         """Send the existing CA cert in the workload to all relations."""
+        if not self.workload.is_accessible():
+            return
         if ca := self.pull_tls_file_from_workload(File.CA):
             for relation in self.juju_facade.get_relations(SEND_CA_CERT_RELATION_NAME):
                 self.certificate_transfer.add_certificates(

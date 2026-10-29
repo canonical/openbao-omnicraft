@@ -548,7 +548,7 @@ resources:
   openbao-image:
     type: oci-image
     description: OCI image for OpenBao, only used on Kubernetes.
-    upstream-source: ghcr.io/canonical/openbao:2.5.2
+    upstream-source: ghcr.io/canonical/openbao:v2.6.0
   hsm-lib:
     type: file
     filename: hsm-lib.tar.gz

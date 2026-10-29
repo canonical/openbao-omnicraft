@@ -101,3 +101,16 @@ class TestCharmTLS(OpenBaoCharmFixtures):
             self.ctx.run(self.ctx.on.relation_joined(relation), self.state(relation))
 
         add.assert_called_once_with(certificates={"my ca"}, relation_id=relation.id)
+
+    def test_given_workload_not_accessible_when_update_status_then_ca_is_left_alone(self):
+        self.mock_workload.is_accessible.return_value = False
+        self.mock_workload.pull.side_effect = ConnectionError("Could not connect to Pebble")
+        relation = testing.Relation(endpoint="send-ca-cert")
+        with (
+            patch("managers.tls.CertificateTransferProvides.add_certificates") as add,
+            patch("managers.tls.CertificateTransferProvides.remove_all_certificates") as remove,
+        ):
+            self.ctx.run(self.ctx.on.update_status(), self.state(relation))
+
+        add.assert_not_called()
+        remove.assert_not_called()

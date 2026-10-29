@@ -223,16 +223,16 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: rock-amd64
-          path: rock/2.5.2
+          path: rock
       - name: Import rock into Canonical K8s containerd
         if: inputs.rock-built
         run: |
-          ROCK=$(ls rock/2.5.2/*.rock | head -1)
+          ROCK=$(ls rock/*.rock | head -1)
           IMAGE=$(yq '.resources.openbao-image.upstream-source' charm/charmcraft.yaml)
           echo "Importing ${ROCK} as ${IMAGE}"
-          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/2.5.2/openbao-rock.tar:${IMAGE}"
-          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/2.5.2/openbao-rock.tar
-          rm rock/2.5.2/openbao-rock.tar
+          sudo rockcraft.skopeo --insecure-policy copy "oci-archive:${ROCK}" "docker-archive:rock/openbao-rock.tar:${IMAGE}"
+          sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images import rock/openbao-rock.tar
+          rm rock/openbao-rock.tar
 
           sudo /snap/k8s/current/bin/ctr --address /run/containerd/containerd.sock --namespace k8s.io images list -q
       - name: Locate artifacts
@@ -240,7 +240,7 @@ jobs:
         run: |
           echo "charm=$(ls ${{ github.workspace }}/charm/*.charm | head -1)" >> "$GITHUB_OUTPUT"
           echo "kv-charm=$(ls ${{ github.workspace }}/charm/tests/integration/openbao_kv_requirer_operator/*.charm | head -1)" >> "$GITHUB_OUTPUT"
-          echo "rock=$(ls ${{ github.workspace }}/rock/2.5.2/*.rock 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
+          echo "rock=$(ls ${{ github.workspace }}/rock/*.rock 2>/dev/null | head -1)" >> "$GITHUB_OUTPUT"
       - name: Run integration tests
         uses: canonical/identity-credentials-workflows/.github/actions/integration-test@v3.1.3
         env:
