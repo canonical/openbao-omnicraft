@@ -325,7 +325,7 @@ class TLSManager(Object):
     def get_tls_file_path_in_charm(self, file: File) -> str:
         """Return the requested file's location in the charm (not in the workload).
 
-        This path would typically be: /var/lib/juju/storage/certs/0/{file}.pem
+        This path is the certs storage location, e.g. /var/snap/openbao/common/certs/{file}.pem
 
         Args:
             file: a File object that determines which file path to return
