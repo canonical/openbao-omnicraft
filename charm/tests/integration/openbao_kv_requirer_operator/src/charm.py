@@ -10,7 +10,7 @@ from typing import Any
 
 from openbao.juju_facade import JujuFacade, NoSuchStorageError
 from openbao_client import OpenBaoClient
-from ops.charm import ActionEvent, CharmBase
+from ops.charm import ActionEvent, CharmBase, CollectStatusEvent
 from ops.framework import EventBase
 from ops.main import main
 from ops.model import ActiveStatus
@@ -38,6 +38,7 @@ class OpenBaoKVRequirerCharm(CharmBase):
         self.juju_facade = JujuFacade(self)
         self.openbao_kv = VaultKvRequires(self, "openbao-kv", mount_suffix="kv")
         self.framework.observe(self.on.install, self._configure)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
         self.framework.observe(self.openbao_kv.on.connected, self._on_kv_connected)
         self.framework.observe(self.openbao_kv.on.ready, self._on_kv_ready)
         self.framework.observe(self.on.create_secret_action, self._on_create_secret_action)
@@ -50,7 +51,11 @@ class OpenBaoKVRequirerCharm(CharmBase):
             content={"nonce": secrets.token_hex(16)},
             description="Nonce for openbao-kv relation",
         )
-        self.unit.status = ActiveStatus()
+
+    def _on_collect_unit_status(self, event: CollectStatusEvent):
+        # Set on every hook: after a pod restart, Juju leaves the unit in
+        # maintenance and does not run install again.
+        event.add_status(ActiveStatus())
 
     def _on_kv_connected(self, event: VaultKvConnectedEvent):
         """Request credentials from OpenBao KV."""
