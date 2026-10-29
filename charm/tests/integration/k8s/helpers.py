@@ -387,7 +387,8 @@ def initialize_unseal_authorize_openbao(juju: jubilant.Juju, app_name: str) -> t
 
 
 def get_openbao_ca_certificate(juju: jubilant.Juju, unit_name: str) -> str:
-    task = juju.exec("cat /var/lib/juju/storage/certs/0/ca.pem", unit=unit_name)
+    # The charm container mounts the certs storage at its charmcraft.yaml location.
+    task = juju.exec("cat /var/snap/openbao/common/certs/ca.pem", unit=unit_name)
     return task.stdout
 
 
