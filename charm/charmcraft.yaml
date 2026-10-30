@@ -40,6 +40,8 @@ containers:
         location: /openbao/config
       - storage: certs
         location: /openbao/certs
+      - storage: tmp
+        location: /tmp
 
 # The locations are those of machines; on Kubernetes they are mounted in the
 # openbao container at the locations above.
@@ -55,6 +57,12 @@ storage:
     type: filesystem
     location: /var/snap/openbao/common/config
     minimum-size: 5M
+  # Scratch space for raft snapshots during a backup restore. The OpenBao
+  # image has no /tmp; on machines the snap has its own.
+  tmp:
+    type: filesystem
+    location: /var/snap/openbao/common/tmp
+    minimum-size: 5G
 
 charm-libs:
   - lib: data_platform_libs.s3
