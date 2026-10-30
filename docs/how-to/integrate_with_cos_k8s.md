@@ -44,7 +44,7 @@ juju deploy opentelemetry-collector-k8s
 Integrate OpenBao K8s with OpenTelemetry Collector:
 
 ```
-juju relate openbao-k8s:cos-agent opentelemetry-collector-k8s:cos-agent
+juju relate openbao:cos-agent opentelemetry-collector-k8s:cos-agent
 ```
 
 Consume the COS offers:

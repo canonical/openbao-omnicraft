@@ -43,7 +43,7 @@ The charm defines the following storage volumes:
 You can provision **larger** volumes at deploy time using the `--storage` flag:
 
 ```shell
-juju deploy openbao-k8s openbao --trust \
+juju deploy openbao --trust \
   --storage openbao-raft=50G \
   --storage tmp=10G
 ```

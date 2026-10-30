@@ -1,10 +1,65 @@
 [project]
-name = "openbao-operator-monorepo"
-version = "0"
+name = "openbao-operator"
+version = "0.1.0"
 requires-python = ">=3.10"
 
+dependencies = [
+    "ops>=3.7.0",
+    "boto3",
+    # imported at runtime by common/openbao_s3.py
+    "boto3-stubs[s3]",
+    "jinja2",
+    "pyhcl",  # import hcl
+    "requests",
+    "charmlibs-interfaces-tls-certificates~=1.8",
+    "charmlibs-interfaces-certificate_transfer",
+    # via certificate_transfer, ingress, tls_certificates, tracing and openbao_kv
+    "pydantic==2.13.0",
+    # via charm_tracing
+    "opentelemetry-exporter-otlp-proto-http",
+    # via ingress_per_unit
+    "jsonschema",
+    # via cos_agent, grafana_dashboard, loki_push_api and prometheus_scrape
+    "cosl>0.0.50",
+    # via tls_certificates
+    "cryptography",
+    # via openbao_kv
+    "pytest-interface-tester",
+    # via kubernetes_compute_resources_patch
+    "lightkube",
+    "lightkube-models",
+    # Defense-in-depth: cffi 2.0.0 may also have calling-convention issues on s390x.
+    "cffi<2; platform_machine == 's390x'",
+    # cryptography >= 44 builds from source on s390x (no wheel) using Rust+aws-lc-rs;
+    # version 43.x uses cffi wrapping system OpenSSL and is confirmed to work.
+    "cryptography<44; platform_machine == 's390x'",
+    # protobuf >= 4.21 uses the upb C extension which crashes on s390x (unaligned
+    # memory access in upb_strtable_lookup2) both at import time and during interpreter
+    # shutdown. Version 4.20.x uses the older implementation that works correctly.
+    "protobuf<4.21; platform_machine == 's390x'",
+    # pynacl >= 1.6 requires libsodium >= 1.0.20 (AEGIS support) but Ubuntu Noble
+    # ships 1.0.18; pin to 1.5.x which works with system libsodium.
+    "pynacl<1.7; platform_machine == 's390x'",
+]
+
+[dependency-groups]
+test = [
+    "allure-pytest",
+    "coverage[toml]",
+    "hvac",
+    "jubilant",
+    "ops[testing]",
+    "pytest",
+    "pytest-jubilant",
+]
+dev = ["codespell", "pyright", "ruff", "types-hvac"]
+
 [tool.uv]
-package = false
+# Fork resolution per platform to enforce the cffi<2 defense on s390x.
+environments = [
+    "platform_machine == 's390x'",
+    "platform_machine != 's390x'",
+]
 
 # Testing tools configuration
 [tool.coverage.run]
@@ -20,7 +75,11 @@ log_cli_level = "INFO"
 # Linting tools configuration
 [tool.ruff]
 line-length = 99
-# extend-exclude is defined in subdirs
+src = ["src", "lib", "tests/unit", "tests/integration"] # correctly sort local imports
+extend-exclude = [
+    # libs used by (and not defined by) this charm
+    "lib/charms/",
+]
 
 [tool.ruff.lint]
 select = [
@@ -50,7 +109,7 @@ extend-ignore = [
     "D413",
 ]
 ignore = ["E501", "D107"]
-per-file-ignores = { "*/tests/*" = ["D100", "D101", "D102", "D103", "D104"] }
+per-file-ignores = { "tests/*" = ["D100", "D101", "D102", "D103", "D104"] }
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
@@ -59,5 +118,12 @@ max-complexity = 10
 skip = "build,lib,venv,icon.svg,.tox,.git,.mypy_cache,.ruff_cache,.coverage"
 
 [tool.pyright]
-# ignore is defined in subdirs
+include = ["src/", "lib/", "tests/"]
+extraPaths = ["src", "lib"]
+ignore = [
+    # libs used by (and not defined by) this charm
+    "lib/charms/",
+    # standalone test charm; its charm-libs are fetched by charmcraft at build time
+    "tests/integration/openbao_kv_requirer_operator/",
+]
 reportMissingParameterType = true

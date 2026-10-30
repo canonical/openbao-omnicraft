@@ -29,7 +29,7 @@ jobs:
       run-id: ${{ steps.resolve.outputs.run-id }}
       snap: ${{ steps.manifest.outputs.snap }}
       rock: ${{ steps.manifest.outputs.rock }}
-      charm-machine: ${{ steps.manifest.outputs.charm-machine }}
+      charm: ${{ steps.manifest.outputs.charm }}
     steps:
       - name: Checkout squash commit
         uses: actions/checkout@v6
@@ -93,10 +93,10 @@ jobs:
         run: |
           SNAP="$(jq -r '.components.snap' release-manifest.json)"
           ROCK="$(jq -r '.components.rock' release-manifest.json)"
-          CHARM_MACHINE="$(jq -r '.components["charm-machine"]' release-manifest.json)"
+          CHARM="$(jq -r '.components.charm' release-manifest.json)"
           echo "snap=${SNAP}" >> "$GITHUB_OUTPUT"
           echo "rock=${ROCK}" >> "$GITHUB_OUTPUT"
-          echo "charm-machine=${CHARM_MACHINE}" >> "$GITHUB_OUTPUT"
+          echo "charm=${CHARM}" >> "$GITHUB_OUTPUT"
           cat release-manifest.json
 
   publish-snap:
@@ -121,11 +121,11 @@ jobs:
     with:
       source-run-id: ${{ needs.resolve-source.outputs.run-id }}
 
-  publish-charm-machine:
-    name: machine charm
+  publish-charm:
+    name: charm
     needs: resolve-source
-    if: needs.resolve-source.outputs.charm-machine == 'true'
-    uses: ./.github/workflows/publish-charm-machine.yaml
+    if: needs.resolve-source.outputs.charm == 'true'
+    uses: ./.github/workflows/publish-charm.yaml
     secrets: inherit
     with:
       source-run-id: ${{ needs.resolve-source.outputs.run-id }}

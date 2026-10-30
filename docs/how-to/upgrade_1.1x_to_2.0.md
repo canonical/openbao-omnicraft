@@ -5,7 +5,7 @@ This guide covers the upgrade path from any OpenBao charm 1.1x version (1.15, 1.
 ## Pre-requisites
 
 - OpenBao 1.1x is deployed and in `active/idle` state.
-- In the case of upgrading `openbao-k8s`, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
+- In the case of upgrading on Kubernetes, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
 - Access to S3 storage for creating a backup.
 
 ## Breaking changes

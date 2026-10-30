@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: OpenBao Charm Publish
+
+on:
+  workflow_call:
+    inputs:
+      source-run-id:
+        description: CI workflow run ID containing the charm artifact
+        type: string
+        required: true
+
+jobs:
+  publish:
+    name: Publish charm
+    runs-on: [self-hosted, linux, X64, large, noble]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download charm artifacts from CI run
+        uses: actions/download-artifact@v8
+        with:
+          name: packed-charms
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: charm
+
+      - name: List charms to release
+        id: charms
+        run: |
+          charms=$(ls "$PWD"/charm/*.charm | tr '\n' ',' | sed 's/,$//')
+          echo "$charms"
+          echo "paths=${charms}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload charm to Charmhub
+        uses: canonical/charming-actions/upload-charm@2.7.0
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          channel: latest/edge
+          destructive-mode: false
+          charm-path: charm
+          built-charm-path: ${{ steps.charms.outputs.paths }}
+          tag-prefix: charm
+
+      - name: Archive charmcraft logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: charmcraft-logs
+          path: /home/runner/.local/state/charmcraft/log/*.log
