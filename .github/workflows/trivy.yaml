@@ -7,19 +7,11 @@ on:
   workflow_dispatch: # Allows manual triggering
 
 jobs:
-  scan-k8s:
+  scan:
     permissions:
       security-events: write
       actions: read
       contents: read
     uses: ./.github/workflows/uv-scan.yaml
     with:
-      path: ./charm/k8s
-  scan-machine:
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-    uses: ./.github/workflows/uv-scan.yaml
-    with:
-      path: ./charm/machine
+      path: ./charm

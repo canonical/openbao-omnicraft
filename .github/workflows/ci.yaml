@@ -17,7 +17,7 @@ jobs:
     outputs:
       snap: ${{ steps.changes.outputs.snap }}
       rock: ${{ steps.changes.outputs.rock }}
-      charm-machine: ${{ steps.changes.outputs.charm-machine }}
+      charm: ${{ steps.changes.outputs.charm }}
     steps:
       - uses: actions/checkout@v6
       - name: Detect modified subfolders
@@ -29,9 +29,8 @@ jobs:
               - 'snap/**'
             rock:
               - 'rock/**'
-            charm-machine:
-              - 'charm/machine/**'
-              - 'charm/openbao-package/**'
+            charm:
+              - 'charm/**'
               - 'snap/**'
               - 'justfile'
 
@@ -47,43 +46,17 @@ jobs:
         env:
           TOOLCHAINS: python go
         run: just setup
-      - name: Ensure vendored shared code is in sync
-        run: |
-          make -C charm/k8s vendor-shared-code
-          make -C charm/machine vendor-shared-code
-      - name: Shared package code quality
+      - name: Charm code quality
         uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
         with:
-          working-directory: charm/openbao-package
-          python-enabled: "true"
-      - name: Machine charm code quality
-        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
-        with:
-          working-directory: charm/machine
+          working-directory: charm
           python-enabled: "true"
           grafana-enabled: "true"
           grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
-      - name: K8s charm code quality
-        uses: canonical/identity-credentials-workflows/.github/actions/code-quality@v3.1.3
-        with:
-          working-directory: charm/k8s
-          python-enabled: "true"
-          grafana-enabled: "true"
-          grafana-dashboard-file-path: src/grafana_dashboards/openbao.json
-      - name: Shared package unit tests
+      - name: Charm unit tests
         uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
         with:
-          working-directory: charm/openbao-package
-          python-enabled: "true"
-      - name: Machine charm unit tests
-        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
-        with:
-          working-directory: charm/machine
-          python-enabled: "true"
-      - name: K8s charm unit tests
-        uses: canonical/identity-credentials-workflows/.github/actions/unit-test@v3.1.3
-        with:
-          working-directory: charm/k8s
+          working-directory: charm
           python-enabled: "true"
 
   continuous-delivery-snap:
@@ -104,12 +77,19 @@ jobs:
     with:
       build: true
 
-  continuous-delivery-charm-machine:
-    name: machine charm
-    needs: [changes, continuous-integration]
-    if: needs.changes.outputs.charm-machine == 'true'
-    uses: ./.github/workflows/cd-charm-machine.yaml
+  continuous-delivery-charm:
+    name: charm
+    needs: [changes, continuous-integration, continuous-delivery-rock]
+    # Runs after the rock, if it was built, so the k8s tests use it.
+    if: |
+      always() &&
+      needs.changes.outputs.charm == 'true' &&
+      needs.continuous-integration.result == 'success' &&
+      (needs.continuous-delivery-rock.result == 'success' || needs.continuous-delivery-rock.result == 'skipped')
+    uses: ./.github/workflows/cd-charm.yaml
     secrets: inherit
+    with:
+      rock-built: ${{ needs.continuous-delivery-rock.result == 'success' }}
 
   release-manifest:
     name: Record release manifest
@@ -118,13 +98,13 @@ jobs:
       - continuous-integration
       - continuous-delivery-snap
       - continuous-delivery-rock
-      - continuous-delivery-charm-machine
+      - continuous-delivery-charm
     if: |
       always() &&
       needs.continuous-integration.result == 'success' &&
       (needs.continuous-delivery-snap.result == 'success' || needs.continuous-delivery-snap.result == 'skipped') &&
       (needs.continuous-delivery-rock.result == 'success' || needs.continuous-delivery-rock.result == 'skipped') &&
-      (needs.continuous-delivery-charm-machine.result == 'success' || needs.continuous-delivery-charm-machine.result == 'skipped')
+      (needs.continuous-delivery-charm.result == 'success' || needs.continuous-delivery-charm.result == 'skipped')
     runs-on: ubuntu-26.04
     steps:
       - name: Write release manifest
@@ -133,14 +113,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           SNAP: ${{ needs.changes.outputs.snap }}
           ROCK: ${{ needs.changes.outputs.rock }}
-          CHARM_MACHINE: ${{ needs.changes.outputs.charm-machine }}
+          CHARM: ${{ needs.changes.outputs.charm }}
         run: |
           jq -n \
             --arg head_sha "$HEAD_SHA" \
             --argjson pr "$PR_NUMBER" \
             --argjson snap "$([ "$SNAP" = "true" ] && echo true || echo false)" \
             --argjson rock "$([ "$ROCK" = "true" ] && echo true || echo false)" \
-            --argjson charm_machine "$([ "$CHARM_MACHINE" = "true" ] && echo true || echo false)" \
+            --argjson charm "$([ "$CHARM" = "true" ] && echo true || echo false)" \
             '{
               head_sha: $head_sha,
               pr: $pr,
@@ -148,7 +128,7 @@ jobs:
               components: {
                 snap: $snap,
                 rock: $rock,
-                "charm-machine": $charm_machine
+                charm: $charm
               }
             }' > release-manifest.json
           cat release-manifest.json
