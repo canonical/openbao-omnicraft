@@ -1,6 +1,6 @@
 ui = true
 
-storage "file" {
+storage "pebbledb" {
   path = "/var/snap/openbao/common/data"
 }
 
