@@ -4,7 +4,7 @@ summary: The Snap for OpenBao
 description: |
   A snap for Openbao, a community-driven fork of Vault managed by the Linux Foundation.
 
-version: "v2.6.0"
+version: "v2.7.2"
 base: core26
 source-code: https://github.com/openbao/openbao
 issues: https://github.com/canonical/openbao-omnicraft/issues

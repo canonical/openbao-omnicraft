@@ -14,18 +14,20 @@ The operator implements the tls-certificates interface supporting automatic cert
 :link: tutorial/
 
 Tutorials
-^^^
 
+````{card-footer}
 **Start here**: a hands-on introduction to OpenBao Charms for new users
+````
 ```
 
 ```{grid-item-card}
 :link: how-to/
 
 How-to guides
-^^^
 
+````{card-footer}
 **Step-by-step guides** covering key operations and common tasks
+````
 ```
 
 ````
@@ -36,18 +38,20 @@ How-to guides
 :link: reference/
 
 **Reference**
-^^^
 
+````{card-footer}
 **Technical information** - specifications, APIs, architecture
+````
 ```
 
 ```{grid-item-card}
 :link: explanation/
 
 Explanation
-^^^
 
+````{card-footer}
 **Discussion and clarification** of key topics
+````
 ```
 
 ````
