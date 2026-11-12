@@ -54,6 +54,8 @@ juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz
 
 The charm extracts the archive to `/var/snap/openbao/common/hsm/` and points the seal `lib` at the PKCS#11 module. A single ELF `.so` is still accepted for simple providers. Optional `openbao.env` in the archive is installed to `/var/snap/openbao/common/openbao.env`.
 
+The archive is only extracted again when you attach a different `hsm-lib`. On such an update, the library files are replaced but an existing `tokens/` directory is kept, so keys added to the token (for example during key rotation) survive. The `tokens/` directory in the archive only seeds the first installation.
+
 The charm ignores a deploy-time placeholder (non-ELF text). Attach the real tarball before setting the secret.
 
 When deploying a local `.charm` file, Juju requires the resource at deploy time. Use the

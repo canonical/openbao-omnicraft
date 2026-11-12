@@ -273,6 +273,7 @@ class TestCharmConfigureHSM(OpenBaoCharmFixtures):
         self.openbao_env = tmp_path / "openbao.env"
         self.plugin_dir = tmp_path / "plugins"
         monkeypatch.setattr("workload_vm.HSM_LIB_DIR", str(self.hsm_dir))
+        monkeypatch.setattr("workload_vm.HSM_LIB_DIGEST_PATH", str(tmp_path / "hsm.sha256"))
         monkeypatch.setattr("workload_vm.OPENBAO_ENV_PATH", str(self.openbao_env))
         monkeypatch.setattr("workload_vm.PKCS11_KMS_PLUGIN_DIR", str(self.plugin_dir))
         monkeypatch.setattr(
@@ -284,6 +285,7 @@ class TestCharmConfigureHSM(OpenBaoCharmFixtures):
         )
         real = OpenBaoVMWorkload()
         self.mock_workload.install_hsm_lib.side_effect = real.install_hsm_lib
+        self.mock_workload.get_hsm_module_path.side_effect = real.get_hsm_module_path
         self.mock_workload.pkcs11_kms_plugin.side_effect = real.pkcs11_kms_plugin
         self.tmp_path = tmp_path
 

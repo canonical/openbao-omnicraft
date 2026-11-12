@@ -2,7 +2,9 @@
 # Copyright 2024 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import io
 import subprocess
+import tarfile
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -27,6 +29,7 @@ def openbao_snap():
 def workload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> OpenBaoVMWorkload:
     """Return the machine workload, with its files under tmp_path."""
     monkeypatch.setattr("workload_vm.HSM_LIB_DIR", str(tmp_path / "hsm"))
+    monkeypatch.setattr("workload_vm.HSM_LIB_DIGEST_PATH", str(tmp_path / "hsm.sha256"))
     monkeypatch.setattr("workload_vm.LOGROTATE_PATH", tmp_path / "logrotate")
     monkeypatch.setattr("workload_vm.OPENBAO_ENV_PATH", str(tmp_path / "openbao.env"))
     monkeypatch.setattr("workload_vm.SYSTEMD_CREDENTIAL_STORE", tmp_path / "credstore")
@@ -205,23 +208,79 @@ class TestConfigureService:
 
 
 class TestHSMLib:
+    ELF = b"\x7fELF" + b"\0" * 12
+
+    def softhsm_archive(self, tmp_path: Path, library: bytes, token: bytes) -> Path:
+        """Write the documented SoftHSM layout as hsm-lib.tar.gz and return it."""
+        archive = tmp_path / "hsm-lib.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, data in (("libsofthsm2.so", library), ("tokens/token/object", token)):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return archive
+
     def test_given_single_shared_object_when_install_hsm_lib_then_it_is_the_module(
         self, workload: OpenBaoVMWorkload, tmp_path: Path
     ):
         module = tmp_path / "libykcs11.so"
-        module.write_bytes(b"\x7fELF" + b"\0" * 12)
+        module.write_bytes(self.ELF)
 
-        assert workload.install_hsm_lib(module, None) == str(tmp_path / "hsm" / "libykcs11.so")
+        assert workload.install_hsm_lib(module) is True
+        assert workload.get_hsm_module_path(module, None) == str(tmp_path / "hsm" / "libykcs11.so")
 
     def test_given_archive_with_unsafe_path_when_install_hsm_lib_then_nothing_is_installed(
         self, workload: OpenBaoVMWorkload, tmp_path: Path
     ):
         archive = tmp_path / "hsm-lib.zip"
         with zipfile.ZipFile(archive, "w") as zf:
-            zf.writestr("../escape.so", b"\x7fELF" + b"\0" * 12)
+            zf.writestr("../escape.so", self.ELF)
 
-        assert workload.install_hsm_lib(archive, None) is None
+        assert workload.install_hsm_lib(archive) is False
         assert not (tmp_path / "escape.so").exists()
+        assert not (tmp_path / "hsm.new").exists()
+        assert workload.get_hsm_module_path(archive, None) is None
+
+    def test_given_resource_not_installed_when_get_hsm_module_path_then_nothing_is_written(
+        self, workload: OpenBaoVMWorkload, tmp_path: Path
+    ):
+        archive = self.softhsm_archive(tmp_path, self.ELF, b"seed")
+
+        assert workload.get_hsm_module_path(archive, "libsofthsm2.so") is None
+        assert not (tmp_path / "hsm").exists()
+
+    def test_given_unchanged_resource_when_install_hsm_lib_then_it_is_not_reinstalled(
+        self, workload: OpenBaoVMWorkload, tmp_path: Path
+    ):
+        archive = self.softhsm_archive(tmp_path, self.ELF, b"seed")
+        workload.install_hsm_lib(archive)
+        token = tmp_path / "hsm" / "tokens" / "token" / "object"
+        token.write_bytes(b"rotated key")
+
+        with patch.object(OpenBaoVMWorkload, "_extract_archive") as extract:
+            assert workload.install_hsm_lib(archive) is True
+
+        extract.assert_not_called()
+        assert token.read_bytes() == b"rotated key"
+
+    def test_given_updated_resource_when_install_hsm_lib_then_library_is_replaced_and_tokens_kept(
+        self, workload: OpenBaoVMWorkload, tmp_path: Path
+    ):
+        workload.install_hsm_lib(self.softhsm_archive(tmp_path, self.ELF, b"seed"))
+        hsm = tmp_path / "hsm"
+        (hsm / "tokens" / "token" / "object").write_bytes(b"rotated key")
+        (hsm / "tokens" / "token" / "new-key").write_bytes(b"added at runtime")
+        updated = self.softhsm_archive(tmp_path, self.ELF + b"v2", b"seed")
+
+        assert workload.install_hsm_lib(updated) is True
+
+        assert (hsm / "libsofthsm2.so").read_bytes() == self.ELF + b"v2"
+        assert (hsm / "tokens" / "token" / "object").read_bytes() == b"rotated key"
+        assert (hsm / "tokens" / "token" / "new-key").read_bytes() == b"added at runtime"
+        assert not (tmp_path / "hsm.old").exists()
+        assert workload.get_hsm_module_path(updated, "libsofthsm2.so") == str(
+            hsm / "libsofthsm2.so"
+        )
 
     def test_given_snap_ships_unsupported_plugin_when_pkcs11_kms_plugin_then_none(
         self, workload: OpenBaoVMWorkload, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

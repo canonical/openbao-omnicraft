@@ -98,16 +98,29 @@ class WorkloadBase(ABC):
         """Return whether the OpenBao service is running."""
 
     @abstractmethod
-    def install_hsm_lib(self, resource: Path, module_relative_path: str | None) -> str | None:
-        """Install the PKCS#11 library from the `hsm-lib` resource.
+    def install_hsm_lib(self, resource: Path) -> bool:
+        """Install the PKCS#11 library from the `hsm-lib` resource, if it changed.
+
+        Provider data that changes at runtime (e.g. SoftHSM tokens) is kept.
 
         Args:
             resource: The attached resource: an archive of the library and its
                 dependencies, or a single shared object.
+
+        Returns:
+            Whether the resource is installed.
+        """
+
+    @abstractmethod
+    def get_hsm_module_path(self, resource: Path, module_relative_path: str | None) -> str | None:
+        """Return the path of the PKCS#11 module, without changing the workload.
+
+        Args:
+            resource: The attached `hsm-lib` resource.
             module_relative_path: The PKCS#11 module inside the archive, if set.
 
         Returns:
-            The path of the PKCS#11 module in the workload, or None if it cannot be installed.
+            The module path, or None if this resource is not installed or has no module.
         """
 
     @abstractmethod

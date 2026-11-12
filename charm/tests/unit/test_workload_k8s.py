@@ -131,5 +131,6 @@ class TestOpenBaoK8sWorkload:
     def test_when_hsm_operations_then_they_are_not_supported(self, container: MagicMock):
         workload = OpenBaoK8sWorkload(container)
 
-        assert workload.install_hsm_lib(Path("/hsm-lib.tar.gz"), None) is None
+        assert workload.install_hsm_lib(Path("/hsm-lib.tar.gz")) is False
+        assert workload.get_hsm_module_path(Path("/hsm-lib.tar.gz"), None) is None
         assert workload.pkcs11_kms_plugin() is None

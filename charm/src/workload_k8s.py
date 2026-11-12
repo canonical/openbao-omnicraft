@@ -122,7 +122,11 @@ class OpenBaoK8sWorkload(WorkloadBase):
         except ModelError:
             return False
 
-    def install_hsm_lib(self, resource: Path, module_relative_path: str | None) -> str | None:
+    def install_hsm_lib(self, resource: Path) -> bool:
+        """Return False: PKCS#11 HSM auto-unseal is only supported on machines."""
+        return False
+
+    def get_hsm_module_path(self, resource: Path, module_relative_path: str | None) -> str | None:
         """Return None: PKCS#11 HSM auto-unseal is only supported on machines."""
         return None
 

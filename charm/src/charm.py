@@ -421,6 +421,7 @@ class OpenBaoCharm(CharmBase):
         except WorkloadError as e:
             logger.error("Failed to install OpenBao: %s", e)
             return
+        self.hsm.install_lib()
         if self._get_resources_patch_status():
             return
         if not self.juju_facade.relation_exists(PEER_RELATION_NAME):

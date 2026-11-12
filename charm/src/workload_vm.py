@@ -44,6 +44,11 @@ SNAP_COMMON = "/var/snap/openbao/common"
 # baod-start sources this file before starting OpenBao.
 OPENBAO_ENV_PATH = f"{SNAP_COMMON}/openbao.env"
 HSM_LIB_DIR = f"{SNAP_COMMON}/hsm"
+# sha256 of the installed hsm-lib resource, so an unchanged resource is not reinstalled.
+HSM_LIB_DIGEST_PATH = f"{SNAP_COMMON}/hsm.sha256"
+# Provider state kept inside the hsm-lib directory and changed at runtime, e.g.
+# the SoftHSM token store gains keys on rotation. The archive only seeds it.
+HSM_LIB_MUTABLE_DIRS = ("tokens",)
 PKCS11_KMS_PLUGIN_DIR = "/snap/openbao/current/plugins"
 PKCS11_KMS_PLUGIN_COMMAND = "openbao-plugin-kms-pkcs11"
 PKCS11_KMS_PLUGIN_PATH = f"{PKCS11_KMS_PLUGIN_DIR}/{PKCS11_KMS_PLUGIN_COMMAND}"
@@ -358,20 +363,70 @@ class OpenBaoVMWorkload(WorkloadBase):
         service = snap.SnapCache()[SNAP_NAME].services.get(SNAP_SERVICE_NAME)
         return bool(service and service["active"])
 
-    def install_hsm_lib(self, resource: Path, module_relative_path: str | None) -> str | None:
-        """Unpack the hsm-lib resource into SNAP_COMMON, where the snap can read it."""
+    def install_hsm_lib(self, resource: Path) -> bool:
+        """Unpack the hsm-lib resource into SNAP_COMMON, where the snap can read it.
+
+        The resource is unpacked into a staging directory that replaces the
+        installed one, keeping the installed HSM_LIB_MUTABLE_DIRS.
+        """
         try:
-            self._replace_directory(HSM_LIB_DIR)
+            digest = _file_sha256(resource)
+            if self._installed_hsm_lib_digest() == digest:
+                return True
+        except OSError as exc:
+            logger.warning("Failed to read hsm-lib resource: %s", exc)
+            return False
+        staging = Path(f"{HSM_LIB_DIR}.new")
+        try:
+            self._replace_directory(str(staging))
             if is_hsm_lib_archive(resource):
-                self._extract_archive(str(resource), HSM_LIB_DIR)
+                self._extract_archive(str(resource), str(staging))
             elif is_elf_shared_object(resource):
-                self._copy_file(str(resource), f"{HSM_LIB_DIR}/{resource.name}")
+                self._copy_file(str(resource), str(staging / resource.name))
             else:
-                return None
+                return False
+            self._swap_in_hsm_lib(staging)
+            Path(HSM_LIB_DIGEST_PATH).write_text(digest)
         except (OSError, ValueError) as exc:
             logger.warning("Failed to install hsm-lib resource: %s", exc)
-            return None
+            return False
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        logger.info("Installed hsm-lib resource into %s", HSM_LIB_DIR)
         self._apply_hsm_openbao_env()
+        return True
+
+    def _swap_in_hsm_lib(self, staging: Path) -> None:
+        """Replace the installed hsm-lib directory with staging, keeping its mutable data."""
+        installed, backup = Path(HSM_LIB_DIR), Path(f"{HSM_LIB_DIR}.old")
+        for name in HSM_LIB_MUTABLE_DIRS:
+            if (installed / name).is_dir():
+                shutil.rmtree(staging / name, ignore_errors=True)
+                shutil.copytree(installed / name, staging / name, symlinks=True)
+        if installed.exists():
+            installed.rename(backup)
+        try:
+            staging.rename(installed)
+        except OSError:
+            if backup.exists():
+                backup.rename(installed)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
+
+    def _installed_hsm_lib_digest(self) -> str | None:
+        """Return the sha256 of the installed hsm-lib resource, if one is installed."""
+        try:
+            return Path(HSM_LIB_DIGEST_PATH).read_text().strip()
+        except OSError:
+            return None
+
+    def get_hsm_module_path(self, resource: Path, module_relative_path: str | None) -> str | None:
+        """Return the PKCS#11 module of the installed resource, without changing the machine."""
+        try:
+            if self._installed_hsm_lib_digest() != _file_sha256(resource):
+                return None
+        except OSError:
+            return None
         module = resolve_hsm_pkcs11_module(Path(HSM_LIB_DIR), module_relative_path)
         if not module:
             logger.warning(
@@ -394,6 +449,11 @@ class OpenBaoVMWorkload(WorkloadBase):
         if not version or version == "unsupported":
             return None
         return (PKCS11_KMS_PLUGIN_DIR, PKCS11_KMS_PLUGIN_COMMAND, version, sha256sum)
+
+
+def _file_sha256(path: Path) -> str:
+    """Return the sha256 hex digest of a file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _systemd_credentials_supported() -> bool:

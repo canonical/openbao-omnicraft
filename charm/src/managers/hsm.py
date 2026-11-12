@@ -70,8 +70,8 @@ class HSMManager:
                 "hsm-lib resource is not attached; pack the PKCS#11 module and deps "
                 "into a tarball and use `juju attach-resource openbao hsm-lib=./hsm-lib.tar.gz`"
             )
-        # Ensure the archive/module installs and the PKCS#11 .so can be resolved.
-        if not self._install_hsm_lib():
+        # Ensure the archive/module was installed by `install_lib` and the PKCS#11 .so resolves.
+        if not self._get_module_path():
             return (
                 "hsm-lib could not be installed; ensure the tarball contains the PKCS#11 "
                 "module (name it pkcs11.so or set secret key `lib` to the module filename)"
@@ -87,7 +87,7 @@ class HSMManager:
         """Return PKCS#11 seal configuration when the secret, library, and KMS plugin are ready."""
         if not self.requested or self._transit_autounseal_requested():
             return None
-        if not (lib_path := self._install_hsm_lib()):
+        if not (lib_path := self._get_module_path()):
             return None
         if not (content := self._get_hsm_secret_content()):
             return None
@@ -118,12 +118,17 @@ class HSMManager:
             return None
         return Path(path)
 
-    def _install_hsm_lib(self) -> str | None:
-        """Install the hsm-lib resource in the workload and return the PKCS#11 module path."""
+    def install_lib(self) -> None:
+        """Install the attached hsm-lib resource in the workload when PKCS#11 is requested."""
+        if self.requested and (resource := self._get_hsm_lib_resource_path()):
+            self._workload.install_hsm_lib(resource)
+
+    def _get_module_path(self) -> str | None:
+        """Return the PKCS#11 module path of the installed hsm-lib resource, if any."""
         if not (resource := self._get_hsm_lib_resource_path()):
             return None
         content = self._get_hsm_secret_content() or {}
-        return self._workload.install_hsm_lib(resource, hsm_lib_module_relative_path(content))
+        return self._workload.get_hsm_module_path(resource, hsm_lib_module_relative_path(content))
 
     def _get_hsm_secret_content(self) -> dict[str, str] | None:
         """Return the HSM secret content, or None if it cannot be read."""

@@ -139,7 +139,8 @@ class OpenBaoCharmFixtures:
         workload.is_running.return_value = True
         workload.exists.return_value = False
         workload.configure_service.return_value = False
-        workload.install_hsm_lib.return_value = None
+        workload.install_hsm_lib.return_value = False
+        workload.get_hsm_module_path.return_value = None
         workload.pkcs11_kms_plugin.return_value = None
         return workload
 

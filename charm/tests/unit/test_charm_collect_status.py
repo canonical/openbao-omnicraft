@@ -351,7 +351,7 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         kms_plugin: tuple[str, str, str, str] | None,
         message: str,
     ):
-        self.mock_workload.install_hsm_lib.return_value = installed_module
+        self.mock_workload.get_hsm_module_path.return_value = installed_module
         self.mock_workload.pkcs11_kms_plugin.return_value = kms_plugin
         hsm_lib = tmp_path / "libykcs11.so"
         hsm_lib.write_bytes(resource_content)
@@ -363,3 +363,4 @@ class TestCharmCollectUnitStatus(OpenBaoCharmFixtures):
         )
 
         assert self.collect_status(state_in) == BlockedStatus(message)
+        self.mock_workload.install_hsm_lib.assert_not_called()
