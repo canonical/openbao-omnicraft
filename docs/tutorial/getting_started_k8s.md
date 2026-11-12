@@ -51,9 +51,9 @@ juju deploy openbao --channel=latest/edge --trust
 ```
 
 ```{tip}
-The charm declares minimum storage sizes (e.g. 10G for Raft data). You can provision
-larger volumes at deploy time using `--storage openbao-raft=50G`. Storage sizes cannot
-be changed after deployment on Kubernetes. See the
+The charm declares minimum storage sizes for its volumes. You can provision
+larger volumes at deploy time, e.g. `--storage openbao=50G` for Raft data.
+Storage sizes cannot be changed after deployment on Kubernetes. See the
 [Production blueprint](../reference/production_blueprint_k8s.md) for details.
 ```
 

@@ -33,18 +33,18 @@ Storage declarations cannot be changed after deployment on Kubernetes.
 
 The charm defines the following storage volumes:
 
-| Storage name | Purpose                   | Minimum size |
-| ------------ | ------------------------- | ------------ |
-| `openbao-raft` | Raft data directory       | 10G          |
-| `config`     | OpenBao configuration files | 5M           |
-| `certs`      | TLS certificates          | 5M           |
-| `tmp`        | Temporary files           | 5G           |
+| Storage name | Purpose                                | Minimum size         |
+| ------------ | -------------------------------------- | -------------------- |
+| `openbao`    | Raft data directory                    | Juju default (1G)    |
+| `certs`      | TLS certificates                       | 5M                   |
+| `config`     | OpenBao configuration files            | 5M                   |
+| `tmp`        | Scratch space for backup restores      | 5G                   |
 
 You can provision **larger** volumes at deploy time using the `--storage` flag:
 
 ```shell
 juju deploy openbao --trust \
-  --storage openbao-raft=50G \
+  --storage openbao=50G \
   --storage tmp=10G
 ```
 
