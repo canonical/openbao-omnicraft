@@ -33,7 +33,8 @@ class RaftManager:
 
         This method will bootstrap a OpenBao cluster for a single node, by
         identifying itself as the sole node in the cluster. Additional units
-        may then be added once the cluster is available.
+        may then be added once the cluster is available. ``address`` is the
+        node's Raft transport address (``host:port``, no URL scheme).
         """
         if not self._juju_facade.is_leader:
             logger.debug("Only leader unit can bootstrap a OpenBao cluster")

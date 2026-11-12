@@ -105,12 +105,12 @@ class ActionEvents(Object):
         This is useful when OpenBao has lost quorum. The application must first
         be reduced to a single unit.
         """
-        if not self.charm.api_address:
+        if not self.charm.raft_address:
             event.fail(message="Network bind address is not available")
             return
         try:
             RaftManager(self.charm, self.charm.workload).bootstrap(
-                self.charm.node_id, self.charm.api_address
+                self.charm.node_id, self.charm.raft_address
             )
         except ManagerError as e:
             logger.error("Failed to bootstrap raft: %s", e)

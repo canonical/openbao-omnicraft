@@ -1000,9 +1000,17 @@ class OpenBaoCharm(CharmBase):
         return f"https://{self._host}:{OPENBAO_PORT}" if self._host else None
 
     @property
+    def raft_address(self) -> str | None:
+        """Return the Raft transport address of this unit, e.g. 1.2.3.4:8201.
+
+        This is the scheme-free form expected in raft/peers.json.
+        """
+        return f"{self._host}:{OPENBAO_CLUSTER_PORT}" if self._host else None
+
+    @property
     def _cluster_address(self) -> str | None:
         """Return the cluster address of this unit, e.g. https://1.2.3.4:8201."""
-        return f"https://{self._host}:{OPENBAO_CLUSTER_PORT}" if self._host else None
+        return f"https://{self.raft_address}" if self.raft_address else None
 
     @property
     def node_id(self) -> str:

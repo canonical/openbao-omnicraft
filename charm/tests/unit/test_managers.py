@@ -204,17 +204,17 @@ class TestRaftManager:
         self.juju.planned_units_for_app = planned_units
 
         with pytest.raises(ManagerError, match=message):
-            self.manager.bootstrap("node", "https://1.2.3.4:8200")
+            self.manager.bootstrap("node", "1.2.3.4:8201")
         self.workload.stop.assert_not_called()
 
     def test_given_single_leader_when_bootstrap_then_peers_json_is_written_while_stopped(self):
-        self.manager.bootstrap("node", "https://1.2.3.4:8200")
+        self.manager.bootstrap("node", "1.2.3.4:8201")
 
         assert self.workload.mock_calls == [
             call.stop(),
             call.push(
                 "/raft/raft/peers.json",
-                json.dumps([{"id": "node", "address": "https://1.2.3.4:8200"}]),
+                json.dumps([{"id": "node", "address": "1.2.3.4:8201"}]),
             ),
             call.restart(),
         ]

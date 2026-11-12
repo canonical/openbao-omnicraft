@@ -136,9 +136,7 @@ class TestCharmBootstrapRaftAction(OpenBaoCharmFixtures):
         )
 
         host = "myhostname" if self.substrate.value == "k8s" else "1.2.1.2"
-        self.mock_raft_manager.bootstrap.assert_called_once_with(
-            "model-openbao/0", f"https://{host}:8200"
-        )
+        self.mock_raft_manager.bootstrap.assert_called_once_with("model-openbao/0", f"{host}:8201")
         assert self.ctx.action_results == {"result": "Raft cluster bootstrapped successfully."}
 
 
