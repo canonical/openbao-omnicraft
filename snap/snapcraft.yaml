@@ -65,7 +65,7 @@ parts:
       install -D -m755 bin/bao $SNAPCRAFT_PART_INSTALL/bin/bao
 
     build-snaps:
-      - go/1.26/stable
+      - go/1.27/stable
     build-packages:
       - make
       - nodejs
@@ -89,7 +89,7 @@ parts:
     source-depth: 1
     plugin: nil
     build-snaps:
-      - go/1.26/stable
+      - go/1.27/stable
     build-packages:
       - gcc
       - libc6-dev
