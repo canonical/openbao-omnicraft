@@ -57,9 +57,9 @@ parts:
       corepack enable pnpm
 
       VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
-      GIT_COMMIT="$(git rev-parse HEAD)"
-      BUILD_DATE="$(git show --no-show-signature -s --format=%cd --date=format:'%Y-%m-%dT%H:%M:%SZ' HEAD)"
-      export LD_FLAGS="-X github.com/openbao/openbao/version.fullVersion=${VERSION} -X github.com/openbao/openbao/version.GitCommit=${GIT_COMMIT} -X github.com/openbao/openbao/version.BuildDate=${BUILD_DATE}"
+      # OpenBao >=2.7 moved the version package to .../v2/internal/version.
+      # scripts/build.sh already sets GitCommit/CommitDate; we only need fullVersion.
+      export LD_FLAGS="-X github.com/openbao/openbao/v2/internal/version.fullVersion=${VERSION}"
 
       make static-dist bin
       install -D -m755 bin/bao $SNAPCRAFT_PART_INSTALL/bin/bao
