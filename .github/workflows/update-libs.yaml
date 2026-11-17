@@ -22,16 +22,9 @@ jobs:
         run: |
           sudo snap install charmcraft --classic --channel latest/stable
 
-      - name: Fetch charm libraries (k8s)
+      - name: Fetch charm libraries
         run: |
-          cd charm/k8s
-          charmcraft fetch-lib
-        env:
-          CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}
-
-      - name: Fetch charm libraries (machine)
-        run: |
-          cd charm/machine
+          cd charm
           charmcraft fetch-lib
         env:
           CHARMCRAFT_AUTH: ${{ secrets.CHARMCRAFT_STORE_CREDENTIALS }}

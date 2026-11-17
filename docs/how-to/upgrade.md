@@ -3,7 +3,7 @@
 ## Pre-requisites
 
 - OpenBao >= 1.15 is deployed
-- In the case of upgrading `openbao-k8s`, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
+- In the case of upgrading on Kubernetes, it is recommended to have at least 5 units deployed and active to ensure minimal to no downtime.
 
 ## Upgrade Procedure
 

@@ -47,13 +47,13 @@ juju add-model demo
 Deploy the OpenBao K8s operator:
 
 ```shell
-juju deploy openbao-k8s openbao --channel=latest/edge --trust
+juju deploy openbao --channel=latest/edge --trust
 ```
 
 ```{tip}
-The charm declares minimum storage sizes (e.g. 10G for Raft data). You can provision
-larger volumes at deploy time using `--storage openbao-raft=50G`. Storage sizes cannot
-be changed after deployment on Kubernetes. See the
+The charm declares minimum storage sizes for its volumes. You can provision
+larger volumes at deploy time, e.g. `--storage openbao=50G` for Raft data.
+Storage sizes cannot be changed after deployment on Kubernetes. See the
 [Production blueprint](../reference/production_blueprint_k8s.md) for details.
 ```
 
@@ -65,7 +65,7 @@ Model  Controller          Cloud/Region        Version  SLA          Timestamp
 demo   k8s-localhost       k8s/localhost       3.6.28   unsupported  12:31:45-04:00
 
 App    Version  Status   Scale  Charm      Channel    Rev  Address         Exposed  Message
-openbao           blocked      1  openbao-k8s  latest/edge  2  10.152.183.183  no       Please initialize OpenBao or integrate with an auto-unseal provider
+openbao           blocked      1  openbao      latest/edge  2  10.152.183.183  no       Please initialize OpenBao or integrate with an auto-unseal provider
 
 Unit      Workload  Agent  Address     Ports  Message
 openbao/0*  blocked   idle   10.1.0.237         Please initialize OpenBao or integrate with an auto-unseal provider

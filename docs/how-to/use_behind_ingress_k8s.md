@@ -28,8 +28,8 @@ juju relate self-signed-certificates:certificates traefik-k8s:certificates
 
 Integrate OpenBao with Traefik
 ```bash
-juju relate openbao-k8s:send-ca-cert traefik-k8s:receive-ca-cert
-juju relate openbao-k8s:ingress traefik-k8s:ingress
+juju relate openbao:send-ca-cert traefik-k8s:receive-ca-cert
+juju relate openbao:ingress traefik-k8s:ingress
 juju relate openbao:ingress-per-unit traefik-k8s:ingress-per-unit
 ```
 
@@ -47,8 +47,8 @@ Running operation 1 with 1 task
   - task 2 on unit-traefik-k8s-0
 
 Waiting for task 2...
-proxied-endpoints: '{"openbao/0": {"url": "https://10.0.0.5/openbao-openbao-k8s-0"},
-  "openbao": {"url": "https://10.0.0.5/openbao-openbao-k8s"}}'
+proxied-endpoints: '{"openbao/0": {"url": "https://10.0.0.5/openbao-openbao-0"},
+  "openbao": {"url": "https://10.0.0.5/openbao-openbao"}}'
 ```
 
 You should now be able to access OpenBao using the URL in the action output.
@@ -59,13 +59,13 @@ Retrieve the Juju secrets list:
 user@ubuntu:~$ juju secrets --format=yaml
 ck0i0h3q457c7bgte4kg:
   revision: 1
-  owner: openbao-k8s
+  owner: openbao
   label: openbao-ca-certificate
   created: 2023-09-13T02:36:57Z
   updated: 2023-09-13T02:36:57Z
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: openbao-k8s
+  owner: openbao
   label: openbao-initialization
   created: 2023-09-13T02:37:10Z
   updated: 2023-09-13T02:37:10Z
@@ -84,7 +84,7 @@ Read the `openbao-initialization` secret content:
 user@ubuntu:~$ juju show-secret ck0i0krq457c7bgte4l0 --reveal
 ck0i0krq457c7bgte4l0:
   revision: 1
-  owner: openbao-k8s
+  owner: openbao
   created: 2023-08-28T13:33:54Z
   updated: 2023-08-28T13:33:54Z
   content:
@@ -140,10 +140,10 @@ Copy the CA certificate content into a file and set the `BAO_CAPATH` environment
 export BAO_CAPATH=/path/to/openbao_ca.pem
 ```
 
-Identify the openbao address by setting the `BAO_ADDR` environment variable using the OpenBao URL which is retrieved through `show-proxied-endpoints` action. In our example, the openbao address is `https://10.0.0.5/openbao-openbao-k8s`:
+Identify the openbao address by setting the `BAO_ADDR` environment variable using the OpenBao URL which is retrieved through `show-proxied-endpoints` action. In our example, the openbao address is `https://10.0.0.5/openbao-openbao`:
 
 ```bash
-export BAO_ADDR="https://10.0.0.5/openbao-openbao-k8s"
+export BAO_ADDR="https://10.0.0.5/openbao-openbao"
 ```
 
 You can now run openbao commands against the openbao unit.
