@@ -32,6 +32,21 @@ juju config ingress-configurator hostname=<your hostname>
 juju config ingress-configurator backend-protocol=https
 ```
 
+Configure the health check so traffic is routed to the OpenBao leader unit:
+
+```bash
+juju config ingress-configurator \
+  health-check-path=/v1/sys/health \
+  health-check-port=8200 \
+  health-check-interval=10 \
+  health-check-rise=2 \
+  health-check-fall=3
+```
+
+OpenBao's `/v1/sys/health` endpoint returns `200` from the active (leader) unit and `429` from standby (follower) units. Health-checking this path therefore targets only the leader, which is important because some operations (for example response-wrapping tokens, or writes) must be issued against the active unit.
+
+**Known issue**: When `backend-protocol=https`, the [haproxy-operator charm](https://charmhub.io/haproxy) does not currently emit the HTTP-path health check (`option httpchk GET /v1/sys/health`); only a TLS connect check is performed, so every unit is considered healthy and traffic is not restricted to the leader. This is tracked upstream at [canonical/haproxy-operator#574](https://github.com/canonical/haproxy-operator/issues/574).
+
 Deploy Self Signed Certificates Operator
 
 ```bash
